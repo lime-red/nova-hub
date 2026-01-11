@@ -352,9 +352,9 @@ class ProcessingService:
                 # Check for case-insensitive duplicate in destination
                 existing_file = find_file_case_insensitive(hub_outbound_dir, normalized_filename)
                 if existing_file:
-                    print(f"[Processing] Skipping duplicate outbound file: {packet_file.name} (found as {existing_file.name})")
-                    packet_file.unlink()  # Remove from game outbound
-                    continue
+                    # Overwrite old file (sequence wraparound case)
+                    existing_file.unlink()
+                    print(f"[Processing] Overwriting old outbound file: {existing_file.name}")
 
                 dest = hub_outbound_dir / normalized_filename
                 packet_file.rename(dest)
@@ -366,8 +366,21 @@ class ProcessingService:
                     .first()
                 )
 
-                if not existing:
-                    # Create packet record
+                if existing:
+                    # Update existing record with new data (sequence wraparound)
+                    existing.source_bbs_index = packet_info["source_bbs_index"]
+                    existing.dest_bbs_index = packet_info["dest_bbs_index"]
+                    existing.sequence_number = packet_info["sequence_number"]
+                    existing.file_size = len(content)
+                    existing.file_data = content
+                    existing.checksum = file_hash
+                    existing.processing_run_id = run_id
+                    existing.processed_at = datetime.now()
+                    existing.is_downloaded = False  # Reset so clients see it as new
+                    existing.downloaded_at = None
+                    print(f"[Processing] Updated outbound packet: {normalized_filename} (seq: {packet_info['sequence_number']})")
+                else:
+                    # Create new packet record
                     packet = Packet(
                         filename=normalized_filename,
                         league_id=league.id,
@@ -381,16 +394,16 @@ class ProcessingService:
                         processed_at=datetime.now(),
                     )
                     self.db.add(packet)
-                    self.db.commit()
-
                     print(f"[Processing] Collected outbound: {normalized_filename}")
 
-                    # Broadcast packet available
-                    from app.services.websocket_service import (
-                        broadcast_packet_available,
-                    )
+                self.db.commit()
 
-                    await broadcast_packet_available(normalized_filename, packet_info["dest_bbs_index"])
+                # Broadcast packet available
+                from app.services.websocket_service import (
+                    broadcast_packet_available,
+                )
+
+                await broadcast_packet_available(normalized_filename, packet_info["dest_bbs_index"])
 
             except Exception as e:
                 print(f"[Processing] Error collecting {packet_file.name}: {e}")

@@ -7,3 +7,4 @@ data/
 *.log
 .pytest_cache/
 .DS_Store
+config.toml

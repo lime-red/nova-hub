@@ -1,0 +1,34 @@
+# requirements.txt - Complete
+
+# Core
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+sqlalchemy==2.0.36
+alembic==1.13.1
+
+# Templates
+jinja2==3.1.4
+
+# File handling
+aiofiles==24.1.0
+python-multipart==0.0.17
+
+# Auth
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1  # Pin bcrypt version for passlib compatibility
+
+# Config
+toml==0.10.2
+python-dotenv==1.0.1
+pydantic==2.10.0
+pydantic-settings==2.6.0
+
+# File watching
+watchdog==6.0.0
+
+# HTTP client (for testing)
+aiohttp==3.10.0
+
+# ANSI to HTML conversion for logs
+ansi2html==1.9.1

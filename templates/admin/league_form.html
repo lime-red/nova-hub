@@ -1,0 +1,134 @@
+<!-- templates/admin/league_form.html -->
+{% extends "base.html" %}
+{% block title %}{% if league %}Edit League{% else %}New League{% endif %} - Nova Hub{% endblock %}
+
+{% block breadcrumb %}
+<nav class="breadcrumb">
+    <ol>
+        <li><a href="/dashboard">Dashboard</a></li>
+        <li><a href="/admin">Admin</a></li>
+        <li><a href="/admin/leagues">Leagues</a></li>
+        <li>{% if league %}Edit {{ league.name }}{% else %}New League{% endif %}</li>
+    </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+<h1>{% if league %}Edit League{% else %}Create New League{% endif %}</h1>
+
+<article>
+    <form method="post" action="{% if league %}/admin/leagues/{{ league.id }}/edit{% else %}/admin/leagues/new{% endif %}">
+        <label for="league_id">
+            League ID
+            <input
+                type="text"
+                id="league_id"
+                name="league_id"
+                value="{% if league %}{{ league.league_id }}{% endif %}"
+                placeholder="e.g., 555"
+                required
+                maxlength="10"
+                {% if league %}readonly{% endif %}
+            />
+            <small>3-digit league number (e.g., 555)</small>
+        </label>
+
+        <label for="game_type">
+            Game Type
+            <select id="game_type" name="game_type" required {% if league %}disabled{% endif %}>
+                <option value="">Select game type...</option>
+                <option value="B" {% if league and league.game_type == 'B' %}selected{% endif %}>BRE (Barren Realms Elite)</option>
+                <option value="F" {% if league and league.game_type == 'F' %}selected{% endif %}>FE (Falcon's Eye)</option>
+            </select>
+            <small>Game type cannot be changed after creation</small>
+        </label>
+
+        <!-- Hidden field to submit disabled values -->
+        {% if league %}
+        <input type="hidden" name="game_type" value="{{ league.game_type }}" />
+        {% endif %}
+
+        <label for="name">
+            League Name
+            <input
+                type="text"
+                id="name"
+                name="name"
+                value="{% if league %}{{ league.name }}{% endif %}"
+                placeholder="e.g., BRE League 555"
+                required
+                maxlength="100"
+            />
+        </label>
+
+        <label for="description">
+            Description
+            <textarea
+                id="description"
+                name="description"
+                rows="3"
+                placeholder="Optional description..."
+            >{% if league %}{{ league.description }}{% endif %}</textarea>
+        </label>
+
+        <fieldset>
+            <legend>Dosemu Configuration (Optional)</legend>
+
+            <label for="dosemu_path">
+                Dosemu Path
+                <input
+                    type="text"
+                    id="dosemu_path"
+                    name="dosemu_path"
+                    value="{% if league %}{{ league.dosemu_path or '' }}{% endif %}"
+                    placeholder="/path/to/dosemu"
+                />
+                <small>Path to Dosemu installation for processing</small>
+            </label>
+
+            <label for="game_executable">
+                Game Executable
+                <input
+                    type="text"
+                    id="game_executable"
+                    name="game_executable"
+                    value="{% if league %}{{ league.game_executable or '' }}{% endif %}"
+                    placeholder="LEAGUE.BAT"
+                />
+                <small>Game executable to run in Dosemu</small>
+            </label>
+        </fieldset>
+
+        <label>
+            <input
+                type="checkbox"
+                id="is_active"
+                name="is_active"
+                {% if not league or league.is_active %}checked{% endif %}
+            />
+            League is active
+        </label>
+
+        <div style="display: flex; gap: 1rem;">
+            <button type="submit">
+                {% if league %}Update League{% else %}Create League{% endif %}
+            </button>
+            <a href="/admin/leagues" role="button" class="secondary">Cancel</a>
+        </div>
+    </form>
+</article>
+
+{% if not league %}
+<article class="alert-box">
+    <h3>League Creation</h3>
+    <p>After creating a league, you can:</p>
+    <ul>
+        <li>Add BBS clients as league members</li>
+        <li>Configure Dosemu processing settings</li>
+        <li>View league statistics and packet flow</li>
+    </ul>
+    <p><strong>Note:</strong> League ID and Game Type cannot be changed after creation.</p>
+</article>
+{% endif %}
+
+{% endblock %}

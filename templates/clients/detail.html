@@ -1,0 +1,111 @@
+<!-- templates/clients/detail.html -->
+{% extends "base.html" %} {% block title %}{{ client.bbs_name }} - Nova Hub{%
+endblock %} {% block breadcrumb %}
+<nav class="breadcrumb">
+    <ol>
+        <li><a href="/dashboard">Dashboard</a></li>
+        <li><a href="/clients">Clients</a></li>
+        <li>{{ client.bbs_name }}</li>
+    </ol>
+</nav>
+{% endblock %} {% block content %}
+<h1>{{ client.bbs_name }}</h1>
+
+<div class="grid">
+    <article>
+        <header><strong>Client Information</strong></header>
+        <table>
+            <tr>
+                <td><strong>BBS Index:</strong></td>
+                <td class="mono">{{ client.bbs_index }}</td>
+            </tr>
+            <tr>
+                <td><strong>Client ID:</strong></td>
+                <td class="mono" style="font-size: 0.875rem">
+                    {{ client.client_id }}
+                </td>
+            </tr>
+            <tr>
+                <td><strong>Status:</strong></td>
+                <td>
+                    {% if client.is_active %}
+                    <span class="badge success">Active</span>
+                    {% else %}
+                    <span class="badge">Inactive</span>
+                    {% endif %}
+                </td>
+            </tr>
+            <tr>
+                <td><strong>Created:</strong></td>
+                <td>{{ client.created_at }}</td>
+            </tr>
+            <tr>
+                <td><strong>Last Seen:</strong></td>
+                <td>{{ client.last_seen or 'Never' }}</td>
+            </tr>
+        </table>
+    </article>
+
+    <article>
+        <header><strong>Activity Statistics</strong></header>
+        <div class="stat-card">
+            <div class="stat-label">Packets Sent</div>
+            <div class="stat-value" style="color: var(--ins-color)">
+                {{ client.total_sent }}
+            </div>
+            <small>{{ client.sent_24h }} in last 24h</small>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Packets Received</div>
+            <div class="stat-value" style="color: var(--secondary)">
+                {{ client.total_received }}
+            </div>
+            <small>{{ client.received_24h }} in last 24h</small>
+        </div>
+    </article>
+</div>
+
+<!-- Packet History -->
+<article>
+    <header><strong>Recent Packets</strong></header>
+    <table class="packets" role="grid">
+        <thead>
+            <tr>
+                <th>Filename</th>
+                <th>Direction</th>
+                <th>League</th>
+                <th>Route</th>
+                <th>Timestamp</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for packet in packets %}
+            <tr>
+                <td class="packet-filename">{{ packet.filename }}</td>
+                <td>
+                    {% if packet.direction == 'sent' %}
+                    <span style="color: var(--ins-color)">↑ Sent</span>
+                    {% else %}
+                    <span style="color: var(--secondary)">↓ Received</span>
+                    {% endif %}
+                </td>
+                <td>{{ packet.league_name }}</td>
+                <td class="mono">{{ packet.source }} → {{ packet.dest }}</td>
+                <td>{{ packet.timestamp }}</td>
+                <td>
+                    {% if packet.retrieved_at %}
+                    <span class="badge success">Retrieved</span>
+                    {% elif packet.processed_at %}
+                    <span class="badge info">Processed</span>
+                    {% else %}
+                    <span class="badge warning">Pending</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</article>
+
+{% endblock %}

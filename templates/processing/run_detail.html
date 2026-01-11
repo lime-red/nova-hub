@@ -1,0 +1,90 @@
+<!-- templates/processing/run_detail.html -->
+{% extends "base.html" %} {% block title %}Processing Run #{{ run.id }} - Nova
+Hub{% endblock %} {% block breadcrumb %}
+<nav class="breadcrumb">
+    <ol>
+        <li><a href="/dashboard">Dashboard</a></li>
+        <li><a href="/processing">Processing</a></li>
+        <li>Run #{{ run.id }}</li>
+    </ol>
+</nav>
+{% endblock %} {% block content %}
+<h1>Processing Run #{{ run.id }}</h1>
+
+<div class="grid">
+    <article>
+        <header><strong>Run Details</strong></header>
+        <table>
+            <tr>
+                <td><strong>Status:</strong></td>
+                <td>
+                    {% if run.status == 'completed' %}
+                    <span class="badge success">Completed</span>
+                    {% elif run.status == 'running' %}
+                    <span class="badge info">Running</span>
+                    {% else %}
+                    <span class="badge error">Error</span>
+                    {% endif %}
+                </td>
+            </tr>
+            <tr>
+                <td><strong>Started:</strong></td>
+                <td>{{ run.started_at }}</td>
+            </tr>
+            <tr>
+                <td><strong>Completed:</strong></td>
+                <td>{{ run.completed_at or 'Still running' }}</td>
+            </tr>
+            <tr>
+                <td><strong>Duration:</strong></td>
+                <td>{{ run.duration }}</td>
+            </tr>
+            <tr>
+                <td><strong>Packets Processed:</strong></td>
+                <td>{{ run.packets_processed }}</td>
+            </tr>
+        </table>
+    </article>
+</div>
+
+{% if run.error_message %}
+<article>
+    <header><strong>Error Message</strong></header>
+    <pre
+        style="
+            background: var(--code-background-color);
+            padding: 1rem;
+            border-radius: 0.5rem;
+        "
+    >
+{{ run.error_message }}</pre
+    >
+</article>
+{% endif %} {% if run.dosemu_output %}
+<article>
+    <header><strong>Dosemu Output</strong></header>
+    <div class="log-content">{{ run.dosemu_output_html | safe }}</div>
+</article>
+{% endif %} {% if packets %}
+<article>
+    <header><strong>Packets Generated</strong></header>
+    <table class="packets" role="grid">
+        <thead>
+            <tr>
+                <th>Filename</th>
+                <th>League</th>
+                <th>Route</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for packet in packets %}
+            <tr>
+                <td class="packet-filename">{{ packet.filename }}</td>
+                <td>{{ packet.league_name }}</td>
+                <td class="mono">{{ packet.route }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</article>
+{% endif %} {% endblock %}

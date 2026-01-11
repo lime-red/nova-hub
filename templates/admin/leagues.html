@@ -1,0 +1,78 @@
+<!-- templates/admin/leagues.html -->
+{% extends "base.html" %} {% block title %}League Management - Nova Hub{%
+endblock %} {% block breadcrumb %}
+<nav class="breadcrumb">
+    <ol>
+        <li><a href="/dashboard">Dashboard</a></li>
+        <li><a href="/admin">Admin</a></li>
+        <li>Leagues</li>
+    </ol>
+</nav>
+{% endblock %} {% block content %}
+<h1>League Management</h1>
+
+<article>
+    <table role="grid">
+        <thead>
+            <tr>
+                <th>League ID</th>
+                <th>Game</th>
+                <th>Name</th>
+                <th>Members</th>
+                <th>Status</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for league in leagues %}
+            <tr>
+                <td class="mono"><strong>{{ league.full_id }}</strong></td>
+                <td>
+                    {% if league.game_type == 'B' %}
+                    <span class="badge">BRE</span>
+                    {% else %}
+                    <span class="badge">FE</span>
+                    {% endif %}
+                </td>
+                <td><strong>{{ league.name }}</strong></td>
+                <td>{{ league.member_count }} clients</td>
+                <td>
+                    {% if league.is_active %}
+                    <span class="badge success">Active</span>
+                    {% else %}
+                    <span class="badge">Inactive</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <details role="list">
+                        <summary>Actions</summary>
+                        <ul>
+                            <li>
+                                <a href="/admin/leagues/{{ league.id }}"
+                                    >View Details</a
+                                >
+                            </li>
+                            <li>
+                                <a href="/admin/leagues/{{ league.id }}/edit"
+                                    >Edit</a
+                                >
+                            </li>
+                            <li>
+                                <a
+                                    href="/admin/leagues/{{ league.id }}/delete"
+                                    onclick="return confirm('Delete league {{ league.name }}? This will remove all league memberships.');"
+                                    >Delete</a
+                                >
+                            </li>
+                        </ul>
+                    </details>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</article>
+
+<a href="/admin/leagues/new" role="button">Add New League</a>
+
+{% endblock %}

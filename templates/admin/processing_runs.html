@@ -1,0 +1,175 @@
+{% extends "base.html" %} {% block title %}Processing Runs - Admin - Nova Hub{%
+endblock %} {% block head %}
+<style>
+    .log-content {
+        background: #1e1e1e;
+        padding: 1rem;
+        border-radius: 4px;
+        font-family: "Courier New", monospace;
+        font-size: 0.9rem;
+        overflow-x: auto;
+        max-height: 400px;
+        overflow-y: auto;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+    }
+</style>
+{% endblock %}
+
+{% block breadcrumb %}
+<nav class="breadcrumb">
+    <ol>
+        <li><a href="/dashboard">Dashboard</a></li>
+        <li><a href="/admin">Admin</a></li>
+        <li>Processing Logs</li>
+    </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+<h1>Processing Runs</h1>
+
+<p>Recent packet processing runs and their logs.</p>
+
+<!-- Manual Processing Trigger -->
+<div style="margin: 2rem 0;">
+    <article style="padding: 1rem;">
+        <h3>Manual Processing</h3>
+        <p>Trigger packet processing manually to run BRE/FE on unprocessed packets.</p>
+        <div style="display: flex; gap: 1rem; align-items: center; margin-top: 1rem;">
+            <button
+                id="trigger-processing-btn"
+                onclick="triggerProcessing()"
+            >
+                ▶ Trigger Processing
+            </button>
+            <span id="processing-status" style="font-style: italic;"></span>
+        </div>
+    </article>
+</div>
+
+{% if runs %}
+<table>
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Started</th>
+            <th>Completed</th>
+            <th>Status</th>
+            <th>Packets</th>
+            <th>Logs</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for run in runs %}
+        <tr>
+            <td>{{ run.id }}</td>
+            <td>
+                {{ run.started_at.strftime('%Y-%m-%d %H:%M:%S') if
+                run.started_at else '-' }}
+            </td>
+            <td>
+                {{ run.completed_at.strftime('%Y-%m-%d %H:%M:%S') if
+                run.completed_at else '-' }}
+            </td>
+            <td>
+                {% if run.status == 'completed' %}
+                <span style="color: var(--ins-color)">✓ {{ run.status }}</span>
+                {% elif run.status == 'error' %}
+                <span style="color: var(--del-color)">✗ {{ run.status }}</span>
+                {% else %} {{ run.status }} {% endif %}
+            </td>
+            <td>{{ run.packets_processed or 0 }}</td>
+            <td>
+                <details>
+                    <summary>View Logs</summary>
+                    <div style="margin-top: 1rem">
+                        {% if run.dosemu_log_html %}
+                        <h4>DOSEMU Output:</h4>
+                        <div class="log-content">
+                            {{ run.dosemu_log_html | safe }}
+                        </div>
+                        {% else %}
+                        <p><em>No logs available</em></p>
+                        {% endif %} {% if run.stdout_log %}
+                        <h4>Stdout:</h4>
+                        <pre
+                            style="
+                                background: #1a1a1a;
+                                padding: 1rem;
+                                overflow-x: auto;
+                                max-height: 400px;
+                            "
+                        >
+{{ run.stdout_log }}</pre
+                        >
+                        {% endif %} {% if run.stderr_log %}
+                        <h4>Stderr:</h4>
+                        <pre
+                            style="
+                                background: #1a1a1a;
+                                padding: 1rem;
+                                overflow-x: auto;
+                                max-height: 400px;
+                                color: #ff6b6b;
+                            "
+                        >
+{{ run.stderr_log }}</pre
+                        >
+                        {% endif %}
+                    </div>
+                </details>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p><em>No processing runs yet.</em></p>
+{% endif %} {% endblock %}
+
+{% block extra_scripts %}
+<script>
+    // Manual Processing Trigger
+    async function triggerProcessing() {
+        const btn = document.getElementById('trigger-processing-btn');
+        const status = document.getElementById('processing-status');
+
+        // Disable button during request
+        btn.disabled = true;
+        btn.textContent = '⏳ Triggering...';
+        status.textContent = '';
+
+        try {
+            const response = await fetch('/admin/processing/trigger', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            });
+
+            const data = await response.json();
+
+            if (data.status === 'success') {
+                status.textContent = '✓ ' + data.message;
+                status.style.color = 'var(--ins-color)';
+
+                // Reload page after 2 seconds to show new processing run
+                setTimeout(() => {
+                    location.reload();
+                }, 2000);
+            } else {
+                status.textContent = '✗ ' + data.message;
+                status.style.color = 'var(--del-color)';
+            }
+        } catch (error) {
+            status.textContent = '✗ Error: ' + error.message;
+            status.style.color = 'var(--del-color)';
+        } finally {
+            // Re-enable button
+            btn.disabled = false;
+            btn.textContent = '▶ Trigger Processing';
+        }
+    }
+</script>
+{% endblock %}

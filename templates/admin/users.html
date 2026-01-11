@@ -1,0 +1,65 @@
+<!-- templates/admin/users.html -->
+{% extends "base.html" %} {% block title %}User Management - Nova Hub{% endblock
+%} {% block breadcrumb %}
+<nav class="breadcrumb">
+    <ol>
+        <li><a href="/dashboard">Dashboard</a></li>
+        <li><a href="/admin">Admin</a></li>
+        <li>Users</li>
+    </ol>
+</nav>
+{% endblock %} {% block content %}
+<h1>User Management</h1>
+
+<article>
+    <table role="grid">
+        <thead>
+            <tr>
+                <th>Username</th>
+                <th>Role</th>
+                <th>Created</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for user in users %}
+            <tr>
+                <td><strong>{{ user.username }}</strong></td>
+                <td>
+                    {% if user.is_admin %}
+                    <span class="badge error">Admin</span>
+                    {% else %}
+                    <span class="badge info">Sysop</span>
+                    {% endif %}
+                </td>
+                <td>{{ user.created_at }}</td>
+                <td>
+                    {% if user.id != current_user.id %}
+                    <details role="list">
+                        <summary>Actions</summary>
+                        <ul>
+                            <li>
+                                <a href="/admin/users/{{ user.id }}/edit"
+                                    >Edit</a
+                                >
+                            </li>
+                            <li>
+                                <a
+                                    href="/admin/users/{{ user.id }}/delete"
+                                    onclick="return confirm('Delete user?');"
+                                    >Delete</a
+                                >
+                            </li>
+                        </ul>
+                    </details>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</article>
+
+<a href="/admin/users/new" role="button">Add New User</a>
+
+{% endblock %}

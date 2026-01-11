@@ -1,0 +1,85 @@
+<!-- templates/admin/clients.html -->
+{% extends "base.html" %} {% block title %}Client Management - Nova Hub{%
+endblock %} {% block breadcrumb %}
+<nav class="breadcrumb">
+    <ol>
+        <li><a href="/dashboard">Dashboard</a></li>
+        <li><a href="/admin">Admin</a></li>
+        <li>Clients</li>
+    </ol>
+</nav>
+{% endblock %} {% block content %}
+<h1>Client Management</h1>
+
+<article>
+    <table role="grid">
+        <thead>
+            <tr>
+                <th>BBS Name</th>
+                <th>Client ID</th>
+                <th>Status</th>
+                <th>Last Seen</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for client in clients %}
+            <tr>
+                <td><strong>{{ client.bbs_name }}</strong></td>
+                <td class="mono" style="font-size: 0.75rem">
+                    {{ client.client_id }}
+                </td>
+                <td>
+                    {% if client.is_active %}
+                    <span class="badge success">Active</span>
+                    {% else %}
+                    <span class="badge">Inactive</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if client.last_seen %}
+                    {{ client.last_seen }}
+                    {% else %}
+                    <em>Never</em>
+                    {% endif %}
+                </td>
+                <td>
+                    <details role="list">
+                        <summary>Actions</summary>
+                        <ul>
+                            <li>
+                                <a href="/admin/clients/{{ client.id }}/config"
+                                    >Show Config</a
+                                >
+                            </li>
+                            <li>
+                                <a href="/admin/clients/{{ client.id }}/edit"
+                                    >Edit</a
+                                >
+                            </li>
+                            <li>
+                                <a
+                                    href="/admin/clients/{{ client.id }}/regenerate-secret"
+                                    onclick="return confirm('This will invalidate the current secret. Continue?');"
+                                    >Regenerate Secret</a
+                                >
+                            </li>
+                            <li>
+                                <a
+                                    href="/admin/clients/{{ client.id }}/delete"
+                                    onclick="return confirm('Delete client?');"
+                                    >Delete</a
+                                >
+                            </li>
+                        </ul>
+                    </details>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</article>
+
+<a href="/admin/clients/new" role="button">Add New Client</a>
+
+{% endblock %}

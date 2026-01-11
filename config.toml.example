@@ -1,0 +1,51 @@
+[server]
+host = "0.0.0.0"
+port = 8000
+data_dir = "./data"
+
+[hub]
+bbs_name = "Nova Hub"
+bbs_index = "01"
+
+[processing]
+hold_time_hours = 0
+poll_interval = 60
+retention_days = 30
+
+[dosemu]
+dosemu_path = "/usr/bin/dosemu"
+config_dir = "./dosemu_configs"
+capture_output = true
+timeout = 300
+
+# Per-league DOSEMU configuration
+# Format: [dosemu.<league_number>.<game_type>]
+# Directories will be: ./data/dosemu/<league_number>/<game_type>/inbound/
+#                      ./data/dosemu/<league_number>/<game_type>/outbound/
+
+[dosemu.555.bre]
+game_folder = "/home/user/.dosemu/drive_c/bbs/doors/bre_555"
+game_dos_path = "C:\\bbs\\doors\\bre_555"
+inbound_folder = "/home/user/.dosemu/drive_c/bbs/doors/bre_555/INBOUND"
+outbound_folder = "/home/user/.dosemu/drive_c/bbs/doors/bre_555/OUTBOUND"
+processing_command = "BRE.EXE PLANETARY /DETAILED"
+scores_command = "BRE.EXE SCORES"
+
+[dosemu.555.fe]
+game_folder = "/home/user/.dosemu/drive_c/bbs/doors/fe_555"
+game_dos_path = "C:\\bbs\\doors\\fe_555"
+inbound_folder = "/home/user/.dosemu/drive_c/bbs/doors/fe_555/INBOUND"
+outbound_folder = "/home/user/.dosemu/drive_c/bbs/doors/fe_555/OUTBOUND"
+processing_command = "FE.EXE PLANETARY /DETAILED"
+scores_command = "FE.EXE SCORES"
+
+[database]
+path = "./data/nova-hub.db"
+
+[security]
+jwt_secret = "change-me-in-production"
+jwt_expiry_hours = 24
+
+[rate_limiting]
+enabled = false
+requests_per_minute = 30

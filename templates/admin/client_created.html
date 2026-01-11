@@ -1,0 +1,85 @@
+<!-- templates/admin/client_created.html -->
+{% extends "base.html" %}
+{% block title %}Client Created - Nova Hub{% endblock %}
+
+{% block breadcrumb %}
+<nav class="breadcrumb">
+    <ol>
+        <li><a href="/dashboard">Dashboard</a></li>
+        <li><a href="/admin">Admin</a></li>
+        <li><a href="/admin/clients">Clients</a></li>
+        <li>Created</li>
+    </ol>
+</nav>
+{% endblock %}
+
+{% block content %}
+<h1>✓ Client Created Successfully</h1>
+
+<article>
+    <h2>⚠️ Important: Save These Credentials</h2>
+    <p>The client secret will <strong>only be shown once</strong>. Make sure to save it securely before leaving this page!</p>
+    <p>The secret cannot be retrieved later - you can only regenerate a new one.</p>
+
+    <table>
+        <tr>
+            <th>BBS Name</th>
+            <td>{{ client.bbs_name }}</td>
+        </tr>
+        <tr>
+            <th>Client ID</th>
+            <td><code>{{ client.client_id }}</code></td>
+        </tr>
+        <tr>
+            <th>Client Secret</th>
+            <td>
+                <code id="client-secret" style="word-break: break-all;">{{ client.client_secret }}</code>
+                <button onclick="copySecret()" style="margin-left: 1em;">Copy</button>
+            </td>
+        </tr>
+    </table>
+</article>
+
+<article>
+    <h3>Next Steps</h3>
+    <ol>
+        <li><strong>Copy the client secret above now</strong> - it won't be shown again!</li>
+        <li>Send the credentials securely to the BBS operator</li>
+        <li>Configure their client application with these credentials</li>
+        <li>If you lose the secret, use "Regenerate Secret" to create a new one</li>
+    </ol>
+
+    <h4>Example client configuration:</h4>
+    <pre><code>[hub]
+url = "https://your-hub-domain.com"
+client_id = "{{ client.client_id }}"
+client_secret = "{{ client.client_secret }}"
+
+[bbs]
+name = "{{ client.bbs_name }}"
+
+# BBS ID is configured per league after adding this client to a league
+[leagues.BRE.555]
+bbs_index = 2  # Assigned when adding client to league
+enabled = true</code></pre>
+</article>
+
+<div style="display: flex; gap: 1rem;">
+    <a href="/admin/clients/{{ client.id }}/config" role="button">
+        View Full Config
+    </a>
+    <a href="/admin/clients" role="button" class="secondary">
+        Back to Clients
+    </a>
+</div>
+
+<script>
+function copySecret() {
+    const secret = document.getElementById('client-secret').textContent;
+    navigator.clipboard.writeText(secret).then(() => {
+        alert('Client secret copied to clipboard!');
+    });
+}
+</script>
+
+{% endblock %}

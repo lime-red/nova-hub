@@ -1,0 +1,81 @@
+<!-- templates/login.html -->
+<!doctype html>
+<html lang="en" data-theme="dark">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Login - Nova Hub</title>
+        <link
+            rel="stylesheet"
+            href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css"
+        />
+        <style>
+            body {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                min-height: 100vh;
+            }
+
+            .login-card {
+                width: 100%;
+                max-width: 400px;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="login-card">
+            <article>
+                <header>
+                    <h1>Nova Hub</h1>
+                    <p>BBS Inter-League Routing</p>
+                </header>
+
+                {% if error %}
+                <div
+                    style="
+                        background: rgba(220, 38, 38, 0.1);
+                        padding: 1rem;
+                        border-radius: 0.5rem;
+                        margin-bottom: 1rem;
+                    "
+                >
+                    {{ error }}
+                </div>
+                {% endif %}
+
+                <form method="POST" action="/login">
+                    <label for="username">
+                        Username
+                        <input
+                            type="text"
+                            id="username"
+                            name="username"
+                            required
+                            autofocus
+                        />
+                    </label>
+
+                    <label for="password">
+                        Password
+                        <input
+                            type="password"
+                            id="password"
+                            name="password"
+                            required
+                        />
+                    </label>
+
+                    <button type="submit">Login</button>
+                </form>
+
+                <footer>
+                    <small
+                        >Nova Hub - Barren Realms Elite & Falcons Eye
+                        Router</small
+                    >
+                </footer>
+            </article>
+        </div>
+    </body>
+</html>

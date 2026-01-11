@@ -1,0 +1,69 @@
+<!-- templates/admin/user_form.html -->
+{% extends "base.html" %} {% block title %}{% if user %}Edit{% else %}New{%
+endif %} User - Nova Hub{% endblock %} {% block breadcrumb %}
+<nav class="breadcrumb">
+    <ol>
+        <li><a href="/dashboard">Dashboard</a></li>
+        <li><a href="/admin">Admin</a></li>
+        <li><a href="/admin/users">Users</a></li>
+        <li>{% if user %}Edit{% else %}New{% endif %}</li>
+    </ol>
+</nav>
+{% endblock %} {% block content %}
+<h1>{% if user %}Edit{% else %}New{% endif %} User</h1>
+
+<article>
+    <form method="POST" action="{% if user %}/admin/users/{{ user.id }}/edit{% else %}/admin/users/new{% endif %}">
+        <label for="username">
+            Username
+            <input
+                type="text"
+                id="username"
+                name="username"
+                value="{{ user.username if user else '' }}"
+                required
+            />
+        </label>
+
+        <label for="password">
+            Password {% if user %}<small>(leave blank to keep current)</small>{%
+            endif %}
+            <input
+                type="password"
+                id="password"
+                name="password"
+                {%
+                if
+                not
+                user
+                %}required{%
+                endif
+                %}
+            />
+        </label>
+
+        <label for="is_admin">
+            <input
+                type="checkbox"
+                id="is_admin"
+                name="is_admin"
+                {%
+                if
+                user
+                and
+                user.is_admin
+                %}checked{%
+                endif
+                %}
+            />
+            Administrator
+        </label>
+
+        <button type="submit">
+            {% if user %}Update{% else %}Create{% endif %} User
+        </button>
+        <a href="/admin/users" role="button" class="secondary">Cancel</a>
+    </form>
+</article>
+
+{% endblock %}

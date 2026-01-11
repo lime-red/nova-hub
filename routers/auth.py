@@ -6,7 +6,7 @@ from typing import Optional
 import bcrypt
 import toml
 from fastapi import APIRouter, Depends, Form, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
@@ -62,49 +62,42 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     return encoded_jwt
 
 
-@router.post("/token")
+@router.post("/token", summary="Get Access Token")
 async def login_for_access_token(
-    grant_type: str = Form(...),
-    client_id: Optional[str] = Form(None),
-    client_secret: Optional[str] = Form(None),
-    username: Optional[str] = Form(None),
-    password: Optional[str] = Form(None),
+    grant_type: str = Form(..., description="Must be 'client_credentials'"),
+    client_id: str = Form(..., description="Your client ID provided by the hub administrator"),
+    client_secret: str = Form(..., description="Your client secret provided by the hub administrator"),
     db: Session = Depends(get_db),
 ):
     """
     OAuth2 token endpoint for client authentication
 
-    Supports both grant types:
-    - client_credentials: Send grant_type=client_credentials, client_id, and client_secret
-    - password: Send grant_type=password, username (as client_id), and password (as client_secret)
+    **Grant Type:** client_credentials
+
+    **Form Parameters:**
+    - `grant_type`: Must be "client_credentials"
+    - `client_id`: Your client ID
+    - `client_secret`: Your client secret
+
+    **Returns:** Access token valid for 24 hours
+
+    **Example:**
+    ```bash
+    curl -X POST "https://hub.example.com/auth/token" \\
+      -d "grant_type=client_credentials" \\
+      -d "client_id=your_client_id" \\
+      -d "client_secret=your_secret"
+    ```
     """
     # Validate grant type
-    if grant_type not in ["client_credentials", "password"]:
+    if grant_type != "client_credentials":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Unsupported grant_type. Use 'client_credentials' or 'password'",
+            detail="Unsupported grant_type. Only 'client_credentials' is supported",
         )
 
-    # Extract credentials based on grant type
-    if grant_type == "client_credentials":
-        if not client_id or not client_secret:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="client_id and client_secret are required for client_credentials grant",
-            )
-        cred_id = client_id
-        cred_secret = client_secret
-    else:  # password grant
-        if not username or not password:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="username and password are required for password grant",
-            )
-        cred_id = username
-        cred_secret = password
-
     # Verify credentials
-    client = verify_client_credentials(cred_id, cred_secret, db)
+    client = verify_client_credentials(client_id, client_secret, db)
 
     if not client:
         raise HTTPException(
@@ -160,12 +153,20 @@ async def get_current_client(
     return client
 
 
-@router.get("/verify")
+@router.get("/verify", summary="Verify Access Token")
 async def verify_token(current_client: Client = Depends(get_current_client)):
     """
-    Verify token and return client information
+    Verify your access token and get client information
 
-    Useful for testing authentication
+    **Requires:** Valid Bearer token in Authorization header
+
+    **Returns:** Client details if token is valid
+
+    **Example:**
+    ```bash
+    curl -X GET "https://hub.example.com/auth/verify" \\
+      -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+    ```
     """
     return {
         "client_id": current_client.client_id,

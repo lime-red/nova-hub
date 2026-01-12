@@ -8,6 +8,9 @@ from pathlib import Path
 
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
+from app.logging_config import get_logger
+
+logger = get_logger(context="watcher")
 
 class PacketWatcher(FileSystemEventHandler):
     """
@@ -55,7 +58,7 @@ class PacketWatcher(FileSystemEventHandler):
         try:
             # Check if file still exists (may have been moved by processing service)
             if not filepath.exists():
-                print(f"[Watcher] File {filename} already processed by main processing service")
+                logger.debug(f"File {filename} already processed by main processing service")
                 return
 
             # Wait for file to be completely written
@@ -64,14 +67,14 @@ class PacketWatcher(FileSystemEventHandler):
 
             # Verify file still exists and is stable (size hasn't changed)
             if not filepath.exists():
-                print(f"[Watcher] File {filename} was moved during processing")
+                logger.debug(f"File {filename} was moved during processing")
                 return
 
             size1 = filepath.stat().st_size
             await asyncio.sleep(1)
 
             if not filepath.exists():
-                print(f"[Watcher] File {filename} was moved during processing")
+                logger.debug(f"File {filename} was moved during processing")
                 return
 
             size2 = filepath.stat().st_size
@@ -86,12 +89,12 @@ class PacketWatcher(FileSystemEventHandler):
             packet_info = parse_packet_filename(filename)
 
             if not packet_info:
-                print(f"[Watcher] Skipping {filename} - invalid packet filename format")
+                logger.warning(f"Skipping {filename} - invalid packet filename format")
                 return
 
             # Final check before reading
             if not filepath.exists():
-                print(f"[Watcher] File {filename} was moved before reading")
+                logger.debug(f"File {filename} was moved before reading")
                 return
 
             # Read file for hash
@@ -120,7 +123,7 @@ class PacketWatcher(FileSystemEventHandler):
             ).first()
 
             if not league:
-                print(f"[Watcher] Warning: No league found for {filename} (league {packet_info['league_id']}, game {packet_info['game_type']})")
+                logger.warning(f"No league found for {filename} (league {packet_info['league_id']}, game {packet_info['game_type']})")
                 # Move it back or handle appropriately
                 dest_path.rename(filepath)
                 return
@@ -141,13 +144,13 @@ class PacketWatcher(FileSystemEventHandler):
             self.packet_service.db.add(packet)
             self.packet_service.db.commit()
 
-            print(f"[Watcher] Registered hub-generated packet: {normalized_filename}")
+            logger.info(f"Registered hub-generated packet: {normalized_filename}")
 
         except FileNotFoundError:
             # File was moved by processing service - this is normal during automated processing
-            print(f"[Watcher] File {filename} was moved by processing service (race condition resolved)")
+            logger.debug(f"File {filename} was moved by processing service (race condition resolved)")
         except Exception as e:
-            print(f"[Watcher] Error processing {filename}: {e}")
+            logger.error(f"Error processing {filename}: {e}")
         finally:
             self.processing_files.discard(filename)
 
@@ -172,7 +175,7 @@ class WatcherService:
         import platform
 
         if platform.system() == 'Windows':
-            print("WARNING: File watcher not yet implemented for Windows")
+            logger.warning("File watcher not yet implemented for Windows")
             return
 
         # Iterate through all league configurations to find outbound folders
@@ -213,9 +216,9 @@ class WatcherService:
                     watched_count += 1
 
         if watched_count > 0:
-            print(f"[Watcher] Started monitoring {watched_count} outbound directory/directories for hub-generated packets")
+            logger.info(f"Started monitoring {watched_count} outbound directory/directories for hub-generated packets")
         else:
-            print("[Watcher] WARNING: No outbound folders configured to watch")
+            logger.warning("No outbound folders configured to watch")
 
     def _start_observer(self, path: Path, game_type: str):
         """Start observer for specific directory"""
@@ -224,7 +227,7 @@ class WatcherService:
         observer.schedule(handler, str(path), recursive=False)
         observer.start()
         self.observers.append(observer)
-        print(f"[Watcher] Monitoring {game_type}: {path}")
+        logger.info(f"Monitoring {game_type}: {path}")
 
         # Process any existing files in the directory
         self._process_existing_files(path, handler)
@@ -234,14 +237,14 @@ class WatcherService:
         try:
             existing_files = [f for f in path.glob("*") if f.is_file()]
             if existing_files:
-                print(f"[Watcher] Found {len(existing_files)} existing file(s) in {path}")
+                logger.info(f"Found {len(existing_files)} existing file(s) in {path}")
                 for filepath in existing_files:
                     if handler._is_packet_file(filepath.name):
-                        print(f"[Watcher] Processing existing packet: {filepath.name}")
+                        logger.debug(f"Processing existing packet: {filepath.name}")
                         # Process the existing file
                         await handler._process_new_packet(filepath)
         except Exception as e:
-            print(f"[Watcher] Error scanning existing files in {path}: {e}")
+            logger.error(f"Error scanning existing files in {path}: {e}")
 
     def _process_existing_files(self, path: Path, handler: PacketWatcher):
         """Schedule processing of existing files"""
@@ -266,4 +269,4 @@ class WatcherService:
         for observer in self.observers:
             observer.stop()
             observer.join()
-        print("[Watcher] Stopped all file watchers")
+        logger.info("Stopped all file watchers")

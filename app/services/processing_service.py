@@ -12,9 +12,12 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.database import League, Packet, ProcessingRun, SessionLocal
+from app.logging_config import get_logger
 from app.services.dosemu_runner import DosemuRunner
 from app.services.packet_service import parse_packet_filename
 from app.services.sequence_validator import SequenceValidator
+
+logger = get_logger(context="processing")
 
 # Global lock for processing
 _processing_lock = threading.Lock()
@@ -50,7 +53,7 @@ def trigger_processing():
 
     # Don't start multiple processing tasks
     if _processing_task and not _processing_task.done():
-        print("[Processing] Task already running, skipping")
+        logger.debug("Task already running, skipping")
         return
 
     try:
@@ -58,26 +61,26 @@ def trigger_processing():
         loop = asyncio.get_event_loop()
         # Create new task
         _processing_task = loop.create_task(process_batch())
-        print("[Processing] Background processing task started")
+        logger.debug("Background processing task started")
     except RuntimeError as e:
-        print(f"[Processing] Failed to start task: {e}")
+        logger.warning(f"Failed to start task: {e}")
         # Fallback: try to get running loop
         try:
             loop = asyncio.get_running_loop()
             _processing_task = loop.create_task(process_batch())
-            print("[Processing] Background processing task started (running loop)")
+            logger.debug("Background processing task started (running loop)")
         except Exception as e2:
-            print(f"[Processing] Failed to start task (fallback): {e2}")
+            logger.error(f"Failed to start task (fallback): {e2}")
 
 
 async def process_batch():
     """Main processing batch - runs asynchronously"""
 
-    print("[Processing] process_batch() called")
+    logger.debug("process_batch() called")
 
     # Try to acquire lock (non-blocking)
     if not _processing_lock.acquire(blocking=False):
-        print("[Processing] Already running, skipping")
+        logger.debug("Already running, skipping")
         return
 
     try:
@@ -89,15 +92,11 @@ async def process_batch():
             processor = ProcessingService(db, config)
             await processor.process_batch()
         except Exception as e:
-            print(f"[Processing] Error in process_batch: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.exception(f"Error in process_batch: {e}")
         finally:
             db.close()
     except Exception as e:
-        print(f"[Processing] Fatal error in process_batch: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.exception(f"Fatal error in process_batch: {e}")
     finally:
         _processing_lock.release()
 
@@ -117,16 +116,16 @@ class ProcessingService:
 
     async def process_batch(self):
         """Process all unprocessed packets"""
-        print("[Processing] Starting batch...")
+        logger.info("Starting batch...")
 
         # Get unprocessed packets
         packets = self.db.query(Packet).filter(Packet.processed_at == None).all()
 
         if not packets:
-            print("[Processing] No packets to process")
+            logger.info("No packets to process")
             return
 
-        print(f"[Processing] Found {len(packets)} packet(s) to process")
+        logger.info(f"Found {len(packets)} packet(s) to process")
 
         # Group by game type (stored as single letter: B or F)
         bre_packets = [p for p in packets if self.get_game_type(p) == "B"]
@@ -143,14 +142,14 @@ class ProcessingService:
         try:
             # Process BRE
             if bre_packets:
-                print(f"[Processing] Processing {len(bre_packets)} BRE packet(s)")
+                logger.info(f"Processing {len(bre_packets)} BRE packet(s)")
                 results["BRE"] = await self.process_game_batch(
                     "BRE", bre_packets, run.id
                 )
 
             # Process FE
             if fe_packets:
-                print(f"[Processing] Processing {len(fe_packets)} FE packet(s)")
+                logger.info(f"Processing {len(fe_packets)} FE packet(s)")
                 results["FE"] = await self.process_game_batch("FE", fe_packets, run.id)
 
             # Update run status
@@ -163,7 +162,7 @@ class ProcessingService:
             run.dosemu_log = "\n\n".join(outputs)
 
         except Exception as e:
-            print(f"[Processing] Error: {e}")
+            logger.error(f"Error: {e}")
             run.completed_at = datetime.now()
             run.status = "error"
             run.error_message = str(e)
@@ -174,7 +173,7 @@ class ProcessingService:
         validator = SequenceValidator(self.db)
         validator.check_sequences()
 
-        print("[Processing] Batch complete")
+        logger.info("Batch complete")
 
         # Broadcast update via WebSocket
         from app.services.websocket_service import broadcast_processing_complete
@@ -218,15 +217,15 @@ class ProcessingService:
             if game_inbound_folder and game_outbound_folder:
                 game_inbound_dir = Path(game_inbound_folder)
                 game_outbound_dir = Path(game_outbound_folder)
-                print(f"[Processing] Using game folders from config: {game_inbound_dir}, {game_outbound_dir}")
+                logger.debug(f"Using game folders from config: {game_inbound_dir}, {game_outbound_dir}")
             else:
                 # Fallback to default paths
                 drive_path = Path(data_dir) / "dosemu" / league_id / game_type.lower()
                 game_inbound_dir = drive_path / "inbound"
                 game_outbound_dir = drive_path / "outbound"
-                print(f"[Processing] Using default game folders: {game_inbound_dir}, {game_outbound_dir}")
+                logger.debug(f"Using default game folders: {game_inbound_dir}, {game_outbound_dir}")
         except Exception as e:
-            print(f"[Processing] Error getting game folders from config: {e}, using defaults")
+            logger.warning(f"Error getting game folders from config: {e}, using defaults")
             drive_path = Path(data_dir) / "dosemu" / league_id / game_type.lower()
             game_inbound_dir = drive_path / "inbound"
             game_outbound_dir = drive_path / "outbound"
@@ -242,17 +241,17 @@ class ProcessingService:
                 if src:
                     dst = game_inbound_dir / packet.filename
                     shutil.copy2(src, dst)
-                    print(f"[Processing] Copied: {src.name} -> {dst}")
+                    logger.debug(f"Copied: {src.name} -> {dst}")
                 else:
-                    print(f"[Processing] Source file not found in hub inbound: {packet.filename}")
+                    logger.warning(f"Source file not found in hub inbound: {packet.filename}")
 
             # Step 2: Run dosemu
-            print(f"[Processing] Running {game_type} for league {league_id} via Dosemu...")
+            logger.info(f"Running {game_type} for league {league_id} via Dosemu...")
             dosemu_result = await self.dosemu_runner.run_game_process(game_type, league_id)
 
             if dosemu_result["status"] != "success":
-                print(
-                    f"[Processing] Dosemu error: {dosemu_result.get('error', 'Unknown')}"
+                logger.error(
+                    f"Dosemu error: {dosemu_result.get('error', 'Unknown')}"
                 )
                 return dosemu_result
 
@@ -269,9 +268,9 @@ class ProcessingService:
                 if src:
                     dst = hub_processed_dir / src.name
                     src.rename(dst)
-                    print(f"[Processing] Archived to hub processed: {src.name}")
+                    logger.info(f"Archived to hub processed: {src.name}")
                 else:
-                    print(f"[Processing] Could not find file in hub inbound to archive: {packet.filename}")
+                    logger.warning(f"Could not find file in hub inbound to archive: {packet.filename}")
 
             self.db.commit()
 
@@ -282,12 +281,12 @@ class ProcessingService:
             for f in game_inbound_dir.glob("*"):
                 if f.is_file():
                     f.unlink()
-                    print(f"[Processing] Cleaned up game inbound: {f.name}")
+                    logger.debug(f"Cleaned up game inbound: {f.name}")
 
             return dosemu_result
 
         except Exception as e:
-            print(f"[Processing] Error processing {game_type}: {e}")
+            logger.error(f"Error processing {game_type}: {e}")
             return {"status": "error", "error": str(e)}
 
     async def collect_outbound_packets(
@@ -354,7 +353,7 @@ class ProcessingService:
                 if existing_file:
                     # Overwrite old file (sequence wraparound case)
                     existing_file.unlink()
-                    print(f"[Processing] Overwriting old outbound file: {existing_file.name}")
+                    logger.debug(f"Overwriting old outbound file: {existing_file.name}")
 
                 dest = hub_outbound_dir / normalized_filename
                 packet_file.rename(dest)
@@ -378,7 +377,7 @@ class ProcessingService:
                     existing.processed_at = datetime.now()
                     existing.is_downloaded = False  # Reset so clients see it as new
                     existing.downloaded_at = None
-                    print(f"[Processing] Updated outbound packet: {normalized_filename} (seq: {packet_info['sequence_number']})")
+                    logger.info(f"Updated outbound packet: {normalized_filename} (seq: {packet_info['sequence_number']})")
                 else:
                     # Create new packet record
                     packet = Packet(
@@ -394,7 +393,7 @@ class ProcessingService:
                         processed_at=datetime.now(),
                     )
                     self.db.add(packet)
-                    print(f"[Processing] Collected outbound: {normalized_filename}")
+                    logger.info(f"Collected outbound: {normalized_filename}")
 
                 self.db.commit()
 
@@ -406,7 +405,7 @@ class ProcessingService:
                 await broadcast_packet_available(normalized_filename, packet_info["dest_bbs_index"])
 
             except Exception as e:
-                print(f"[Processing] Error collecting {packet_file.name}: {e}")
+                logger.error(f"Error collecting {packet_file.name}: {e}")
 
     async def handle_nodelist_file(self, nodelist_file: Path, game_type: str):
         """
@@ -420,7 +419,7 @@ class ProcessingService:
         elif filename_upper.startswith("FENODES."):
             league_id = filename_upper[8:]  # Skip "FENODES."
         else:
-            print(f"[Processing] Invalid nodelist filename: {nodelist_file.name}")
+            logger.warning(f"Invalid nodelist filename: {nodelist_file.name}")
             return
 
         # Create nodelists directory structure: data_dir/nodelists/<game_type>/<league_id>/
@@ -436,10 +435,10 @@ class ProcessingService:
         if existing_file and existing_file != dest:
             # Remove old version with different case
             existing_file.unlink()
-            print(f"[Processing] Removed old nodelist: {existing_file.name}")
+            logger.info(f"Removed old nodelist: {existing_file.name}")
 
         nodelist_file.rename(dest)
-        print(f"[Processing] Updated nodelist: {dest.name} for league {league_id}")
+        logger.info(f"Updated nodelist: {dest.name} for league {league_id}")
 
         # Broadcast nodelist update via WebSocket
         from app.services.websocket_service import broadcast_nodelist_available
@@ -447,4 +446,4 @@ class ProcessingService:
         try:
             await broadcast_nodelist_available(league_id, game_type)
         except Exception as e:
-            print(f"[Processing] Could not broadcast nodelist update: {e}")
+            logger.error(f"Could not broadcast nodelist update: {e}")

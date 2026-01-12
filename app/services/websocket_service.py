@@ -5,6 +5,9 @@ import json
 from typing import Dict, Set
 
 from fastapi import WebSocket
+from app.logging_config import get_logger
+
+logger = get_logger(context="websocket")
 
 # Connected clients
 _connections: Set[WebSocket] = set()
@@ -21,7 +24,7 @@ async def connect(websocket: WebSocket, client_bbs_index: str = None):
             _client_connections[client_bbs_index] = set()
         _client_connections[client_bbs_index].add(websocket)
 
-    print(f"[WebSocket] Client connected (total: {len(_connections)})")
+    logger.debug(f"Client connected (total: {len(_connections)})")
 
 
 async def disconnect(websocket: WebSocket, client_bbs_index: str = None):
@@ -33,7 +36,7 @@ async def disconnect(websocket: WebSocket, client_bbs_index: str = None):
         if not _client_connections[client_bbs_index]:
             del _client_connections[client_bbs_index]
 
-    print(f"[WebSocket] Client disconnected (total: {len(_connections)})")
+    logger.debug(f"Client disconnected (total: {len(_connections)})")
 
 
 async def broadcast(message: dict):
@@ -49,7 +52,7 @@ async def broadcast(message: dict):
         try:
             await ws.send_text(message_json)
         except Exception as e:
-            print(f"[WebSocket] Error sending to client: {e}")
+            logger.error(f"Error sending to client: {e}")
             disconnected.add(ws)
 
     # Clean up disconnected clients
@@ -69,7 +72,7 @@ async def send_to_client(bbs_index: str, message: dict):
         try:
             await ws.send_text(message_json)
         except Exception as e:
-            print(f"[WebSocket] Error sending to client {bbs_index}: {e}")
+            logger.error(f"Error sending to client {bbs_index}: {e}")
             disconnected.add(ws)
 
     # Clean up disconnected clients

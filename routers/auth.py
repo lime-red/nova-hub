@@ -11,6 +11,9 @@ from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
 from app.database import Client, get_db
+from app.logging_config import get_logger
+
+logger = get_logger(context="auth")
 
 # Load configuration
 config = toml.load("config.toml")
@@ -111,9 +114,9 @@ async def login_for_access_token(
     db.commit()
 
     # Create token
-    print(f"[Auth] Creating token for client_id: {client.client_id}")
+    logger.debug(f"Creating token for client_id: {client.client_id}")
     access_token = create_access_token(data={"sub": client.client_id})
-    print(f"[Auth] Token created successfully")
+    logger.info("Token created successfully")
 
     return {"access_token": access_token, "token_type": "bearer"}
 
@@ -130,26 +133,26 @@ async def get_current_client(
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         client_id: str = payload.get("sub")
-        print(f"[Auth] Token decoded - client_id: {client_id}")
+        logger.debug(f"Token decoded - client_id: {client_id}")
         if client_id is None:
-            print("[Auth] ERROR: No 'sub' claim in token")
+            logger.warning("No 'sub' claim in token")
             raise credentials_exception
     except JWTError as e:
-        print(f"[Auth] ERROR: JWT decode failed: {e}")
+        logger.warning(f"JWT decode failed: {e}")
         raise credentials_exception
 
     client = db.query(Client).filter(Client.client_id == client_id).first()
     if client is None:
-        print(f"[Auth] ERROR: Client not found in database: {client_id}")
+        logger.warning(f"Client not found in database: {client_id}")
         raise credentials_exception
 
     if not client.is_active:
-        print(f"[Auth] ERROR: Client is inactive: {client_id}")
+        logger.warning(f"Client is inactive: {client_id}")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Client is inactive"
         )
 
-    print(f"[Auth] SUCCESS: Client authenticated: {client_id}")
+    logger.info(f"Client authenticated: {client_id}")
     return client
 
 

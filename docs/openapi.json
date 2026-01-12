@@ -1,0 +1,2096 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Nova Hub",
+    "description": "\n# Nova Hub - BBS Inter-League Routing System\n\nModern routing hub for Solar Realms games: Barren Realms Elite (BRE) and Falcons Eye (FE).\n\n## Features\n\n- **Packet Routing**: Hub-and-spoke routing for BBS door game leagues\n- **OAuth Authentication**: Secure client authentication for packet transfer\n- **Real-time Updates**: WebSocket support for live dashboard updates\n- **Sequence Validation**: Automatic detection of missing packets\n- **Web Interface**: Comprehensive sysop dashboard\n\n## Authentication\n\nAPI endpoints require OAuth 2.0 client credentials flow.\n\n1. Obtain client credentials from hub administrator\n2. Request token: `POST /auth/token` with `client_id` and `client_secret`\n3. Use token in `Authorization: Bearer <token>` header\n\n## Packet Naming\n\nPackets follow the format: `<league><game><source><dest>.<seq>`\n\n- **league**: 3-digit league number (e.g., 555)\n- **game**: B (BRE) or F (FE)\n- **source**: 2-digit hex BBS index (e.g., 02)\n- **dest**: 2-digit hex BBS index (e.g., 01)\n- **seq**: 3-digit sequence number (000-999, wraps)\n\nExample: `555B0201.001` = BRE League 555, from BBS 02 to BBS 01, sequence 1\n\n## WebSocket Events\n\nConnect to `/ws/dashboard` for real-time updates:\n\n- `packet_received` - New packet uploaded\n- `processing_started` - Batch processing started\n- `processing_complete` - Processing finished\n- `stats_update` - Dashboard statistics updated\n- `alert_created` - New sequence gap detected\n    ",
+    "contact": {
+      "name": "Nova Hub",
+      "url": "https://github.com/yourusername/nova-hub"
+    },
+    "license": {
+      "name": "MIT"
+    },
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/auth/token": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Get Access Token",
+        "description": "OAuth2 token endpoint for client authentication\n\n**Grant Type:** client_credentials\n\n**Form Parameters:**\n- `grant_type`: Must be \"client_credentials\"\n- `client_id`: Your client ID\n- `client_secret`: Your client secret\n\n**Returns:** Access token valid for 24 hours\n\n**Example:**\n```bash\ncurl -X POST \"https://hub.example.com/auth/token\" \\\n  -d \"grant_type=client_credentials\" \\\n  -d \"client_id=your_client_id\" \\\n  -d \"client_secret=your_secret\"\n```",
+        "operationId": "login_for_access_token_auth_token_post",
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_login_for_access_token_auth_token_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/verify": {
+      "get": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Verify Access Token",
+        "description": "Verify your access token and get client information\n\n**Requires:** Valid Bearer token in Authorization header\n\n**Returns:** Client details if token is valid\n\n**Example:**\n```bash\ncurl -X GET \"https://hub.example.com/auth/verify\" \\\n  -H \"Authorization: Bearer YOUR_ACCESS_TOKEN\"\n```",
+        "operationId": "verify_token_auth_verify_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/leagues/{league_id}/packets/{filename}": {
+      "put": {
+        "tags": [
+          "Packets"
+        ],
+        "summary": "Upload Packet",
+        "description": "Upload a game packet to the hub using PUT with raw body\n\n**Path Parameters:**\n- `league_id`: League identifier with game type (e.g., \"555B\" for BRE, \"555F\" for FE)\n- `filename`: Packet filename (e.g., \"555B0201.001\")\n\n**Request Body:** Raw file data (application/octet-stream)\n\n**Packet Filename Format:** `<league><game><source><dest>.<seq>`\n- League: 3 digits (e.g., 555)\n- Game: B (BRE) or F (FE)\n- Source: 2-digit hex BBS index (e.g., 02)\n- Dest: 2-digit hex BBS index (e.g., 01)\n- Seq: 3-digit sequence (000-999)\n\n**Example:** `555B0201.001` = BRE League 555, from BBS 02 to BBS 01, seq 1\n\n**Authentication:** Requires Bearer token\n\n**Example:**\n```bash\ncurl -X PUT \"https://hub.example.com/api/v1/leagues/555B/packets/555B0201.001\" \\\n  -H \"Authorization: Bearer YOUR_TOKEN\" \\\n  -H \"Content-Type: application/octet-stream\" \\\n  --data-binary \"@555B0201.001\"\n```",
+        "operationId": "upload_packet_api_v1_leagues__league_id__packets__filename__put",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "league_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{3}[BF]$",
+              "title": "League Id"
+            }
+          },
+          {
+            "name": "filename",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Filename"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Packets"
+        ],
+        "summary": "Download Packet",
+        "description": "Download a specific packet file\n\n**Path Parameters:**\n- `league_id`: League identifier with game type (e.g., \"555B\" for BRE, \"555F\" for FE)\n- `filename`: Packet filename (e.g., \"555B0102.001\")\n\n**Returns:** Binary packet file\n\n**Description:**\nDownloads a packet that is destined for your BBS. The packet is automatically\nmarked as downloaded after successful retrieval.\n\n**Authentication:** Requires Bearer token and authorization for destination BBS\n\n**Example:**\n```bash\ncurl -X GET \"https://hub.example.com/api/v1/leagues/555B/packets/555B0102.001\" \\\n  -H \"Authorization: Bearer YOUR_TOKEN\" \\\n  -o 555B0102.001\n```",
+        "operationId": "download_packet_api_v1_leagues__league_id__packets__filename__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "league_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{3}[BF]$",
+              "title": "League Id"
+            }
+          },
+          {
+            "name": "filename",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Filename"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/leagues/{league_id}/packets": {
+      "get": {
+        "tags": [
+          "Packets"
+        ],
+        "summary": "List Available Packets",
+        "description": "List packets available for download by this client\n\n**Path Parameters:**\n- `league_id`: League identifier with game type (e.g., \"555B\" for BRE, \"555F\" for FE)\n\n**Query Parameters:**\n- `unread`: Set to `true` to only show packets not yet downloaded (default: false)\n\n**Returns:** List of packets destined for this client's BBS\n\n**Authentication:** Requires Bearer token\n\n**Example:**\n```bash\n# Get all packets\ncurl -X GET \"https://hub.example.com/api/v1/leagues/555B/packets\" \\\n  -H \"Authorization: Bearer YOUR_TOKEN\"\n\n# Get only unread packets\ncurl -X GET \"https://hub.example.com/api/v1/leagues/555B/packets?unread=true\" \\\n  -H \"Authorization: Bearer YOUR_TOKEN\"\n```",
+        "operationId": "list_packets_api_v1_leagues__league_id__packets_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "league_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{3}[BF]$",
+              "title": "League Id"
+            }
+          },
+          {
+            "name": "unread",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Filter to only unread (not downloaded) packets",
+              "default": false,
+              "title": "Unread"
+            },
+            "description": "Filter to only unread (not downloaded) packets"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/leagues/{league_id}/nodelist": {
+      "get": {
+        "tags": [
+          "Packets"
+        ],
+        "summary": "Download Nodelist",
+        "description": "Download the latest nodelist file for a league\n\n**Path Parameters:**\n- `league_id`: League identifier with game type (e.g., \"555B\" for BRE, \"555F\" for FE)\n\n**Returns:** Binary nodelist file (BRNODES.xxx or FENODES.xxx)\n\n**Description:**\nThe nodelist contains information about all BBS nodes in the league.\nThese files are generated by the hub and should be placed in your game directory.\n\n**Authentication:** Requires Bearer token and league membership\n\n**Example:**\n```bash\ncurl -X GET \"https://hub.example.com/api/v1/leagues/555B/nodelist\" \\\n  -H \"Authorization: Bearer YOUR_TOKEN\" \\\n  -o BRNODES.555\n```",
+        "operationId": "download_nodelist_api_v1_leagues__league_id__nodelist_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "league_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{3}[BF]$",
+              "title": "League Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/login": {
+      "get": {
+        "tags": [
+          "Web Interface"
+        ],
+        "summary": "Login Page",
+        "description": "Login page",
+        "operationId": "login_page_login_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Web Interface"
+        ],
+        "summary": "Login",
+        "description": "Process login",
+        "operationId": "login_login_post",
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_login_login_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/logout": {
+      "get": {
+        "tags": [
+          "Web Interface"
+        ],
+        "summary": "Logout",
+        "description": "Logout",
+        "operationId": "logout_logout_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/change-password": {
+      "get": {
+        "tags": [
+          "Web Interface"
+        ],
+        "summary": "Change Password Form",
+        "description": "Change password form",
+        "operationId": "change_password_form_change_password_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Web Interface"
+        ],
+        "summary": "Change Password",
+        "description": "Change password",
+        "operationId": "change_password_change_password_post",
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_change_password_change_password_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/": {
+      "get": {
+        "tags": [
+          "Web Interface"
+        ],
+        "summary": "Root",
+        "description": "Redirect to dashboard",
+        "operationId": "root__get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/dashboard": {
+      "get": {
+        "tags": [
+          "Web Interface"
+        ],
+        "summary": "Dashboard",
+        "description": "Dashboard page",
+        "operationId": "dashboard_dashboard_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/clients": {
+      "get": {
+        "tags": [
+          "Web Interface"
+        ],
+        "summary": "Clients List",
+        "description": "Clients list page",
+        "operationId": "clients_list_clients_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/clients/{client_id}": {
+      "get": {
+        "tags": [
+          "Web Interface"
+        ],
+        "summary": "Client Detail",
+        "description": "Client detail page",
+        "operationId": "client_detail_clients__client_id__get",
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Client Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/processing": {
+      "get": {
+        "tags": [
+          "Web Interface"
+        ],
+        "summary": "Processing Runs",
+        "description": "Processing runs list page",
+        "operationId": "processing_runs_processing_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/processing/{run_id}": {
+      "get": {
+        "tags": [
+          "Web Interface"
+        ],
+        "summary": "Processing Run Detail",
+        "description": "Processing run detail page",
+        "operationId": "processing_run_detail_processing__run_id__get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/alerts": {
+      "get": {
+        "tags": [
+          "Web Interface"
+        ],
+        "summary": "Alerts Page",
+        "description": "Alerts page",
+        "operationId": "alerts_page_alerts_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/alerts/{alert_id}/resolve": {
+      "post": {
+        "tags": [
+          "Web Interface"
+        ],
+        "summary": "Resolve Alert",
+        "description": "Mark alert as resolved",
+        "operationId": "resolve_alert_alerts__alert_id__resolve_post",
+        "parameters": [
+          {
+            "name": "alert_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Alert Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/processing/runs": {
+      "get": {
+        "tags": [
+          "Web Interface"
+        ],
+        "summary": "Admin Processing Runs",
+        "description": "View processing runs and logs",
+        "operationId": "admin_processing_runs_admin_processing_runs_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/processing/trigger": {
+      "post": {
+        "tags": [
+          "Web Interface"
+        ],
+        "summary": "Admin Trigger Processing",
+        "description": "Manually trigger packet processing",
+        "operationId": "admin_trigger_processing_admin_processing_trigger_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin": {
+      "get": {
+        "tags": [
+          "Web Interface"
+        ],
+        "summary": "Admin Page",
+        "description": "Admin home - redirect to users",
+        "operationId": "admin_page_admin_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/users": {
+      "get": {
+        "tags": [
+          "Web Interface"
+        ],
+        "summary": "Admin Users",
+        "description": "Admin users page",
+        "operationId": "admin_users_admin_users_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/users/new": {
+      "get": {
+        "tags": [
+          "Web Interface"
+        ],
+        "summary": "Admin Users New",
+        "description": "New user form",
+        "operationId": "admin_users_new_admin_users_new_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Web Interface"
+        ],
+        "summary": "Admin Users Create",
+        "description": "Create new user",
+        "operationId": "admin_users_create_admin_users_new_post",
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_admin_users_create_admin_users_new_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/users/{user_id}/edit": {
+      "get": {
+        "tags": [
+          "Web Interface"
+        ],
+        "summary": "Admin Users Edit",
+        "description": "Edit user form",
+        "operationId": "admin_users_edit_admin_users__user_id__edit_get",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Web Interface"
+        ],
+        "summary": "Admin Users Update",
+        "description": "Update user",
+        "operationId": "admin_users_update_admin_users__user_id__edit_post",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_admin_users_update_admin_users__user_id__edit_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/users/{user_id}/delete": {
+      "get": {
+        "tags": [
+          "Web Interface"
+        ],
+        "summary": "Admin Users Delete",
+        "description": "Delete user",
+        "operationId": "admin_users_delete_admin_users__user_id__delete_get",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/clients": {
+      "get": {
+        "tags": [
+          "Web Interface"
+        ],
+        "summary": "Admin Clients",
+        "description": "Admin clients page",
+        "operationId": "admin_clients_admin_clients_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/clients/new": {
+      "get": {
+        "tags": [
+          "Web Interface"
+        ],
+        "summary": "Admin Clients New",
+        "description": "New client form",
+        "operationId": "admin_clients_new_admin_clients_new_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Web Interface"
+        ],
+        "summary": "Admin Clients Create",
+        "description": "Create new client",
+        "operationId": "admin_clients_create_admin_clients_new_post",
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_admin_clients_create_admin_clients_new_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/clients/{client_id}/edit": {
+      "get": {
+        "tags": [
+          "Web Interface"
+        ],
+        "summary": "Admin Clients Edit",
+        "description": "Edit client form",
+        "operationId": "admin_clients_edit_admin_clients__client_id__edit_get",
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Client Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Web Interface"
+        ],
+        "summary": "Admin Clients Update",
+        "description": "Update client",
+        "operationId": "admin_clients_update_admin_clients__client_id__edit_post",
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Client Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_admin_clients_update_admin_clients__client_id__edit_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/clients/{client_id}/config": {
+      "get": {
+        "tags": [
+          "Web Interface"
+        ],
+        "summary": "Admin Clients Show Config",
+        "description": "Show client configuration",
+        "operationId": "admin_clients_show_config_admin_clients__client_id__config_get",
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Client Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/clients/{client_id}/regenerate-secret": {
+      "get": {
+        "tags": [
+          "Web Interface"
+        ],
+        "summary": "Admin Clients Regenerate Secret",
+        "description": "Regenerate client secret",
+        "operationId": "admin_clients_regenerate_secret_admin_clients__client_id__regenerate_secret_get",
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Client Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/clients/{client_id}/delete": {
+      "get": {
+        "tags": [
+          "Web Interface"
+        ],
+        "summary": "Admin Clients Delete",
+        "description": "Delete client",
+        "operationId": "admin_clients_delete_admin_clients__client_id__delete_get",
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Client Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/leagues": {
+      "get": {
+        "tags": [
+          "Web Interface"
+        ],
+        "summary": "Admin Leagues List",
+        "description": "List all leagues",
+        "operationId": "admin_leagues_list_admin_leagues_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/leagues/new": {
+      "get": {
+        "tags": [
+          "Web Interface"
+        ],
+        "summary": "Admin Leagues New",
+        "description": "New league form",
+        "operationId": "admin_leagues_new_admin_leagues_new_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Web Interface"
+        ],
+        "summary": "Admin Leagues Create",
+        "description": "Create new league",
+        "operationId": "admin_leagues_create_admin_leagues_new_post",
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_admin_leagues_create_admin_leagues_new_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/leagues/{league_id}": {
+      "get": {
+        "tags": [
+          "Web Interface"
+        ],
+        "summary": "Admin Leagues Detail",
+        "description": "League detail with membership management",
+        "operationId": "admin_leagues_detail_admin_leagues__league_id__get",
+        "parameters": [
+          {
+            "name": "league_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "League Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/leagues/{league_id}/edit": {
+      "get": {
+        "tags": [
+          "Web Interface"
+        ],
+        "summary": "Admin Leagues Edit",
+        "description": "Edit league form",
+        "operationId": "admin_leagues_edit_admin_leagues__league_id__edit_get",
+        "parameters": [
+          {
+            "name": "league_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "League Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Web Interface"
+        ],
+        "summary": "Admin Leagues Update",
+        "description": "Update league",
+        "operationId": "admin_leagues_update_admin_leagues__league_id__edit_post",
+        "parameters": [
+          {
+            "name": "league_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "League Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_admin_leagues_update_admin_leagues__league_id__edit_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/leagues/{league_id}/delete": {
+      "get": {
+        "tags": [
+          "Web Interface"
+        ],
+        "summary": "Admin Leagues Delete",
+        "description": "Delete league",
+        "operationId": "admin_leagues_delete_admin_leagues__league_id__delete_get",
+        "parameters": [
+          {
+            "name": "league_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "League Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/leagues/{league_id}/members/add": {
+      "post": {
+        "tags": [
+          "Web Interface"
+        ],
+        "summary": "Admin Leagues Add Member",
+        "description": "Add client to league",
+        "operationId": "admin_leagues_add_member_admin_leagues__league_id__members_add_post",
+        "parameters": [
+          {
+            "name": "league_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "League Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_admin_leagues_add_member_admin_leagues__league_id__members_add_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/leagues/{league_id}/members/{client_id}/remove": {
+      "post": {
+        "tags": [
+          "Web Interface"
+        ],
+        "summary": "Admin Leagues Remove Member",
+        "description": "Remove client from league",
+        "operationId": "admin_leagues_remove_member_admin_leagues__league_id__members__client_id__remove_post",
+        "parameters": [
+          {
+            "name": "league_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "League Id"
+            }
+          },
+          {
+            "name": "client_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Client Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/leagues/{league_id}/members/{membership_id}/update-bbs-index": {
+      "post": {
+        "tags": [
+          "Web Interface"
+        ],
+        "summary": "Admin Leagues Update Member Bbs Index",
+        "description": "Update BBS index for a league membership",
+        "operationId": "admin_leagues_update_member_bbs_index_admin_leagues__league_id__members__membership_id__update_bbs_index_post",
+        "parameters": [
+          {
+            "name": "league_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "League Id"
+            }
+          },
+          {
+            "name": "membership_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Membership Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_admin_leagues_update_member_bbs_index_admin_leagues__league_id__members__membership_id__update_bbs_index_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/leagues/{league_id}/members/{membership_id}/update-fidonet": {
+      "post": {
+        "tags": [
+          "Web Interface"
+        ],
+        "summary": "Admin Leagues Update Member Fidonet",
+        "description": "Update Fidonet address for a league membership",
+        "operationId": "admin_leagues_update_member_fidonet_admin_leagues__league_id__members__membership_id__update_fidonet_post",
+        "parameters": [
+          {
+            "name": "league_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "League Id"
+            }
+          },
+          {
+            "name": "membership_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Membership Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_admin_leagues_update_member_fidonet_admin_leagues__league_id__members__membership_id__update_fidonet_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "summary": "Health Check",
+        "description": "Health check endpoint for monitoring\n\nReturns system status and statistics",
+        "operationId": "health_check_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Body_admin_clients_create_admin_clients_new_post": {
+        "properties": {
+          "bbs_name": {
+            "type": "string",
+            "title": "Bbs Name"
+          },
+          "client_id": {
+            "type": "string",
+            "title": "Client Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "bbs_name",
+          "client_id"
+        ],
+        "title": "Body_admin_clients_create_admin_clients_new_post"
+      },
+      "Body_admin_clients_update_admin_clients__client_id__edit_post": {
+        "properties": {
+          "bbs_name": {
+            "type": "string",
+            "title": "Bbs Name"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "bbs_name"
+        ],
+        "title": "Body_admin_clients_update_admin_clients__client_id__edit_post"
+      },
+      "Body_admin_leagues_add_member_admin_leagues__league_id__members_add_post": {
+        "properties": {
+          "client_id": {
+            "type": "integer",
+            "title": "Client Id"
+          },
+          "bbs_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bbs Index"
+          },
+          "fidonet_address": {
+            "type": "string",
+            "title": "Fidonet Address"
+          }
+        },
+        "type": "object",
+        "required": [
+          "client_id",
+          "fidonet_address"
+        ],
+        "title": "Body_admin_leagues_add_member_admin_leagues__league_id__members_add_post"
+      },
+      "Body_admin_leagues_create_admin_leagues_new_post": {
+        "properties": {
+          "league_id": {
+            "type": "string",
+            "title": "League Id"
+          },
+          "game_type": {
+            "type": "string",
+            "title": "Game Type"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
+          "dosemu_path": {
+            "type": "string",
+            "title": "Dosemu Path",
+            "default": ""
+          },
+          "game_executable": {
+            "type": "string",
+            "title": "Game Executable",
+            "default": ""
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "league_id",
+          "game_type",
+          "name"
+        ],
+        "title": "Body_admin_leagues_create_admin_leagues_new_post"
+      },
+      "Body_admin_leagues_update_admin_leagues__league_id__edit_post": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
+          "dosemu_path": {
+            "type": "string",
+            "title": "Dosemu Path",
+            "default": ""
+          },
+          "game_executable": {
+            "type": "string",
+            "title": "Game Executable",
+            "default": ""
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active",
+            "default": false
+          },
+          "game_type": {
+            "type": "string",
+            "title": "Game Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "game_type"
+        ],
+        "title": "Body_admin_leagues_update_admin_leagues__league_id__edit_post"
+      },
+      "Body_admin_leagues_update_member_bbs_index_admin_leagues__league_id__members__membership_id__update_bbs_index_post": {
+        "properties": {
+          "bbs_index": {
+            "type": "integer",
+            "title": "Bbs Index"
+          }
+        },
+        "type": "object",
+        "required": [
+          "bbs_index"
+        ],
+        "title": "Body_admin_leagues_update_member_bbs_index_admin_leagues__league_id__members__membership_id__update_bbs_index_post"
+      },
+      "Body_admin_leagues_update_member_fidonet_admin_leagues__league_id__members__membership_id__update_fidonet_post": {
+        "properties": {
+          "fidonet_address": {
+            "type": "string",
+            "title": "Fidonet Address"
+          }
+        },
+        "type": "object",
+        "required": [
+          "fidonet_address"
+        ],
+        "title": "Body_admin_leagues_update_member_fidonet_admin_leagues__league_id__members__membership_id__update_fidonet_post"
+      },
+      "Body_admin_users_create_admin_users_new_post": {
+        "properties": {
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "password": {
+            "type": "string",
+            "title": "Password"
+          },
+          "is_admin": {
+            "type": "boolean",
+            "title": "Is Admin",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "Body_admin_users_create_admin_users_new_post"
+      },
+      "Body_admin_users_update_admin_users__user_id__edit_post": {
+        "properties": {
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "password": {
+            "type": "string",
+            "title": "Password",
+            "default": ""
+          },
+          "is_admin": {
+            "type": "boolean",
+            "title": "Is Admin",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "username"
+        ],
+        "title": "Body_admin_users_update_admin_users__user_id__edit_post"
+      },
+      "Body_change_password_change_password_post": {
+        "properties": {
+          "current_password": {
+            "type": "string",
+            "title": "Current Password"
+          },
+          "new_password": {
+            "type": "string",
+            "title": "New Password"
+          },
+          "confirm_password": {
+            "type": "string",
+            "title": "Confirm Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "current_password",
+          "new_password",
+          "confirm_password"
+        ],
+        "title": "Body_change_password_change_password_post"
+      },
+      "Body_login_for_access_token_auth_token_post": {
+        "properties": {
+          "grant_type": {
+            "type": "string",
+            "title": "Grant Type",
+            "description": "Must be 'client_credentials'"
+          },
+          "client_id": {
+            "type": "string",
+            "title": "Client Id",
+            "description": "Your client ID provided by the hub administrator"
+          },
+          "client_secret": {
+            "type": "string",
+            "title": "Client Secret",
+            "description": "Your client secret provided by the hub administrator"
+          }
+        },
+        "type": "object",
+        "required": [
+          "grant_type",
+          "client_id",
+          "client_secret"
+        ],
+        "title": "Body_login_for_access_token_auth_token_post"
+      },
+      "Body_login_login_post": {
+        "properties": {
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "password": {
+            "type": "string",
+            "title": "Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "Body_login_login_post"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    },
+    "securitySchemes": {
+      "OAuth2PasswordBearer": {
+        "type": "oauth2",
+        "flows": {
+          "password": {
+            "scopes": {},
+            "tokenUrl": "/auth/token"
+          }
+        }
+      }
+    }
+  }
+}

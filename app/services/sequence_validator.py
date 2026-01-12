@@ -3,6 +3,9 @@
 from datetime import datetime
 from sqlalchemy import text
 from app.database import SequenceAlert
+from app.logging_config import get_logger
+
+logger = get_logger(context="sequence_validator")
 
 
 class SequenceValidator:
@@ -88,4 +91,4 @@ class SequenceValidator:
         self.db.add(alert)
         self.db.commit()
 
-        print(f"[SequenceValidator] Created alert for missing sequence {expected_sequence} on route {source_bbs_index}->{dest_bbs_index}")
+        logger.warning(f"Created alert for missing sequence {expected_sequence} on route {source_bbs_index}->{dest_bbs_index}")

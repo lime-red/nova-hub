@@ -5,6 +5,11 @@ from pathlib import Path
 
 import toml
 import uvicorn
+from app.logging_config import configure_logging, get_logger
+
+# Initialize logging for this script
+configure_logging(log_level="INFO")
+logger = get_logger(context="startup")
 
 
 
@@ -33,18 +38,18 @@ def main():
     for dir_path in dirs:
         Path(dir_path).mkdir(parents=True, exist_ok=True)
 
-    print("""
+    logger.info("""
     ╔══════════════════════════════════════╗
     ║         Nova Hub v0.1.0              ║
     ║  BBS Inter-League Routing System     ║
     ╚══════════════════════════════════════╝
     """)
 
-    print("Starting server...")
-    print("Web UI: http://localhost:8000")
-    print("API Docs: http://localhost:8000/docs")
-    print("API Redoc: http://localhost:8000/redoc")
-    print()
+    logger.info("Starting server...")
+    logger.info("Web UI: http://localhost:8000")
+    logger.info("API Docs: http://localhost:8000/docs")
+    logger.info("API Redoc: http://localhost:8000/redoc")
+    logger.info("")
 
     uvicorn.run(
         "main:app",

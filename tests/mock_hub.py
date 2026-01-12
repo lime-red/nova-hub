@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import List, Optional
 
 import uvicorn
-from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, HTTPException, Path as PathParam, Request
 from fastapi.responses import FileResponse
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel
@@ -106,24 +106,41 @@ def verify_token(token: str = Depends(oauth2_scheme)) -> dict:
 
 
 # Packet endpoints
-@app.post("/api/v1/leagues/{league_id}/packets")
+@app.put("/api/v1/leagues/{league_id}/packets/{filename}")
 async def upload_packet(
-    league_id: str,
-    file: UploadFile = File(...),
+    league_id: str = PathParam(..., regex=r'^\d{3}[BF]$'),
+    filename: str = PathParam(...),
+    request: Request = None,
     token_data: dict = Depends(verify_token),
 ):
-    """Upload a packet"""
+    """Upload a packet using PUT with raw body"""
+
+    # Parse league_id (e.g., "555B" -> "555", "B")
+    match = re.match(r'^(\d{3})([BF])$', league_id.upper())
+    if not match:
+        raise HTTPException(400, f"Invalid league_id format: {league_id}")
+
+    league_number, league_game_type = match.groups()
+
+    # Normalize filename
+    normalized_filename = filename.upper()
 
     # Parse filename
-    match = PACKET_REGEX.match(file.filename)
-    if not match:
-        raise HTTPException(400, f"Invalid packet filename: {file.filename}")
+    packet_match = PACKET_REGEX.match(normalized_filename)
+    if not packet_match:
+        raise HTTPException(400, f"Invalid packet filename: {normalized_filename}")
 
-    league, game, source, dest, seq = match.groups()
+    file_league, file_game, source, dest, seq = packet_match.groups()
 
-    if league != league_id:
+    # Verify league_id matches filename (BOTH number AND game type)
+    if file_league != league_number:
         raise HTTPException(
-            400, f"League mismatch: filename says {league}, URL says {league_id}"
+            400, f"League number mismatch: filename={file_league}, URL={league_number}"
+        )
+
+    if file_game.upper() != league_game_type:
+        raise HTTPException(
+            400, f"Game type mismatch: filename={file_game}, URL={league_game_type}"
         )
 
     # Verify client is authorized for this source
@@ -135,16 +152,20 @@ async def upload_packet(
             403, f"Client {client_id} cannot upload packets from BBS {source}"
         )
 
+    # Read raw body
+    content = await request.body()
+    if not content:
+        raise HTTPException(400, "Empty request body")
+
     # Save file
-    content = await file.read()
-    filepath = INBOUND_DIR / file.filename
+    filepath = INBOUND_DIR / normalized_filename
     filepath.write_bytes(content)
 
     # Record in database
     packet_info = {
-        "filename": file.filename,
-        "league": league,
-        "game_type": "BRE" if game.upper() == "B" else "FE",
+        "filename": normalized_filename,
+        "league": league_number,
+        "game_type": "BRE" if file_game.upper() == "B" else "FE",
         "source": source.upper(),
         "dest": dest.upper(),
         "sequence": int(seq),
@@ -155,10 +176,10 @@ async def upload_packet(
     packets_db.append(packet_info)
 
     print(
-        f"[Upload] {file.filename} from {client_info['bbs_name']} ({source} -> {dest})"
+        f"[Upload] {normalized_filename} from {client_info['bbs_name']} ({source} -> {dest})"
     )
 
-    return {"status": "received", "filename": file.filename}
+    return {"status": "received", "filename": normalized_filename}
 
 
 @app.get("/api/v1/leagues/{league_id}/packets")

@@ -9,6 +9,7 @@ import toml
 from pathlib import Path
 
 from app.database import init_database
+from app.logging_config import init_logging_from_config, get_logger
 from routers import web, packets, auth, websocket
 
 # Load config
@@ -18,6 +19,10 @@ config = toml.load("config.toml")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown events"""
+    # Initialize logging FIRST before any other operations
+    init_logging_from_config(config)
+    logger = get_logger(context="startup")
+
     # Initialize database
     db_path = config.get("database", {}).get("path", "/home/lime/nova-data/nova-hub.db")
     database_url = f"sqlite:///{db_path}"
@@ -50,13 +55,11 @@ async def lifespan(app: FastAPI):
         await watcher.process_pending_scans()
 
     except Exception as e:
-        print(f"[Startup] Failed to start packet watcher: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.exception(f"Failed to start packet watcher: {e}")
     finally:
         db_session.close()
 
-    print("Nova Hub started successfully")
+    logger.info("Nova Hub started successfully")
 
     yield
 
@@ -64,7 +67,7 @@ async def lifespan(app: FastAPI):
     if hasattr(app.state, 'watcher') and app.state.watcher:
         app.state.watcher.stop()
 
-    print("Nova Hub shutting down...")
+    logger.info("Nova Hub shutting down...")
 
 
 app = FastAPI(

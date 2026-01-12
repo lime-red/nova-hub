@@ -2,10 +2,13 @@
 
 from app.services.stats_service import StatsService
 from app.services.websocket_service import connect, disconnect
+from app.logging_config import get_logger
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+
+logger = get_logger(context="websocket")
 
 router = APIRouter()
 
@@ -56,7 +59,7 @@ async def websocket_dashboard(websocket: WebSocket, db: Session = Depends(get_db
     except WebSocketDisconnect:
         await disconnect(websocket)
     except Exception as e:
-        print(f"[WebSocket] Error: {e}")
+        logger.error(f"Error: {e}")
         await disconnect(websocket)
 
 
@@ -100,5 +103,5 @@ async def websocket_client(websocket: WebSocket, bbs_index: str):
     except WebSocketDisconnect:
         await disconnect(websocket, bbs_index)
     except Exception as e:
-        print(f"[WebSocket] Error: {e}")
+        logger.error(f"Error: {e}")
         await disconnect(websocket, bbs_index)

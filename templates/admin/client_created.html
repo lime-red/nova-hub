@@ -59,9 +59,12 @@ client_secret = "{{ client.client_secret }}"
 name = "{{ client.bbs_name }}"
 
 # BBS ID is configured per league after adding this client to a league
+# Ensure the League ID is also updated
 [leagues.BRE.555]
 bbs_index = 2  # Assigned when adding client to league
-enabled = true</code></pre>
+enabled = true
+outbound_dir = "/home/user/.dosemu/drive_c/bbs/doors/bre_555/outbound"
+inbound_dir = "/home/user/.dosemu/drive_c/bbs/doors/bre_555/inbound"</code></pre>
 </article>
 
 <div style="display: flex; gap: 1rem;">

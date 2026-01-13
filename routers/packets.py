@@ -23,7 +23,7 @@ router = APIRouter()
 
 @router.put("/leagues/{league_id}/packets/{filename}", summary="Upload Packet")
 async def upload_packet(
-    league_id: str = Path(..., regex=r'^\d{3}[BF]$'),
+    league_id: str = Path(..., pattern=r'^\d{3}[BF]$'),
     filename: str = Path(...),
     request: Request = None,
     client: Client = Depends(get_current_client),
@@ -188,7 +188,7 @@ async def upload_packet(
 
 @router.get("/leagues/{league_id}/packets", summary="List Available Packets")
 async def list_packets(
-    league_id: str = Path(..., regex=r'^\d{3}[BF]$'),
+    league_id: str = Path(..., pattern=r'^\d{3}[BF]$'),
     unread: bool = Query(False, description="Filter to only unread (not downloaded) packets"),
     client: Client = Depends(get_current_client),
     db: Session = Depends(get_db),
@@ -294,7 +294,7 @@ async def list_packets(
 
 @router.get("/leagues/{league_id}/nodelist", summary="Download Nodelist")
 async def download_nodelist(
-    league_id: str = Path(..., regex=r'^\d{3}[BF]$'),
+    league_id: str = Path(..., pattern=r'^\d{3}[BF]$'),
     request: Request = None,
     client: Client = Depends(get_current_client),
     db: Session = Depends(get_db),
@@ -379,6 +379,24 @@ async def download_nodelist(
 
     logger.info(f"Client {client.client_id} downloading nodelist: {nodelist_path.name}")
 
+    # Mark the nodelist packet as downloaded
+    dest_bbs_hex = f"{membership.bbs_index:02X}"
+    nodelist_packet = (
+        db.query(Packet)
+        .filter(
+            Packet.filename == nodelist_path.name,
+            Packet.league_id == league.id,
+            Packet.dest_bbs_index == dest_bbs_hex,
+        )
+        .first()
+    )
+
+    if nodelist_packet:
+        nodelist_packet.downloaded_at = datetime.now()
+        nodelist_packet.is_downloaded = True
+        db.commit()
+        logger.debug(f"Marked nodelist packet {nodelist_path.name} as downloaded for BBS {dest_bbs_hex}")
+
     return FileResponse(
         nodelist_path,
         filename=nodelist_path.name,
@@ -388,7 +406,7 @@ async def download_nodelist(
 
 @router.get("/leagues/{league_id}/packets/{filename}", summary="Download Packet")
 async def download_packet(
-    league_id: str = Path(..., regex=r'^\d{3}[BF]$'),
+    league_id: str = Path(..., pattern=r'^\d{3}[BF]$'),
     filename: str = Path(...),
     request: Request = None,
     client: Client = Depends(get_current_client),
@@ -423,69 +441,155 @@ async def download_packet(
     # Normalize filename to uppercase for consistent lookup
     normalized_filename = filename.upper()
 
-    # Parse filename to verify destination
-    try:
-        packet_info = parse_packet_filename(normalized_filename)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    # Check if this is a nodelist file
+    is_nodelist = normalized_filename.startswith("BRNODES.") or normalized_filename.startswith("FENODES.")
 
-    # Verify league_id matches filename (BOTH number AND game type)
-    if packet_info["league_id"] != league_number:
-        raise HTTPException(
-            status_code=400,
-            detail=f"League number mismatch: filename={packet_info['league_id']}, URL={league_number}",
+    if is_nodelist:
+        # Handle nodelist download
+        # Get league
+        league = (
+            db.query(League)
+            .filter(
+                League.league_id == league_number,
+                League.game_type == league_game_type
+            )
+            .first()
         )
 
-    if packet_info["game_type"] != league_game_type:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Game type mismatch: filename={packet_info['game_type']}, URL={league_game_type}",
+        if not league:
+            raise HTTPException(status_code=404, detail=f"League {league_id} not found")
+
+        # Get client membership
+        from app.database import LeagueMembership
+
+        membership = (
+            db.query(LeagueMembership)
+            .filter(
+                LeagueMembership.client_id == client.id,
+                LeagueMembership.league_id == league.id,
+                LeagueMembership.is_active == True,
+            )
+            .first()
         )
 
-    # Get packet record first to determine league
-    packet = db.query(Packet).filter(Packet.filename == normalized_filename).first()
-    if not packet:
-        logger.warning(f"Packet {normalized_filename} not found in database")
-        raise HTTPException(status_code=404, detail="Packet not found")
+        if not membership:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Client {client.client_id} is not a member of league {league_id}",
+            )
 
-    # Get client membership for this league
-    from app.database import LeagueMembership
+        # Find the nodelist file
+        data_dir = request.app.state.config.get("server", {}).get("data_dir", "./data")
+        game_type_str = "BRE" if league_game_type == "B" else "FE"
+        nodelists_dir = PathLib(data_dir) / "nodelists" / game_type_str.lower() / league_number
 
-    membership = (
-        db.query(LeagueMembership)
-        .filter(
-            LeagueMembership.client_id == client.id,
-            LeagueMembership.league_id == packet.league_id,
-            LeagueMembership.is_active == True,
+        from app.services.processing_service import find_file_case_insensitive
+        nodelist_path = find_file_case_insensitive(nodelists_dir, normalized_filename)
+
+        if not nodelist_path or not nodelist_path.exists():
+            raise HTTPException(
+                status_code=404,
+                detail=f"Nodelist file not found",
+            )
+
+        # Mark the nodelist packet as downloaded
+        dest_bbs_hex = f"{membership.bbs_index:02X}"
+        nodelist_packet = (
+            db.query(Packet)
+            .filter(
+                Packet.filename == normalized_filename,
+                Packet.league_id == league.id,
+                Packet.dest_bbs_index == dest_bbs_hex,
+            )
+            .first()
         )
-        .first()
-    )
 
-    if not membership:
-        raise HTTPException(
-            status_code=403,
-            detail="Client is not a member of this league",
+        if nodelist_packet:
+            nodelist_packet.downloaded_at = datetime.now()
+            nodelist_packet.is_downloaded = True
+            db.commit()
+            logger.debug(f"Marked nodelist packet {normalized_filename} as downloaded for BBS {dest_bbs_hex}")
+
+        logger.info(f"Client {client.client_id} downloading nodelist: {nodelist_path.name}")
+
+        return FileResponse(
+            nodelist_path,
+            filename=nodelist_path.name,
+            media_type="application/octet-stream",
         )
 
-    # Verify client's BBS index matches packet destination
-    membership_bbs_hex = format(membership.bbs_index, "02X")
-    if packet_info["dest_bbs_index"].upper() != membership_bbs_hex:
-        raise HTTPException(
-            status_code=403,
-            detail=f"Cannot download packets for BBS {packet_info['dest_bbs_index']} (client BBS ID is {membership.bbs_index}/0x{membership_bbs_hex})",
+    else:
+        # Handle regular packet download
+        # Parse filename to verify destination
+        try:
+            packet_info = parse_packet_filename(normalized_filename)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+        # Verify league_id matches filename (BOTH number AND game type)
+        if packet_info["league_id"] != league_number:
+            raise HTTPException(
+                status_code=400,
+                detail=f"League number mismatch: filename={packet_info['league_id']}, URL={league_number}",
+            )
+
+        if packet_info["game_type"] != league_game_type:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Game type mismatch: filename={packet_info['game_type']}, URL={league_game_type}",
+            )
+
+        # Get packet record - prioritize undownloaded packets and newest first
+        # This handles cases where the same filename exists multiple times
+        packet = (
+            db.query(Packet)
+            .filter(Packet.filename == normalized_filename)
+            .order_by(Packet.is_downloaded.asc(), Packet.uploaded_at.desc())
+            .first()
+        )
+        if not packet:
+            logger.warning(f"Packet {normalized_filename} not found in database")
+            raise HTTPException(status_code=404, detail="Packet not found")
+
+        # Get client membership for this league
+        from app.database import LeagueMembership
+
+        membership = (
+            db.query(LeagueMembership)
+            .filter(
+                LeagueMembership.client_id == client.id,
+                LeagueMembership.league_id == packet.league_id,
+                LeagueMembership.is_active == True,
+            )
+            .first()
         )
 
-    # Check file exists (use normalized filename)
-    data_dir = request.app.state.config.get("server", {}).get("data_dir", "./data")
-    filepath = PathLib(data_dir) / "packets" / "outbound" / normalized_filename
-    logger.debug(f"Looking for packet at: {filepath}")
-    if not filepath.exists():
-        raise HTTPException(status_code=404, detail="Packet file not found")
+        if not membership:
+            raise HTTPException(
+                status_code=403,
+                detail="Client is not a member of this league",
+            )
 
-    # Mark as retrieved
-    packet.downloaded_at = datetime.now()
-    db.commit()
+        # Verify client's BBS index matches packet destination
+        membership_bbs_hex = format(membership.bbs_index, "02X")
+        if packet_info["dest_bbs_index"].upper() != membership_bbs_hex:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Cannot download packets for BBS {packet_info['dest_bbs_index']} (client BBS ID is {membership.bbs_index}/0x{membership_bbs_hex})",
+            )
 
-    return FileResponse(
-        filepath, filename=normalized_filename, media_type="application/octet-stream"
-    )
+        # Check file exists (use normalized filename)
+        data_dir = request.app.state.config.get("server", {}).get("data_dir", "./data")
+        filepath = PathLib(data_dir) / "packets" / "outbound" / normalized_filename
+        logger.debug(f"Looking for packet at: {filepath}")
+        if not filepath.exists():
+            raise HTTPException(status_code=404, detail="Packet file not found")
+
+        # Mark as retrieved
+        packet.downloaded_at = datetime.now()
+        packet.is_downloaded = True
+        db.commit()
+
+        return FileResponse(
+            filepath, filename=normalized_filename, media_type="application/octet-stream"
+        )

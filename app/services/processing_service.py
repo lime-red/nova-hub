@@ -123,6 +123,8 @@ class ProcessingService:
 
         if not packets:
             logger.info("No packets to process")
+            # Still check for nodelists and other outbound files
+            await self.scan_outbound_folders()
             return
 
         logger.info(f"Found {len(packets)} packet(s) to process")
@@ -175,6 +177,9 @@ class ProcessingService:
 
         logger.info("Batch complete")
 
+        # Always scan outbound folders for nodelists
+        await self.scan_outbound_folders()
+
         # Broadcast update via WebSocket
         from app.services.websocket_service import broadcast_processing_complete
 
@@ -184,6 +189,39 @@ class ProcessingService:
         """Get game type for packet"""
         league = self.db.query(League).filter(League.id == packet.league_id).first()
         return league.game_type if league else None
+
+    async def scan_outbound_folders(self):
+        """Scan all league outbound folders for nodelists and packets"""
+        logger.info("Scanning outbound folders for nodelists...")
+
+        # Get all active leagues
+        from app.database import League
+        leagues = self.db.query(League).filter(League.is_active == True).all()
+
+        data_dir = self.config.get("server", {}).get("data_dir", "./data")
+
+        for league in leagues:
+            game_type_str = "BRE" if league.game_type == "B" else "FE"
+            league_id = league.league_id
+
+            # Get outbound folder path from config or use default
+            try:
+                league_config = self.config.get("dosemu", {}).get(league_id, {}).get(game_type_str.lower(), {})
+                game_outbound_folder = league_config.get("outbound_folder")
+
+                if game_outbound_folder:
+                    game_outbound_dir = Path(game_outbound_folder)
+                else:
+                    # Fallback to default path
+                    game_outbound_dir = Path(data_dir) / "dosemu" / league_id / game_type_str.lower() / "outbound"
+            except Exception as e:
+                logger.warning(f"Error getting outbound folder for league {league_id}: {e}")
+                game_outbound_dir = Path(data_dir) / "dosemu" / league_id / game_type_str.lower() / "outbound"
+
+            # Check if directory exists and has files
+            if game_outbound_dir.exists() and any(game_outbound_dir.iterdir()):
+                logger.info(f"Checking outbound folder for league {league_id}{league.game_type}: {game_outbound_dir}")
+                await self.collect_outbound_packets(game_type_str, 0, game_outbound_dir)
 
     async def process_game_batch(self, game_type: str, packets: list, run_id: int):
         """Process a batch of packets for one game"""
@@ -413,37 +451,113 @@ class ProcessingService:
         These are hub-generated files that all clients should download
         """
         # Extract league ID from filename (e.g., BRNODES.013 -> 013)
+        # Always normalize to uppercase for consistency
         filename_upper = nodelist_file.name.upper()
         if filename_upper.startswith("BRNODES."):
-            league_id = filename_upper[8:]  # Skip "BRNODES."
+            league_number = filename_upper[8:]  # Skip "BRNODES."
         elif filename_upper.startswith("FENODES."):
-            league_id = filename_upper[8:]  # Skip "FENODES."
+            league_number = filename_upper[8:]  # Skip "FENODES."
         else:
             logger.warning(f"Invalid nodelist filename: {nodelist_file.name}")
             return
 
         # Create nodelists directory structure: data_dir/nodelists/<game_type>/<league_id>/
         data_dir = self.config.get("server", {}).get("data_dir", "./data")
-        nodelists_dir = Path(data_dir) / "nodelists" / game_type.lower() / league_id
+        nodelists_dir = Path(data_dir) / "nodelists" / game_type.lower() / league_number
         nodelists_dir.mkdir(parents=True, exist_ok=True)
 
-        # Move nodelist to nodelists directory (overwrite if exists)
-        dest = nodelists_dir / nodelist_file.name
+        # Always use uppercase filename for consistency
+        dest = nodelists_dir / filename_upper
 
         # Check for case-insensitive duplicate in destination
-        existing_file = find_file_case_insensitive(nodelists_dir, nodelist_file.name)
+        existing_file = find_file_case_insensitive(nodelists_dir, filename_upper)
         if existing_file and existing_file != dest:
             # Remove old version with different case
             existing_file.unlink()
             logger.info(f"Removed old nodelist: {existing_file.name}")
 
+        # Move and rename to uppercase
         nodelist_file.rename(dest)
-        logger.info(f"Updated nodelist: {dest.name} for league {league_id}")
+        logger.info(f"Updated nodelist: {dest.name} for league {league_number}")
+
+        # Read the nodelist file for database storage
+        with open(dest, 'rb') as f:
+            file_data = f.read()
+        file_size = len(file_data)
+        checksum = hashlib.sha256(file_data).hexdigest()
+
+        # Find the league in the database
+        # Convert game_type to single letter (BRE->B, FE->F)
+        from app.database import League, LeagueMembership
+        game_type_letter = "B" if game_type == "BRE" else "F"
+        league = self.db.query(League).filter(
+            League.league_id == league_number,
+            League.game_type == game_type_letter
+        ).first()
+
+        if not league:
+            logger.warning(f"League {league_number}{game_type_letter} not found in database, skipping packet creation")
+        else:
+            # Get all active members of this league
+            memberships = self.db.query(LeagueMembership).filter(
+                LeagueMembership.league_id == league.id,
+                LeagueMembership.is_active == True
+            ).all()
+
+            # Create a packet record for each league member
+            for membership in memberships:
+                if membership.bbs_index is None:
+                    continue
+
+                # Convert BBS index to 2-char hex
+                dest_bbs_hex = f"{membership.bbs_index:02X}"
+
+                # Check if packet already exists for this member (avoid duplicates)
+                # Use uppercase filename for consistency
+                existing = self.db.query(Packet).filter(
+                    Packet.filename == filename_upper,
+                    Packet.league_id == league.id,
+                    Packet.dest_bbs_index == dest_bbs_hex
+                ).first()
+
+                if existing:
+                    # Update existing packet with new data
+                    existing.file_data = file_data
+                    existing.file_size = file_size
+                    existing.checksum = checksum
+                    existing.uploaded_at = datetime.utcnow()
+                    existing.processed_at = datetime.utcnow()  # Mark as processed
+                    existing.is_processed = True
+                    existing.is_downloaded = False
+                    existing.downloaded_at = None
+                    logger.debug(f"Updated existing nodelist packet for BBS {dest_bbs_hex}")
+                else:
+                    # Create new packet record (use uppercase filename)
+                    packet = Packet(
+                        filename=filename_upper,
+                        league_id=league.id,
+                        source_bbs_index="00",  # Hub/system source
+                        dest_bbs_index=dest_bbs_hex,
+                        sequence_number=0,  # Nodelists don't use sequence numbers
+                        source_client_id=None,  # Hub-generated
+                        dest_client_id=membership.client_id,
+                        file_data=file_data,
+                        file_size=file_size,
+                        checksum=checksum,
+                        is_processed=True,  # Nodelists don't need processing
+                        processed_at=datetime.utcnow(),  # Mark as processed immediately
+                        is_downloaded=False
+                    )
+                    self.db.add(packet)
+                    logger.debug(f"Created nodelist packet for BBS {dest_bbs_hex}")
+
+            self.db.commit()
+            logger.info(f"Created/updated {len(memberships)} nodelist packet records")
 
         # Broadcast nodelist update via WebSocket
         from app.services.websocket_service import broadcast_nodelist_available
 
         try:
-            await broadcast_nodelist_available(league_id, game_type)
+            await broadcast_nodelist_available(league_number, game_type)
         except Exception as e:
             logger.error(f"Could not broadcast nodelist update: {e}")

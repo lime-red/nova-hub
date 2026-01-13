@@ -2,6 +2,11 @@ import asyncio
 import tempfile
 from bs4 import BeautifulSoup
 
+from app.logging_config import get_logger
+
+logger = get_logger(context="log_prettify")
+
+
 async def strip_spans(html_string):
 
     soup = BeautifulSoup(html_string, 'html.parser')
@@ -53,7 +58,7 @@ async def ansi_to_html(log_ansi):
             stdin=fp,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
-            cwd='/home/lime/nova-hub',
+            #cwd='/home/lime/nova-hub',
         )
 
         stdout_data, _ = await process.communicate()

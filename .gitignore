@@ -10,3 +10,4 @@ data/
 config.toml
 labs.sh
 *.ipynb
+dosemu_configs/bre.conf

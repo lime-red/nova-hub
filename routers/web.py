@@ -25,6 +25,10 @@ from app.database import (
 from app.services.stats_service import StatsService
 from app.services.log_prettify import ansi_to_html, strip_multiple_blank_lines
 
+from app.logging_config import get_logger
+
+logger = get_logger(context="web_router")
+
 # Load configuration
 config = toml.load("config.toml")
 
@@ -600,7 +604,11 @@ async def admin_processing_runs(
         if run.dosemu_log:
             #run.dosemu_log_html = run.dosemu_log.replace('\n', '\n\n')
             #run.dosemu_log_html = ansi_to_html(run.dosemu_log_html)
-            run.dosemu_log_html = await ansi_to_html(run.dosemu_log)
+            try:
+                run.dosemu_log_html = await ansi_to_html(run.dosemu_log)
+            except Exception as e:
+                logger.error(f"Failed to convert ANSI to HTML: {e}")
+                run.dosemu_log_html = run.dosemu_log
             run.dosemu_log_html = await strip_multiple_blank_lines(run.dosemu_log_html)
         else:
             run.dosemu_log_html = ""

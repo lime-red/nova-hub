@@ -71,34 +71,6 @@
             >{% if league %}{{ league.description }}{% endif %}</textarea>
         </label>
 
-        <fieldset>
-            <legend>Dosemu Configuration (Optional)</legend>
-
-            <label for="dosemu_path">
-                Dosemu Path
-                <input
-                    type="text"
-                    id="dosemu_path"
-                    name="dosemu_path"
-                    value="{% if league %}{{ league.dosemu_path or '' }}{% endif %}"
-                    placeholder="/path/to/dosemu"
-                />
-                <small>Path to Dosemu installation for processing</small>
-            </label>
-
-            <label for="game_executable">
-                Game Executable
-                <input
-                    type="text"
-                    id="game_executable"
-                    name="game_executable"
-                    value="{% if league %}{{ league.game_executable or '' }}{% endif %}"
-                    placeholder="LEAGUE.BAT"
-                />
-                <small>Game executable to run in Dosemu</small>
-            </label>
-        </fieldset>
-
         <label>
             <input
                 type="checkbox"

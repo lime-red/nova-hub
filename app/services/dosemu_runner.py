@@ -35,6 +35,20 @@ class DosemuRunner:
         """
         return await self._run_dosemu_command(game_type, league_id, "scores_command")
 
+    async def run_routes_command(self, game_type: str, league_id: str) -> dict:
+        """
+        Run BRE or FE routeinfo command in Dosemu for specific league
+        Returns: dict with status, output, errors
+        """
+        return await self._run_dosemu_command(game_type, league_id, "routeinfo_command")
+
+    async def run_bbsinfo_command(self, game_type: str, league_id: str) -> dict:
+        """
+        Run BRE or FE bbsinfo command in Dosemu for specific league
+        Returns: dict with status, output, errors
+        """
+        return await self._run_dosemu_command(game_type, league_id, "bbsinfo_command")
+
     async def _run_dosemu_command(self, game_type: str, league_id: str, command_key: str) -> dict:
         """
         Internal method to run any DOS command in Dosemu

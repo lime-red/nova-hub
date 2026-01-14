@@ -11,7 +11,7 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from app.database import League, Packet, ProcessingRun, SessionLocal
+from app.database import League, Packet, ProcessingRun, ProcessingRunFile, SessionLocal
 from app.logging_config import get_logger
 from app.services.dosemu_runner import DosemuRunner
 from app.services.packet_service import parse_packet_filename
@@ -315,7 +315,10 @@ class ProcessingService:
             # Step 4: Collect outbound packets from game outbound directory
             await self.collect_outbound_packets(game_type, run_id, game_outbound_dir)
 
-            # Step 5: Cleanup game inbound directory (remove processed files)
+            # Step 5: Run additional commands and ingest files
+            await self.ingest_processing_files(game_type, league_id, run_id, league_config)
+
+            # Step 6: Cleanup game inbound directory (remove processed files)
             for f in game_inbound_dir.glob("*"):
                 if f.is_file():
                     f.unlink()
@@ -326,6 +329,132 @@ class ProcessingService:
         except Exception as e:
             logger.error(f"Error processing {game_type}: {e}")
             return {"status": "error", "error": str(e)}
+
+    async def ingest_processing_files(
+        self, game_type: str, league_id: str, run_id: int, league_config: dict
+    ):
+        """
+        Run scores, routes, and bbsinfo commands, then ingest their output files
+        """
+        logger.info(f"Running additional commands for {game_type} league {league_id}...")
+
+        # Run scores command
+        logger.info("Running scores command...")
+        scores_result = await self.dosemu_runner.run_scores_command(game_type, league_id)
+        if scores_result["status"] != "success":
+            logger.warning(f"Scores command failed: {scores_result.get('error', 'Unknown error')}")
+
+        # Run routes command
+        logger.info("Running routes command...")
+        routes_result = await self.dosemu_runner.run_routes_command(game_type, league_id)
+        if routes_result["status"] != "success":
+            logger.warning(f"Routes command failed: {routes_result.get('error', 'Unknown error')}")
+
+        # Run bbsinfo command
+        logger.info("Running bbsinfo command...")
+        bbsinfo_result = await self.dosemu_runner.run_bbsinfo_command(game_type, league_id)
+        if bbsinfo_result["status"] != "success":
+            logger.warning(f"BBS info command failed: {bbsinfo_result.get('error', 'Unknown error')}")
+
+        # Now ingest the files
+        logger.info("Ingesting output files...")
+
+        # Get scores_folder and game_dos_path from config
+        scores_folder = league_config.get("scores_folder")
+        game_dos_path = league_config.get("game_dos_path", "C:\\")
+
+        # Convert DOS path to Linux path
+        # game_dos_path is like "C:\\bbs\\doors\\bre_013"
+        # We need to convert this to the actual filesystem path
+        game_folder = league_config.get("game_folder")
+
+        # Ingest score files
+        if scores_folder:
+            scores_dir = Path(scores_folder)
+            score_filenames = [
+                "BBSLAND.ANS",
+                "BBSSCORE.ANS",
+                "BBSWLAND.ANS",
+                "BBSWORTH.ANS",
+                "PLYLAND.ANS",
+                "PLYSCORE.ANS",
+                "PLYWLAND.ANS",
+                "PLYWORTH.ANS",
+                "SCORES.ANS",
+                "YESNEWS.ANS",
+                "tdynews.ans",
+            ]
+
+            for filename in score_filenames:
+                file_path = find_file_case_insensitive(scores_dir, filename)
+                if file_path:
+                    try:
+                        file_data = file_path.read_text(errors="replace")
+                        file_size = len(file_data)
+
+                        # Store in database
+                        run_file = ProcessingRunFile(
+                            processing_run_id=run_id,
+                            file_type="score",
+                            filename=file_path.name,  # Use actual filename found
+                            file_data=file_data,
+                            file_size=file_size,
+                        )
+                        self.db.add(run_file)
+                        logger.info(f"Ingested score file: {file_path.name}")
+                    except Exception as e:
+                        logger.error(f"Error ingesting score file {filename}: {e}")
+                else:
+                    logger.debug(f"Score file not found: {filename}")
+
+        # Ingest routes.lst
+        if game_folder:
+            game_dir = Path(game_folder)
+            routes_file = find_file_case_insensitive(game_dir, "routes.lst")
+            if routes_file:
+                try:
+                    file_data = routes_file.read_text(errors="replace")
+                    file_size = len(file_data)
+
+                    run_file = ProcessingRunFile(
+                        processing_run_id=run_id,
+                        file_type="routes",
+                        filename=routes_file.name,
+                        file_data=file_data,
+                        file_size=file_size,
+                    )
+                    self.db.add(run_file)
+                    logger.info(f"Ingested routes file: {routes_file.name}")
+                except Exception as e:
+                    logger.error(f"Error ingesting routes file: {e}")
+            else:
+                logger.debug("Routes file not found: routes.lst")
+
+        # Ingest bbsinfo.lst
+        if game_folder:
+            game_dir = Path(game_folder)
+            bbsinfo_file = find_file_case_insensitive(game_dir, "bbsinfo.lst")
+            if bbsinfo_file:
+                try:
+                    file_data = bbsinfo_file.read_text(errors="replace")
+                    file_size = len(file_data)
+
+                    run_file = ProcessingRunFile(
+                        processing_run_id=run_id,
+                        file_type="bbsinfo",
+                        filename=bbsinfo_file.name,
+                        file_data=file_data,
+                        file_size=file_size,
+                    )
+                    self.db.add(run_file)
+                    logger.info(f"Ingested bbsinfo file: {bbsinfo_file.name}")
+                except Exception as e:
+                    logger.error(f"Error ingesting bbsinfo file: {e}")
+            else:
+                logger.debug("BBS info file not found: bbsinfo.lst")
+
+        self.db.commit()
+        logger.info("File ingestion complete")
 
     async def collect_outbound_packets(
         self, game_type: str, run_id: int, outbound_dir: Path

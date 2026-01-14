@@ -87,4 +87,67 @@ Hub{% endblock %} {% block breadcrumb %}
         </tbody>
     </table>
 </article>
-{% endif %} {% endblock %}
+{% endif %}
+
+<!-- Score Files Section -->
+<article>
+    <header><strong>Score Files</strong></header>
+    {% if score_files %}
+    <div class="score-files">
+        {% for file in score_files %}
+        <details>
+            <summary><strong>{{ file.filename }}</strong> ({{ file.file_size }} bytes)</summary>
+            {% if file.file_data_html %}
+            <div class="log-content" style="margin-top: 1rem;">
+                {{ file.file_data_html | safe }}
+            </div>
+            {% else %}
+            <p><em>File content not available</em></p>
+            {% endif %}
+        </details>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p><em>No score files generated for this run</em></p>
+    {% endif %}
+</article>
+
+<!-- Routes File Section -->
+<article>
+    <header><strong>Routes Information</strong></header>
+    {% if routes_files %}
+        {% for file in routes_files %}
+        <details open>
+            <summary><strong>{{ file.filename }}</strong> ({{ file.file_size }} bytes)</summary>
+            {% if file.file_data %}
+            <pre style="background: var(--code-background-color); padding: 1rem; border-radius: 0.5rem; margin-top: 1rem;">{{ file.file_data }}</pre>
+            {% else %}
+            <p><em>File content not available</em></p>
+            {% endif %}
+        </details>
+        {% endfor %}
+    {% else %}
+    <p><em>Routes file not found</em></p>
+    {% endif %}
+</article>
+
+<!-- BBS Info File Section -->
+<article>
+    <header><strong>BBS Information</strong></header>
+    {% if bbsinfo_files %}
+        {% for file in bbsinfo_files %}
+        <details open>
+            <summary><strong>{{ file.filename }}</strong> ({{ file.file_size }} bytes)</summary>
+            {% if file.file_data %}
+            <pre style="background: var(--code-background-color); padding: 1rem; border-radius: 0.5rem; margin-top: 1rem;">{{ file.file_data }}</pre>
+            {% else %}
+            <p><em>File content not available</em></p>
+            {% endif %}
+        </details>
+        {% endfor %}
+    {% else %}
+    <p><em>BBS info file not found</em></p>
+    {% endif %}
+</article>
+
+{% endblock %}

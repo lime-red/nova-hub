@@ -18,6 +18,7 @@ from app.database import (
     LeagueMembership,
     Packet,
     ProcessingRun,
+    ProcessingRunFile,
     SequenceAlert,
     SysopUser,
     get_db,
@@ -485,6 +486,21 @@ async def processing_run_detail(
             }
         )
 
+    # Get files generated in this run
+    files = db.query(ProcessingRunFile).filter(ProcessingRunFile.processing_run_id == run_id).all()
+
+    # Group files by type
+    score_files = [f for f in files if f.file_type == "score"]
+    routes_files = [f for f in files if f.file_type == "routes"]
+    bbsinfo_files = [f for f in files if f.file_type == "bbsinfo"]
+
+    # Convert ANSI to HTML for score files
+    for file in score_files:
+        if file.file_data:
+            file.file_data_html = await ansi_to_html(file.file_data)
+        else:
+            file.file_data_html = None
+
     duration = "Running..."
     if run.completed_at:
         delta = run.completed_at - run.started_at
@@ -512,6 +528,9 @@ async def processing_run_detail(
                 "dosemu_output_html": run.dosemu_log_html,
             },
             "packets": packet_list,
+            "score_files": score_files,
+            "routes_files": routes_files,
+            "bbsinfo_files": bbsinfo_files,
             "config": {"hub": {"bbs_name": "Nova Hub", "bbs_index": "01"}},
             "get_flashed_messages": get_flash_messages,
         },

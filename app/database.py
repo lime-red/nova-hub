@@ -224,10 +224,29 @@ class ProcessingRun(Base):
     stdout_log = Column(Text, nullable=True)
     stderr_log = Column(Text, nullable=True)
     dosemu_log = Column(Text, nullable=True)
+    error_message = Column(Text, nullable=True)
 
     # Relationships
     league = relationship("League", back_populates="processing_runs")
     packets = relationship("Packet", back_populates="processing_run")
+    files = relationship("ProcessingRunFile", back_populates="processing_run")
+
+
+class ProcessingRunFile(Base):
+    """Files generated during processing runs (scores, routes, bbsinfo)"""
+
+    __tablename__ = "processing_run_files"
+
+    id = Column(Integer, primary_key=True, index=True)
+    processing_run_id = Column(Integer, ForeignKey("processing_runs.id"), nullable=False)
+    file_type = Column(String(20), nullable=False, index=True)  # "score", "routes", "bbsinfo"
+    filename = Column(String(100), nullable=False)  # e.g., "BBSLAND.ANS", "routes.lst"
+    file_data = Column(Text, nullable=True)  # Text content (ANSI files)
+    file_size = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    # Relationship
+    processing_run = relationship("ProcessingRun", back_populates="files")
 
 
 class SequenceAlert(Base):

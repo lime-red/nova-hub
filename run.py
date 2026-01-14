@@ -15,9 +15,49 @@ logger = get_logger(context="startup")
 
 def main():
     """Start Nova Hub"""
+    import argparse
 
+    parser = argparse.ArgumentParser(
+        description="Nova Hub - BBS Inter-League Routing System"
+    )
+    parser.add_argument(
+        "--config",
+        default="config.toml",
+        help="Path to configuration file (default: config.toml)",
+    )
+    parser.add_argument(
+        "--validate",
+        action="store_true",
+        help="Validate configuration without starting server"
+    )
+
+    args = parser.parse_args()
+
+    # Handle validation mode
+    if args.validate:
+        from app.validator import HubValidator
+        from app.database import init_database, get_db
+
+        config = toml.load(args.config)
+
+        # Initialize database for validation
+        db_path = config.get("database", {}).get("path", "/home/lime/nova-data/nova-hub.db")
+        database_url = f"sqlite:///{db_path}"
+        init_database(database_url)
+
+        db_session = next(get_db())
+        try:
+            validator = HubValidator(args.config, db_session)
+            success = validator.validate()
+            validator.print_results()
+            sys.exit(0 if success else 1)
+        finally:
+            db_session.close()
+        return
+
+    # Normal operation mode - start server
     # Load config to get data directory
-    config = toml.load("config.toml")
+    config = toml.load(args.config)
     data_dir = config.get("server", {}).get("data_dir", "./data")
 
     # Create required directories

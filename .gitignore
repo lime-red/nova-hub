@@ -11,3 +11,4 @@ config.toml
 labs.sh
 *.ipynb
 dosemu_configs/bre.conf
+node_modules/

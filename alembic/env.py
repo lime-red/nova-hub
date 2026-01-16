@@ -10,7 +10,8 @@ from alembic import context
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.database import Base
+# Import from new backend location
+from backend.models.database import Base
 
 # this is the Alembic Config object
 config = context.config

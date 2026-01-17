@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
+from backend.core.config import get_config
 from backend.core.database import get_db
 from backend.core.security import get_current_client
 from backend.logging_config import get_logger
@@ -143,7 +144,7 @@ async def upload_packet(
     file_hash = hashlib.sha256(content).hexdigest()
 
     # Save file to inbound directory
-    data_dir = request.app.state.config.get("server", {}).get("data_dir", "./data")
+    data_dir = get_config().get("server", {}).get("data_dir", "./data")
     inbound_dir = Path(data_dir) / "packets" / "inbound"
     inbound_dir.mkdir(parents=True, exist_ok=True)
 
@@ -339,7 +340,7 @@ async def _download_nodelist(
         )
 
     # Find nodelist file
-    data_dir = request.app.state.config.get("server", {}).get("data_dir", "./data")
+    data_dir = get_config().get("server", {}).get("data_dir", "./data")
     game_type_str = "bre" if league_game_type == "B" else "fe"
     nodelists_dir = Path(data_dir) / "nodelists" / game_type_str / league_number
 
@@ -425,7 +426,7 @@ async def _download_packet(
         )
 
     # Find file
-    data_dir = request.app.state.config.get("server", {}).get("data_dir", "./data")
+    data_dir = get_config().get("server", {}).get("data_dir", "./data")
     filepath = Path(data_dir) / "packets" / "outbound" / filename
 
     if not filepath.exists():

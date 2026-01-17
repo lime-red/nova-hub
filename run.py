@@ -5,7 +5,7 @@ from pathlib import Path
 
 import toml
 import uvicorn
-from app.logging_config import configure_logging, get_logger
+from backend.logging_config import configure_logging, get_logger
 
 # Initialize logging for this script
 configure_logging(log_level="INFO")
@@ -35,8 +35,8 @@ def main():
 
     # Handle validation mode
     if args.validate:
-        from app.validator import HubValidator
-        from app.database import init_database, get_db
+        from backend.services.validator import HubValidator
+        from backend.core.database import init_database, get_db
 
         config = toml.load(args.config)
 
@@ -71,8 +71,6 @@ def main():
         f"{data_dir}/dosemu/fe/inbound",
         f"{data_dir}/dosemu/fe/outbound",
         f"{data_dir}/logs",
-        "static",
-        "templates",
     ]
 
     for dir_path in dirs:
@@ -87,8 +85,8 @@ def main():
 
     logger.info("Starting server...")
     logger.info("Web UI: http://localhost:8000")
-    logger.info("API Docs: http://localhost:8000/docs")
-    logger.info("API Redoc: http://localhost:8000/redoc")
+    logger.info("Service API Docs: http://localhost:8000/service/docs")
+    logger.info("Management API Docs: http://localhost:8000/management/docs")
     logger.info("")
 
     uvicorn.run(

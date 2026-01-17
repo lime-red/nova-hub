@@ -68,7 +68,8 @@ def reset_database(preserve_config=False):
 
     # Recreate database
     print("\nRecreating database tables...")
-    from app.database import Base, init_database
+    from backend.models.database import Base
+    from backend.core.database import init_database
 
     # Initialize database connection
     database_url = f"sqlite:///{db_path}"

@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path as PathParam, Reques
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
+from backend.core.config import get_config
 from backend.core.database import get_db
 from backend.core.security import get_current_client
 from backend.logging_config import get_logger
@@ -87,7 +88,7 @@ async def download_nodelist(
     nodelist_filename = f"{'BR' if game_type == 'BRE' else 'FE'}NODES.{league_number}"
 
     # Find nodelist file
-    data_dir = request.app.state.config.get("server", {}).get("data_dir", "./data")
+    data_dir = get_config().get("server", {}).get("data_dir", "./data")
     nodelists_dir = Path(data_dir) / "nodelists" / game_type.lower() / league_number
 
     nodelist_path = find_file_case_insensitive(nodelists_dir, nodelist_filename)

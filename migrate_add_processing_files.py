@@ -13,7 +13,8 @@ Usage:
 import sqlite3
 import toml
 from pathlib import Path
-from app.database import Base, init_database, ProcessingRunFile, ProcessingRun
+from backend.models.database import Base, ProcessingRunFile, ProcessingRun
+from backend.core.database import init_database
 
 def migrate():
     """Add ProcessingRunFile table and error_message column to database"""

@@ -16,8 +16,8 @@ from typing import Dict, List, Tuple
 import toml
 from sqlalchemy.orm import Session
 
-from app.database import League, LeagueMembership, Client
-from app.nodes_parser import NodesFileParser
+from backend.models.database import League, LeagueMembership, Client
+from backend.services.nodes_parser import NodesFileParser
 
 
 class ValidationError:

@@ -294,7 +294,11 @@ class ProcessingService:
 
             # Step 3: Mark packets as processed and archive (case-insensitive)
             hub_processed_dir = Path(data_dir) / "packets" / "processed"
+            hub_outbound_dir = Path(data_dir) / "packets" / "outbound"
             hub_processed_dir.mkdir(parents=True, exist_ok=True)
+            hub_outbound_dir.mkdir(parents=True, exist_ok=True)
+
+            hub_index = self.config["hub"]["bbs_index"]
 
             for packet in packets:
                 packet.processed_at = datetime.now()
@@ -303,6 +307,18 @@ class ProcessingService:
                 src = find_file_case_insensitive(hub_inbound_dir, packet.filename)
 
                 if src:
+                    # If direct routed (not for hub), copy to outbound first
+                    if packet.dest_bbs_index != hub_index:
+                        dst_outbound = hub_outbound_dir / src.name
+                        shutil.copy2(src, dst_outbound)
+                        logger.info(f"Direct routed packet {src.name} copied to outbound for BBS {packet.dest_bbs_index}")
+
+                        # Broadcast packet available
+                        from backend.services.websocket_service import (
+                            broadcast_packet_available,
+                        )
+                        await broadcast_packet_available(src.name, packet.dest_bbs_index)
+
                     dst = hub_processed_dir / src.name
                     src.rename(dst)
                     logger.info(f"Archived to hub processed: {src.name}")

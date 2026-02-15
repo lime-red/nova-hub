@@ -23,7 +23,7 @@ For detailed instructions, see [docs/QUICKSTART.md](docs/QUICKSTART.md)
 uv pip install -r requirements.txt
 
 # Create data directory
-mkdir -p /home/lime/nova-data
+mkdir -p ./data
 
 # Initialize database
 .venv/bin/alembic upgrade head
@@ -43,21 +43,23 @@ Default credentials:
 
 ### Client Setup
 
+See the [nova-client](../nova-client/) directory for the full client with daemon support.
+
 ```bash
-cd client/
+cd ../nova-client
 
 # Install dependencies
 pip install -r requirements.txt
 
 # Configure client
 cp config.toml.example config.toml
-# Edit with your client credentials
+# Edit with your client credentials from hub admin
 
 # Test run
 python client.py
 
-# Add to crontab for regular syncing
-*/5 * * * * cd /path/to/client && python client.py
+# Or run as daemon for continuous operation
+python daemon.py
 ```
 
 ## Architecture
@@ -92,8 +94,8 @@ python client.py
 - **[Project Structure](docs/PROJECT_STRUCTURE.md)** - Code organization and architecture
 - **[Code Reference](docs/CODE_REFERENCE.md)** - Developer reference
 - **API Documentation** - Once running:
-  - Swagger UI: http://localhost:8000/docs
-  - ReDoc: http://localhost:8000/redoc
+  - Service API (for clients): http://localhost:8000/service/docs
+  - Management API (for admin): http://localhost:8000/management/docs
 
 ## Packet Format
 
@@ -109,11 +111,14 @@ Example: `555B0201.001`
 ## Testing
 
 ```bash
-# Run mock hub for client testing
-python tests/mock_hub.py
+# Run hub tests
+.venv/bin/pytest tests/
 
-# In another terminal, run test suite
-python tests/test_client.py
+# Run mock hub for client testing
+.venv/bin/python tests/mock_hub.py
+
+# In another terminal, run client tests
+cd ../nova-client && pytest tests/
 ```
 
 ## Configuration
@@ -137,7 +142,7 @@ dosemu_path = "/usr/bin/dosemu"
 # ... see config.toml.example for full options
 ```
 
-### Client (client/config.toml)
+### Client (nova-client/config.toml)
 
 ```toml
 [hub]
@@ -147,10 +152,10 @@ client_secret = "your_secret"
 
 [bbs]
 name = "My BBS"
-index = "02"
 
 [leagues.BRE.555]
 enabled = true
+bbs_index = 2                           # Your BBS ID for this league (1-255)
 outbound_dir = "/path/to/bre/outbound"
 inbound_dir = "/path/to/bre/inbound"
 ```
@@ -173,7 +178,8 @@ alembic downgrade -1
 ### Systemd Service (Hub)
 
 ```bash
-sudo cp nova-hub.service /etc/systemd/system/
+# See deploy/ directory for Ansible playbook and service template
+sudo cp deploy/nova-hub.service.j2 /etc/systemd/system/nova-hub.service  # edit paths first
 sudo systemctl enable nova-hub
 sudo systemctl start nova-hub
 ```
@@ -196,7 +202,7 @@ If you can't create admin user or login fails:
 .venv/bin/python create_admin_sql.py
 
 # Or verify user exists
-sqlite3 /home/lime/nova-data/nova-hub.db "SELECT * FROM sysop_users;"
+sqlite3 ./data/nova-hub.db "SELECT * FROM sysop_users;"
 ```
 
 ### Dosemu Issues

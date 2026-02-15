@@ -2,6 +2,7 @@
 
 import asyncio
 import tempfile
+from pathlib import Path
 from bs4 import BeautifulSoup
 
 from backend.logging_config import get_logger
@@ -39,12 +40,16 @@ async def strip_multiple_blank_lines(html):
 
 
 async def ansi_to_html(log_ansi):
+    # Resolve terminal-to-html relative to the project root
+    project_root = Path(__file__).resolve().parent.parent.parent
+    terminal_to_html = project_root / "terminal-to-html"
+
     with tempfile.TemporaryFile(mode='w+t') as fp:
         fp.write(log_ansi)
         fp.seek(0)  # Rewind to the beginning to read
 
         process = await asyncio.create_subprocess_exec(
-            "/home/lime/nova-hub/terminal-to-html",
+            str(terminal_to_html),
             "-preview",
             stdin=fp,
             stdout=asyncio.subprocess.PIPE,

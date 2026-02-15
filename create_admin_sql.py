@@ -6,10 +6,12 @@ Run with: python create_admin_sql.py
 
 import sqlite3
 import bcrypt
+import toml
 from datetime import datetime
 
-# Database path
-db_path = "/home/lime/nova-data/nova-hub.db"
+# Load database path from config
+config = toml.load("config.toml")
+db_path = config.get("database", {}).get("path", "./data/nova-hub.db")
 
 # Hash password directly with bcrypt
 password = "admin"

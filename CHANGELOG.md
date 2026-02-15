@@ -62,10 +62,10 @@ If you have an old database with incorrect schema:
 
 ```bash
 # Backup existing data
-cp /home/lime/nova-data/nova-hub.db ~/backups/
+cp ./data/nova-hub.db ~/backups/
 
 # Remove old database and migrations
-rm /home/lime/nova-data/nova-hub.db
+rm ./data/nova-hub.db
 rm -rf alembic/versions/*.py
 
 # Recreate with new schema
@@ -95,7 +95,7 @@ When upgrading Nova Hub:
 
 1. **Backup database:**
    ```bash
-   cp /home/lime/nova-data/nova-hub.db ~/backups/nova-hub-$(date +%Y%m%d).db
+   cp ./data/nova-hub.db ~/backups/nova-hub-$(date +%Y%m%d).db
    ```
 
 2. **Update code:**

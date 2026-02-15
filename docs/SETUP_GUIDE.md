@@ -14,8 +14,8 @@ Complete setup instructions for deploying Nova Hub.
 Nova Hub follows a separation of code and data:
 
 ```
-/home/lime/nova-hub/     # Code directory
-/home/lime/nova-data/    # Runtime data directory
+nova-hub/     # Code directory
+./data/    # Runtime data directory
 ```
 
 This allows you to update code without affecting production data.
@@ -26,7 +26,7 @@ This allows you to update code without affecting production data.
 
 Using `uv` (recommended):
 ```bash
-cd /home/lime/nova-hub
+cd nova-hub
 uv venv
 source .venv/bin/activate  # or use uv directly
 uv pip install -r requirements.txt
@@ -46,12 +46,12 @@ Edit `config.toml` and `alembic.ini` to set your data directory:
 **config.toml:**
 ```toml
 [database]
-path = "/home/lime/nova-data/nova-hub.db"
+path = "./data/nova-hub.db"
 ```
 
 **alembic.ini:**
 ```ini
-sqlalchemy.url = sqlite:////home/lime/nova-data/nova-hub.db
+sqlalchemy.url = sqlite:///./data/nova-hub.db
 ```
 
 Also update the default `DATABASE_URL` in `app/database.py` to match.
@@ -59,7 +59,7 @@ Also update the default `DATABASE_URL` in `app/database.py` to match.
 ### 3. Create Data Directory
 
 ```bash
-mkdir -p /home/lime/nova-data
+mkdir -p ./data
 ```
 
 ### 4. Initialize Database
@@ -102,7 +102,7 @@ Edit `config.toml` for your hub:
 [server]
 host = "0.0.0.0"
 port = 8000
-data_dir = "/home/lime/nova-data"
+data_dir = "./data"
 
 [hub]
 bbs_name = "Your Hub Name"
@@ -190,13 +190,13 @@ Or set up a cron job for automatic syncing:
 ### View Database
 
 ```bash
-sqlite3 /home/lime/nova-data/nova-hub.db
+sqlite3 ./data/nova-hub.db
 ```
 
 ### Backup Database
 
 ```bash
-cp /home/lime/nova-data/nova-hub.db /path/to/backups/nova-hub-$(date +%Y%m%d).db
+cp ./data/nova-hub.db /path/to/backups/nova-hub-$(date +%Y%m%d).db
 ```
 
 ### Create New Migration
@@ -220,7 +220,7 @@ If you get database connection errors:
 ### Login Issues
 
 If login fails with valid credentials:
-1. Verify user exists: `sqlite3 /home/lime/nova-data/nova-hub.db "SELECT * FROM sysop_users;"`
+1. Verify user exists: `sqlite3 ./data/nova-hub.db "SELECT * FROM sysop_users;"`
 2. Check that bcrypt is properly installed
 3. Recreate the admin user with `create_admin_sql.py`
 
@@ -259,15 +259,16 @@ After=network.target
 
 [Service]
 Type=simple
-User=lime
-WorkingDirectory=/home/lime/nova-hub
-Environment="PATH=/home/lime/nova-hub/.venv/bin"
-ExecStart=/home/lime/nova-hub/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
+User=novahub
+WorkingDirectory=/home/novahub/nova-hub
+ExecStart=/home/novahub/nova-hub/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
 Restart=always
 
 [Install]
 WantedBy=multi-user.target
 ```
+
+A Jinja2 template is also available in `deploy/nova-hub.service.j2` for use with the Ansible playbook.
 
 Enable and start:
 ```bash

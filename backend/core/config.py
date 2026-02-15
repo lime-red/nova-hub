@@ -16,7 +16,7 @@ class ServerConfig(BaseModel):
     """Server configuration"""
     host: str = "0.0.0.0"
     port: int = 8000
-    data_dir: str = "/home/lime/nova-data"
+    data_dir: str = "./data"
     environment: str = "production"
 
 
@@ -43,7 +43,7 @@ class DosemuConfig(BaseModel):
 
 class DatabaseConfig(BaseModel):
     """Database configuration"""
-    path: str = "/home/lime/nova-data/nova-hub.db"
+    path: str = "./data/nova-hub.db"
 
 
 class SecurityConfig(BaseModel):

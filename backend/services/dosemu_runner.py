@@ -192,7 +192,7 @@ class DosemuRunner:
         conf_file = config_dir / f"{game_type.lower()}.conf"
 
         # Basic dosemu configuration
-        # Uses default drive_c mapping (/home/lime/.dosemu/drive_c -> C:)
+        # Uses default drive_c mapping (~/.dosemu/drive_c -> C:)
         conf_content = f"""# Keyboard layout
 $_layout = "us"
 

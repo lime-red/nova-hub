@@ -16,7 +16,14 @@ from backend.models.database import Base
 # this is the Alembic Config object
 config = context.config
 
-# The database URL is configured in alembic.ini
+# Override database URL from config.toml if available
+try:
+    import toml as _toml
+    _app_config = _toml.load(Path(__file__).resolve().parent.parent / "config.toml")
+    _db_path = _app_config.get("database", {}).get("path", "./data/nova-hub.db")
+    config.set_main_option("sqlalchemy.url", f"sqlite:///{_db_path}")
+except FileNotFoundError:
+    pass  # Fall back to alembic.ini value
 
 # Interpret the config file for Python logging
 if config.config_file_name is not None:

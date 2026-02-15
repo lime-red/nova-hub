@@ -12,14 +12,14 @@ Get Nova Hub running in 5 minutes.
 
 ```bash
 # 1. Clone/navigate to the project
-cd /home/lime/nova-hub
+cd nova-hub
 
 # 2. Create virtual environment and install dependencies
 uv venv
 uv pip install -r requirements.txt
 
 # 3. Create data directory
-mkdir -p /home/lime/nova-data
+mkdir -p ./data
 
 # 4. Initialize database
 .venv/bin/alembic upgrade head
@@ -72,18 +72,18 @@ mkdir -p /home/lime/nova-data
 .venv/bin/alembic revision --autogenerate -m "Description"
 
 # View database
-sqlite3 /home/lime/nova-data/nova-hub.db
+sqlite3 ./data/nova-hub.db
 
 # Backup database
-cp /home/lime/nova-data/nova-hub.db ~/backups/nova-hub-$(date +%Y%m%d).db
+cp ./data/nova-hub.db ~/backups/nova-hub-$(date +%Y%m%d).db
 ```
 
 ## File Locations
 
-- **Code:** `/home/lime/nova-hub/`
-- **Data:** `/home/lime/nova-data/`
-- **Database:** `/home/lime/nova-data/nova-hub.db`
-- **Config:** `/home/lime/nova-hub/config.toml`
+- **Code:** `nova-hub/`
+- **Data:** `./data/`
+- **Database:** `./data/nova-hub.db`
+- **Config:** `nova-hub/config.toml`
 - **Logs:** Check systemd journal or uvicorn output
 
 ## Troubleshooting
@@ -91,7 +91,7 @@ cp /home/lime/nova-data/nova-hub.db ~/backups/nova-hub-$(date +%Y%m%d).db
 **Can't login?**
 ```bash
 # Verify admin user exists
-sqlite3 /home/lime/nova-data/nova-hub.db "SELECT username FROM sysop_users;"
+sqlite3 ./data/nova-hub.db "SELECT username FROM sysop_users;"
 
 # Recreate if needed
 .venv/bin/python create_admin_sql.py
@@ -105,7 +105,7 @@ sqlite3 /home/lime/nova-data/nova-hub.db "SELECT username FROM sysop_users;"
 # - app/database.py [DATABASE_URL]
 
 # Verify data directory exists
-ls -la /home/lime/nova-data/
+ls -la ./data/
 ```
 
 **Import errors?**

@@ -41,7 +41,7 @@ def main():
         config = toml.load(args.config)
 
         # Initialize database for validation
-        db_path = config.get("database", {}).get("path", "/home/lime/nova-data/nova-hub.db")
+        db_path = config.get("database", {}).get("path", "./data/nova-hub.db")
         database_url = f"sqlite:///{db_path}"
         init_database(database_url)
 

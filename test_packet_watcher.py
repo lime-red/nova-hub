@@ -1,16 +1,41 @@
 #!/usr/bin/env python3
 """
-Test the packet watcher by creating a test outbound packet
+Test the packet watcher by creating a test outbound packet.
+
+Reads configuration from config.toml.
+
+Usage: python test_packet_watcher.py
 """
 
 import time
 import shutil
 from pathlib import Path
 import sqlite3
+import toml
 
-# Configuration
-OUTBOUND_FOLDER = "/home/lime/.dosemu/drive_c/bbs/doors/bre_013/OUTBOUND"
-DB_PATH = "/home/lime/nova-data/nova-hub.db"
+# Load configuration
+config = toml.load("config.toml")
+data_dir = config.get("server", {}).get("data_dir", "./data")
+DB_PATH = config.get("database", {}).get("path", f"{data_dir}/nova-hub.db")
+
+# You must configure the outbound folder for your league
+# This is the dosemu outbound folder that the watcher monitors
+OUTBOUND_FOLDER = None
+dosemu_config = config.get("dosemu", {})
+for league_num, league_conf in dosemu_config.items():
+    if isinstance(league_conf, dict):
+        for game_type, game_conf in league_conf.items():
+            if isinstance(game_conf, dict) and "outbound_folder" in game_conf:
+                OUTBOUND_FOLDER = game_conf["outbound_folder"]
+                break
+    if OUTBOUND_FOLDER:
+        break
+
+if not OUTBOUND_FOLDER:
+    print("ERROR: No dosemu league outbound_folder found in config.toml")
+    print("Configure at least one league in [dosemu.<number>.<game>] with outbound_folder")
+    exit(1)
+
 TEST_PACKET = "555B0201.001"  # League 555, BRE, from 02 to 01, sequence 001
 
 def create_test_packet():
@@ -66,7 +91,7 @@ def check_database():
 
 def check_moved_location():
     """Check if packet was moved to the outbound directory"""
-    data_outbound = Path("/home/lime/nova-data/packets/outbound") / TEST_PACKET
+    data_outbound = Path(data_dir) / "packets" / "outbound" / TEST_PACKET
 
     print(f"\nChecking if packet was moved to: {data_outbound}")
 
@@ -82,6 +107,9 @@ def main():
     print("=" * 70)
     print("PACKET WATCHER TEST")
     print("=" * 70)
+
+    print(f"\nUsing outbound folder: {OUTBOUND_FOLDER}")
+    print(f"Using database: {DB_PATH}")
 
     print("\nThis test will:")
     print("1. Create a test packet in the DOSEMU outbound folder")

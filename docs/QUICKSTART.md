@@ -102,7 +102,7 @@ sqlite3 ./data/nova-hub.db "SELECT username FROM sysop_users;"
 # Check paths match in these files:
 # - config.toml [database.path]
 # - alembic.ini [sqlalchemy.url]
-# - app/database.py [DATABASE_URL]
+# - backend/core/database.py [init_database]
 
 # Verify data directory exists
 ls -la ./data/

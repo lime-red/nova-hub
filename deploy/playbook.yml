@@ -8,6 +8,7 @@
 #   ansible-playbook -i inventory.yml playbook.yml -e first_run=true
 #
 # Variables (set in inventory or via -e):
+#   nova_hub_domain:  Domain name for TLS (REQUIRED, e.g. hub.example.com)
 #   nova_hub_user:    System user to run as (default: novahub)
 #   nova_hub_dir:     Install directory (default: /home/{{ nova_hub_user }}/nova-hub)
 #   nova_data_dir:    Data directory (default: /home/{{ nova_hub_user }}/nova-data)
@@ -20,242 +21,294 @@
   become: true
 
   vars:
-    nova_hub_user: novahub
-    nova_hub_group: novahub
-    nova_hub_dir: "/home/{{ nova_hub_user }}/nova-hub"
-    nova_data_dir: "/home/{{ nova_hub_user }}/nova-data"
-    nova_hub_repo: "https://github.com/lime-red/nova-hub.git"
-    nova_hub_branch: main
-    first_run: false
+      # nova_hub_domain must be set in inventory or via -e
+      nova_hub_user: novahub
+      nova_hub_group: novahub
+      nova_hub_dir: "/home/{{ nova_hub_user }}/nova-hub"
+      nova_data_dir: "/home/{{ nova_hub_user }}/nova-data"
+      nova_hub_repo: "https://github.com/lime-red/nova-hub.git"
+      nova_hub_branch: main
+      first_run: false
 
-    # dosemu2 packages - from Ubuntu PPA, installed manually on Debian
-    dosemu2_debs:
-      - url: https://code.launchpad.net/~dosemu2/+archive/ubuntu/ppa/+files/install-freedos_0.4-3~202512050100+202512050646~ubuntu24.04.1_all.deb
-        name: install-freedos
-      - url: https://code.launchpad.net/~dosemu2/+archive/ubuntu/ppa/+files/comcom64_0.4-0~202602051302+202602051803~ubuntu24.04.1_amd64.deb
-        name: comcom64
-      - url: https://code.launchpad.net/~dosemu2/+archive/ubuntu/ppa/+files/fdpp_1.10-10002-1657-7686237+202602072007~ubuntu24.04.1_amd64.deb
-        name: fdpp
-      - url: https://code.launchpad.net/~dosemu2/+archive/ubuntu/ppa/+files/dosemu2_2.0~pre9-10031-632b269d2+202602131817~ubuntu24.04.1_amd64.deb
-        name: dosemu2
+      # dosemu2 packages - from Ubuntu PPA, installed manually on Debian
+      dosemu2_debs:
+          - url: https://code.launchpad.net/~dosemu2/+archive/ubuntu/ppa/+files/comcom64_0.4-0~202602051302+202602051803~ubuntu24.04.1_amd64.deb
+            name: comcom64
+          - url: https://code.launchpad.net/~dosemu2/+archive/ubuntu/ppa/+files/dj64_0.4-0~202602082211+202602090319~ubuntu24.04.1_amd64.deb
+            name: dj64
+          - url: https://code.launchpad.net/~dosemu2/+archive/ubuntu/ppa/+files/djdev64_0.4-0~202602082211+202602090319~ubuntu24.04.1_amd64.deb
+            name: djdev64
+          - url: https://code.launchpad.net/~dosemu2/+archive/ubuntu/ppa/+files/dosemu2_2.0~pre9-10031-632b269d2+202602131817~ubuntu24.04.1_amd64.deb
+            name: dosemu2
+          - url: https://code.launchpad.net/~dosemu2/+archive/ubuntu/ppa/+files/fdpp_1.10-10002-1657-7686237+202602072007~ubuntu24.04.1_amd64.deb
+            name: fdpp
+          - url: https://code.launchpad.net/~dosemu2/+archive/ubuntu/ppa/+files/install-freedos_0.4-3~202512050100+202512050646~ubuntu24.04.1_all.deb
+            name: install-freedos
 
   tasks:
-    # ── System user ─────────────────────────────────────────────
-    - name: Create dedicated service group
-      ansible.builtin.group:
-        name: "{{ nova_hub_group }}"
-        state: present
+      # ── System user ─────────────────────────────────────────────
+      - name: Create dedicated service group
+        ansible.builtin.group:
+            name: "{{ nova_hub_group }}"
+            state: present
 
-    - name: Create dedicated service user
-      ansible.builtin.user:
-        name: "{{ nova_hub_user }}"
-        group: "{{ nova_hub_group }}"
-        system: false
-        create_home: true
-        shell: /bin/bash
-        comment: "Nova Hub service account"
+      - name: Create dedicated service user
+        ansible.builtin.user:
+            name: "{{ nova_hub_user }}"
+            group: "{{ nova_hub_group }}"
+            system: false
+            create_home: true
+            shell: /bin/bash
+            comment: "Nova Hub service account"
 
-    # ── System packages ─────────────────────────────────────────
-    - name: Install system dependencies
-      ansible.builtin.apt:
-        name:
-          - git
-          - curl
-          - build-essential
-          - libsqlite3-dev
-        state: present
-        update_cache: true
-        cache_valid_time: 3600
+      # ── System packages ─────────────────────────────────────────
+      - name: Install system dependencies
+        ansible.builtin.apt:
+            name:
+                - git
+                - curl
+                - build-essential
+                - libsqlite3-dev
+            state: present
+            update_cache: true
+            cache_valid_time: 3600
 
-    # ── uv (Python package manager) ─────────────────────────────
-    - name: Install uv
-      ansible.builtin.shell:
-        cmd: curl -LsSf https://astral.sh/uv/install.sh | sh
-      args:
-        creates: "/home/{{ nova_hub_user }}/.local/bin/uv"
-      become: true
-      become_user: "{{ nova_hub_user }}"
+      # ── Caddy (TLS reverse proxy) ────────────────────────────────
+      - name: Install Caddy prerequisites
+        ansible.builtin.apt:
+            name:
+                - debian-keyring
+                - debian-archive-keyring
+                - apt-transport-https
+                - curl
+            state: present
 
-    # ── Python 3.13 via uv (works on Debian without PPAs) ──────
-    - name: Install Python 3.13 via uv
-      ansible.builtin.shell:
-        cmd: /home/{{ nova_hub_user }}/.local/bin/uv python install 3.13
-      become: true
-      become_user: "{{ nova_hub_user }}"
-      register: python_install
-      changed_when: "'Already' not in python_install.stdout"
+      - name: Add Caddy GPG key
+        ansible.builtin.shell:
+            cmd: curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+        args:
+            creates: /usr/share/keyrings/caddy-stable-archive-keyring.gpg
 
-    # ── Node.js and pnpm (for frontend build) ───────────────────
-    - name: Install Node.js via nodesource
-      ansible.builtin.shell:
-        cmd: curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-      args:
-        creates: /usr/bin/node
+      - name: Add Caddy apt repository
+        ansible.builtin.shell:
+            cmd: curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
+        args:
+            creates: /etc/apt/sources.list.d/caddy-stable.list
 
-    - name: Install Node.js package
-      ansible.builtin.apt:
-        name: nodejs
-        state: present
+      - name: Install Caddy
+        ansible.builtin.apt:
+            name: caddy
+            state: present
+            update_cache: true
 
-    - name: Install pnpm
-      ansible.builtin.shell:
-        cmd: npm install -g pnpm
-      args:
-        creates: /usr/bin/pnpm
+      - name: Deploy Caddyfile
+        ansible.builtin.template:
+            src: Caddyfile.j2
+            dest: /etc/caddy/Caddyfile
+            mode: "0644"
+        notify:
+            - Reload Caddy
 
-    # ── dosemu2 ─────────────────────────────────────────────────
-    - name: Create temp directory for dosemu2 debs
-      ansible.builtin.tempfile:
-        state: directory
-        prefix: dosemu2_
-      register: dosemu2_tmpdir
+      - name: Enable and start Caddy
+        ansible.builtin.systemd:
+            name: caddy
+            enabled: true
+            state: started
 
-    - name: Download dosemu2 deb packages
-      ansible.builtin.get_url:
-        url: "{{ item.url }}"
-        dest: "{{ dosemu2_tmpdir.path }}/{{ item.name }}.deb"
-        mode: '0644'
-      loop: "{{ dosemu2_debs }}"
+      # ── uv (Python package manager) ─────────────────────────────
+      - name: Install uv
+        ansible.builtin.shell:
+            cmd: curl -LsSf https://astral.sh/uv/install.sh | sh
+        args:
+            creates: "/home/{{ nova_hub_user }}/.local/bin/uv"
+        become: true
+        become_user: "{{ nova_hub_user }}"
 
-    - name: Install dosemu2 packages (with dependencies)
-      ansible.builtin.apt:
-        deb: "{{ dosemu2_tmpdir.path }}/{{ item.name }}.deb"
-        state: present
-      loop: "{{ dosemu2_debs }}"
-      register: dosemu2_install
+      # ── Python 3.13 via uv (works on Debian without PPAs) ──────
+      - name: Install Python 3.13 via uv
+        ansible.builtin.shell:
+            cmd: /home/{{ nova_hub_user }}/.local/bin/uv python install 3.13
+        become: true
+        become_user: "{{ nova_hub_user }}"
+        register: python_install
+        changed_when: "'Already' not in python_install.stdout"
 
-    - name: Fix broken dependencies after dosemu2 install
-      ansible.builtin.command:
-        cmd: apt-get install -f -y
-      when: dosemu2_install is changed
+      # ── Node.js and pnpm (for frontend build) ───────────────────
+      - name: Install Node.js via nodesource
+        ansible.builtin.shell:
+            cmd: curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+        args:
+            creates: /usr/bin/node
 
-    - name: Clean up dosemu2 temp directory
-      ansible.builtin.file:
-        path: "{{ dosemu2_tmpdir.path }}"
-        state: absent
+      - name: Install Node.js package
+        ansible.builtin.apt:
+            name: nodejs
+            state: present
 
-    # ── Application ─────────────────────────────────────────────
-    - name: Create data directory
-      ansible.builtin.file:
-        path: "{{ nova_data_dir }}"
-        state: directory
-        owner: "{{ nova_hub_user }}"
-        group: "{{ nova_hub_group }}"
-        mode: '0755'
+      - name: Install pnpm
+        ansible.builtin.shell:
+            cmd: npm install -g pnpm
+        args:
+            creates: /usr/bin/pnpm
 
-    - name: Clone or update nova-hub repository
-      ansible.builtin.git:
-        repo: "{{ nova_hub_repo }}"
-        dest: "{{ nova_hub_dir }}"
-        version: "{{ nova_hub_branch }}"
-        force: false
-      become: true
-      become_user: "{{ nova_hub_user }}"
-      register: git_result
+      # ── dosemu2 ─────────────────────────────────────────────────
+      - name: Create temp directory for dosemu2 debs
+        ansible.builtin.tempfile:
+            state: directory
+            prefix: dosemu2_
+        register: dosemu2_tmpdir
 
-    # ── Configuration ───────────────────────────────────────────
-    - name: Deploy config.toml from example if not present
-      ansible.builtin.copy:
-        src: "{{ nova_hub_dir }}/config.toml.example"
-        dest: "{{ nova_hub_dir }}/config.toml"
-        remote_src: true
-        owner: "{{ nova_hub_user }}"
-        group: "{{ nova_hub_group }}"
-        mode: '0600'
-        force: false  # Don't overwrite existing config
+      - name: Download dosemu2 deb packages
+        ansible.builtin.get_url:
+            url: "{{ item.url }}"
+            dest: "{{ dosemu2_tmpdir.path }}/{{ item.name }}.deb"
+            mode: "0644"
+        loop: "{{ dosemu2_debs }}"
 
-    - name: Set data_dir in config.toml
-      ansible.builtin.lineinfile:
-        path: "{{ nova_hub_dir }}/config.toml"
-        regexp: '^data_dir\s*='
-        line: 'data_dir = "{{ nova_data_dir }}"'
-        owner: "{{ nova_hub_user }}"
-        group: "{{ nova_hub_group }}"
+      - name: Install dosemu2 packages (with dependencies)
+        ansible.builtin.apt:
+            deb: "{{ dosemu2_tmpdir.path }}/{{ item.name }}.deb"
+            state: present
+        loop: "{{ dosemu2_debs }}"
+        register: dosemu2_install
 
-    - name: Set database path in config.toml
-      ansible.builtin.lineinfile:
-        path: "{{ nova_hub_dir }}/config.toml"
-        regexp: '^path\s*=.*nova-hub\.db'
-        line: 'path = "{{ nova_data_dir }}/nova-hub.db"'
-        owner: "{{ nova_hub_user }}"
-        group: "{{ nova_hub_group }}"
+      - name: Fix broken dependencies after dosemu2 install
+        ansible.builtin.command:
+            cmd: apt-get install -f -y
+        when: dosemu2_install is changed
 
-    # ── Python virtual environment and dependencies ─────────────
-    - name: Create venv and install Python dependencies
-      ansible.builtin.shell:
-        cmd: |
-          /home/{{ nova_hub_user }}/.local/bin/uv venv --python 3.13 &&
-          /home/{{ nova_hub_user }}/.local/bin/uv pip install -r requirements.txt
-        chdir: "{{ nova_hub_dir }}"
-      become: true
-      become_user: "{{ nova_hub_user }}"
-      when: git_result.changed or first_run | bool
+      - name: Clean up dosemu2 temp directory
+        ansible.builtin.file:
+            path: "{{ dosemu2_tmpdir.path }}"
+            state: absent
 
-    - name: Ensure Python dependencies are up to date
-      ansible.builtin.shell:
-        cmd: /home/{{ nova_hub_user }}/.local/bin/uv pip install -r requirements.txt
-        chdir: "{{ nova_hub_dir }}"
-      become: true
-      become_user: "{{ nova_hub_user }}"
-      when: not (git_result.changed or first_run | bool)
+      # ── Application ─────────────────────────────────────────────
+      - name: Create data directory
+        ansible.builtin.file:
+            path: "{{ nova_data_dir }}"
+            state: directory
+            owner: "{{ nova_hub_user }}"
+            group: "{{ nova_hub_group }}"
+            mode: "0755"
 
-    # ── Frontend build ──────────────────────────────────────────
-    - name: Install frontend dependencies
-      ansible.builtin.shell:
-        cmd: pnpm install
-        chdir: "{{ nova_hub_dir }}/frontend"
-      become: true
-      become_user: "{{ nova_hub_user }}"
-      when: git_result.changed or first_run | bool
+      - name: Clone or update nova-hub repository
+        ansible.builtin.git:
+            repo: "{{ nova_hub_repo }}"
+            dest: "{{ nova_hub_dir }}"
+            version: "{{ nova_hub_branch }}"
+            force: false
+        become: true
+        become_user: "{{ nova_hub_user }}"
+        register: git_result
 
-    - name: Build frontend
-      ansible.builtin.shell:
-        cmd: pnpm run build
-        chdir: "{{ nova_hub_dir }}/frontend"
-      become: true
-      become_user: "{{ nova_hub_user }}"
-      when: git_result.changed or first_run | bool
+      # ── Configuration ───────────────────────────────────────────
+      - name: Deploy config.toml from example if not present
+        ansible.builtin.copy:
+            src: "{{ nova_hub_dir }}/config.toml.example"
+            dest: "{{ nova_hub_dir }}/config.toml"
+            remote_src: true
+            owner: "{{ nova_hub_user }}"
+            group: "{{ nova_hub_group }}"
+            mode: "0600"
+            force: false # Don't overwrite existing config
 
-    # ── Database migrations ─────────────────────────────────────
-    - name: Run database migrations
-      ansible.builtin.shell:
-        cmd: "{{ nova_hub_dir }}/.venv/bin/alembic upgrade head"
-        chdir: "{{ nova_hub_dir }}"
-      become: true
-      become_user: "{{ nova_hub_user }}"
-      when: git_result.changed or first_run | bool
+      - name: Set data_dir in config.toml
+        ansible.builtin.lineinfile:
+            path: "{{ nova_hub_dir }}/config.toml"
+            regexp: '^data_dir\s*='
+            line: 'data_dir = "{{ nova_data_dir }}"'
+            owner: "{{ nova_hub_user }}"
+            group: "{{ nova_hub_group }}"
 
-    # ── Create admin user (first run only) ──────────────────────
-    - name: Create admin user
-      ansible.builtin.shell:
-        cmd: "{{ nova_hub_dir }}/.venv/bin/python create_admin_sql.py"
-        chdir: "{{ nova_hub_dir }}"
-      become: true
-      become_user: "{{ nova_hub_user }}"
-      when: first_run | bool
+      - name: Set database path in config.toml
+        ansible.builtin.lineinfile:
+            path: "{{ nova_hub_dir }}/config.toml"
+            regexp: '^path\s*=.*nova-hub\.db'
+            line: 'path = "{{ nova_data_dir }}/nova-hub.db"'
+            owner: "{{ nova_hub_user }}"
+            group: "{{ nova_hub_group }}"
 
-    # ── Systemd service ─────────────────────────────────────────
-    - name: Install systemd service file
-      ansible.builtin.template:
-        src: nova-hub.service.j2
-        dest: /etc/systemd/system/nova-hub.service
-        mode: '0644'
-      notify:
-        - Reload systemd
+      # ── Python virtual environment and dependencies ─────────────
+      - name: Create venv and install Python dependencies
+        ansible.builtin.shell:
+            cmd: |
+                /home/{{ nova_hub_user }}/.local/bin/uv venv --python 3.13 &&
+                /home/{{ nova_hub_user }}/.local/bin/uv pip install -r requirements.txt
+            chdir: "{{ nova_hub_dir }}"
+        become: true
+        become_user: "{{ nova_hub_user }}"
+        when: git_result.changed or first_run | bool
 
-    - name: Enable and start nova-hub service
-      ansible.builtin.systemd:
-        name: nova-hub
-        enabled: true
-        state: started
+      - name: Ensure Python dependencies are up to date
+        ansible.builtin.shell:
+            cmd: /home/{{ nova_hub_user }}/.local/bin/uv pip install -r requirements.txt
+            chdir: "{{ nova_hub_dir }}"
+        become: true
+        become_user: "{{ nova_hub_user }}"
+        when: not (git_result.changed or first_run | bool)
 
-    - name: Restart nova-hub if code changed
-      ansible.builtin.systemd:
-        name: nova-hub
-        state: restarted
-      when: git_result.changed
+      # ── Frontend build ──────────────────────────────────────────
+      - name: Install frontend dependencies
+        ansible.builtin.shell:
+            cmd: pnpm install
+            chdir: "{{ nova_hub_dir }}/frontend"
+        become: true
+        become_user: "{{ nova_hub_user }}"
+        when: git_result.changed or first_run | bool
+
+      - name: Build frontend
+        ansible.builtin.shell:
+            cmd: pnpm run build
+            chdir: "{{ nova_hub_dir }}/frontend"
+        become: true
+        become_user: "{{ nova_hub_user }}"
+        when: git_result.changed or first_run | bool
+
+      # ── Database migrations ─────────────────────────────────────
+      - name: Run database migrations
+        ansible.builtin.shell:
+            cmd: "{{ nova_hub_dir }}/.venv/bin/alembic upgrade head"
+            chdir: "{{ nova_hub_dir }}"
+        become: true
+        become_user: "{{ nova_hub_user }}"
+        when: git_result.changed or first_run | bool
+
+      # ── Create admin user (first run only) ──────────────────────
+      - name: Create admin user
+        ansible.builtin.shell:
+            cmd: "{{ nova_hub_dir }}/.venv/bin/python create_admin_sql.py"
+            chdir: "{{ nova_hub_dir }}"
+        become: true
+        become_user: "{{ nova_hub_user }}"
+        when: first_run | bool
+
+      # ── Systemd service ─────────────────────────────────────────
+      - name: Install systemd service file
+        ansible.builtin.template:
+            src: nova-hub.service.j2
+            dest: /etc/systemd/system/nova-hub.service
+            mode: "0644"
+        notify:
+            - Reload systemd
+
+      - name: Enable and start nova-hub service
+        ansible.builtin.systemd:
+            name: nova-hub
+            enabled: true
+            state: started
+
+      - name: Restart nova-hub if code changed
+        ansible.builtin.systemd:
+            name: nova-hub
+            state: restarted
+        when: git_result.changed
 
   handlers:
-    - name: Reload systemd
-      ansible.builtin.systemd:
-        daemon_reload: true
+      - name: Reload systemd
+        ansible.builtin.systemd:
+            daemon_reload: true
+
+      - name: Reload Caddy
+        ansible.builtin.systemd:
+            name: caddy
+            state: reloaded

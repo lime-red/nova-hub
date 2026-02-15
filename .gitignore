@@ -13,3 +13,5 @@ labs.sh
 dosemu_configs/bre.conf
 node_modules/
 frontend/dist/
+._*
+deploy/inventory.yml

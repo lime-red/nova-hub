@@ -35,3 +35,6 @@ aiohttp==3.10.0
 
 # ANSI to HTML conversion for logs
 ansi2html==1.9.1
+
+# HTML parsing
+beautifulsoup4==4.12.3

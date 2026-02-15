@@ -41,6 +41,11 @@
 
   tasks:
     # ── System user ─────────────────────────────────────────────
+    - name: Create dedicated service group
+      ansible.builtin.group:
+        name: "{{ nova_hub_group }}"
+        state: present
+
     - name: Create dedicated service user
       ansible.builtin.user:
         name: "{{ nova_hub_user }}"
@@ -118,7 +123,6 @@
         state: present
       loop: "{{ dosemu2_debs }}"
       register: dosemu2_install
-      ignore_errors: true
 
     - name: Fix broken dependencies after dosemu2 install
       ansible.builtin.command:

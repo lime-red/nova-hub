@@ -133,8 +133,14 @@ async def get_client(
             bbs_hex = league_bbs_map.get(packet.league_id, "")
             # Direction from hub's perspective:
             # - "received" = hub received this packet from the client (client was source)
-            # - "sent" = hub sent this packet to the client (client was dest)
-            direction = "received" if packet.source_bbs_index == bbs_hex else "sent"
+            # - "queued"   = hub has a packet ready for the client, not yet downloaded
+            # - "sent"     = hub's packet has been downloaded by the client
+            if packet.source_bbs_index == bbs_hex:
+                direction = "received"
+            elif packet.is_downloaded:
+                direction = "sent"
+            else:
+                direction = "queued"
 
             packets.append(
                 PacketHistoryItem(

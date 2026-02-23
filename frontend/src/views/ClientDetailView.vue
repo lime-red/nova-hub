@@ -232,8 +232,8 @@ async function copySecret() {
                 <tr v-for="packet in clientsStore.currentClient.packets" :key="packet.filename">
                   <td class="font-mono">{{ packet.filename }}</td>
                   <td>
-                    <span class="badge" :class="packet.direction === 'received' ? 'badge-success' : 'badge-info'">
-                      {{ packet.direction === 'received' ? 'Received' : 'Sent' }}
+                    <span class="badge" :class="packet.direction === 'received' ? 'badge-success' : packet.direction === 'queued' ? 'badge-warning' : 'badge-info'">
+                      {{ packet.direction === 'received' ? 'Received' : packet.direction === 'queued' ? 'Queued' : 'Sent' }}
                     </span>
                   </td>
                   <td>{{ packet.league_name }}</td>

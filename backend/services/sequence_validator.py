@@ -22,8 +22,15 @@ class SequenceValidator:
         """Initialize with database session"""
         self.db = db
 
-    def check_sequences(self):
-        """Detect missing sequences for each route"""
+    def check_sequences(self) -> list:
+        """
+        Detect missing sequences for each route.
+
+        Returns a list of newly created SequenceAlert objects so the caller
+        can dispatch out-of-band notifications.
+        """
+        new_alerts = []
+
         # Get all unique routes (league, source, dest combinations)
         routes = self.db.execute(text("""
             SELECT DISTINCT league_id, source_bbs_index, dest_bbs_index
@@ -52,8 +59,12 @@ class SequenceValidator:
             gaps = self.find_gaps(seq_list)
 
             for gap_info in gaps:
-                # Create alert if not already exists
-                self.create_alert_if_new(route, gap_info)
+                # Create alert if not already exists; collect new ones for delivery
+                alert = self.create_alert_if_new(route, gap_info)
+                if alert is not None:
+                    new_alerts.append(alert)
+
+        return new_alerts
 
     def find_gaps(self, sequences: list[int]) -> list[dict]:
         """
@@ -169,7 +180,7 @@ class SequenceValidator:
         ).first()
 
         if existing:
-            return  # Alert already exists
+            return None  # Alert already exists
 
         # Create new alert with context about what was received
         description = (
@@ -188,11 +199,14 @@ class SequenceValidator:
         )
         self.db.add(alert)
         self.db.commit()
+        self.db.refresh(alert)
 
         logger.warning(
             f"Created alert for missing sequence {expected_sequence:03d} on route "
             f"{source_bbs_index}->{dest_bbs_index} (received {received_sequence:03d}, gap={gap_size})"
         )
+
+        return alert
 
     def auto_resolve_alerts(self):
         """

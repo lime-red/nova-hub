@@ -2,13 +2,20 @@
 
 import os
 import sys
+from contextvars import ContextVar
 from loguru import logger
+
+# Context variable tracking the authenticated user for the current request.
+# Set by AuthContextMiddleware; defaults to "-" (unauthenticated / background).
+current_request_user: ContextVar[str] = ContextVar("current_request_user", default="-")
 
 
 def _patcher(record):
-    """Patch log records to ensure 'context' always exists in extra."""
+    """Patch log records to ensure 'context' and 'user' always exist in extra."""
     if "context" not in record["extra"]:
         record["extra"]["context"] = "system"
+    if "user" not in record["extra"]:
+        record["extra"]["user"] = current_request_user.get()
 
 
 def configure_logging(log_level: str = "INFO"):
@@ -28,13 +35,14 @@ def configure_logging(log_level: str = "INFO"):
             "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
             "<level>{level: <8}</level> | "
             "<cyan>{extra[context]: <20}</cyan> | "
+            "<yellow>{extra[user]: <15}</yellow> | "
             "<level>{message}</level>"
         ),
         level=log_level,
         colorize=True,
     )
 
-    # Configure patcher to add default context
+    # Configure patcher to add default context/user
     logger.configure(patcher=_patcher)
 
     logger.info(f"Logging configured at {log_level} level")

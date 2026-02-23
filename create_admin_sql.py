@@ -2,19 +2,42 @@
 """
 Create default admin user using direct SQL
 Run with: python create_admin_sql.py
+
+Password resolution order:
+  1. --password CLI argument
+  2. NOVA_HUB_ADMIN_PASSWORD environment variable
+  3. (no default — a random password is generated if neither is set)
 """
 
+import os
+import secrets
 import sqlite3
+import sys
 import bcrypt
 import toml
 from datetime import datetime
+
+# --- Password resolution ---
+password = None
+
+if len(sys.argv) == 3 and sys.argv[1] == "--password":
+    password = sys.argv[2]
+elif len(sys.argv) == 2 and sys.argv[1].startswith("--password="):
+    password = sys.argv[1].split("=", 1)[1]
+else:
+    password = os.environ.get("NOVA_HUB_ADMIN_PASSWORD")
+
+generated = False
+if not password:
+    # Generate a secure random password if none was supplied
+    password = secrets.token_urlsafe(16)
+    generated = True
 
 # Load database path from config
 config = toml.load("config.toml")
 db_path = config.get("database", {}).get("path", "./data/nova-hub.db")
 
 # Hash password directly with bcrypt
-password = "admin"
 hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
 # Connect to database
@@ -28,11 +51,8 @@ try:
 
     if existing:
         print("=" * 60)
-        print("Admin user already exists!")
+        print("Admin user already exists — password unchanged.")
         print("=" * 60)
-        print()
-        print("Username: admin")
-        print()
     else:
         # Insert admin user
         cursor.execute("""
@@ -57,10 +77,10 @@ try:
         print()
         print("Login credentials:")
         print("  Username: admin")
-        print("  Password: admin")
-        print()
-        print("⚠️  IMPORTANT: Change this password immediately in production!")
-        print("   Go to: http://localhost:8000/admin/users")
+        if generated:
+            print(f"  Password: {password}  (auto-generated — save this now)")
+        else:
+            print("  Password: (as configured)")
         print()
         print("=" * 60)
 

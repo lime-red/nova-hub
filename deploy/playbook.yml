@@ -8,13 +8,15 @@
 #   ansible-playbook -i inventory.yml playbook.yml -e first_run=true
 #
 # Variables (set in inventory or via -e):
-#   nova_hub_domain:  Domain name for TLS (REQUIRED, e.g. hub.example.com)
-#   nova_hub_user:    System user to run as (default: novahub)
-#   nova_hub_dir:     Install directory (default: /home/{{ nova_hub_user }}/nova-hub)
-#   nova_data_dir:    Data directory (default: /home/{{ nova_hub_user }}/nova-data)
-#   nova_hub_repo:    Git repo URL (default: https://github.com/lime-red/nova-hub.git)
-#   nova_hub_branch:  Git branch (default: main)
-#   first_run:        Create admin user (default: false)
+#   nova_hub_domain:       Domain name for TLS (REQUIRED, e.g. hub.example.com)
+#   nova_hub_user:         System user to run as (default: novahub)
+#   nova_hub_dir:          Install directory (default: /home/{{ nova_hub_user }}/nova-hub)
+#   nova_data_dir:         Data directory (default: /home/{{ nova_hub_user }}/nova-data)
+#   nova_hub_repo:         Git repo URL (default: https://github.com/lime-red/nova-hub.git)
+#   nova_hub_branch:       Git branch (default: main)
+#   first_run:             Create admin user (default: false)
+#   nova_hub_admin_password: Initial admin password (RECOMMENDED on first_run).
+#                            If omitted a random password is generated and printed.
 
 - name: Deploy Nova Hub
   hosts: nova_hub
@@ -278,6 +280,8 @@
         ansible.builtin.shell:
             cmd: "{{ nova_hub_dir }}/.venv/bin/python create_admin_sql.py"
             chdir: "{{ nova_hub_dir }}"
+        environment:
+            NOVA_HUB_ADMIN_PASSWORD: "{{ nova_hub_admin_password | default('') }}"
         become: true
         become_user: "{{ nova_hub_user }}"
         when: first_run | bool

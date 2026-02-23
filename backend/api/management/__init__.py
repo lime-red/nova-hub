@@ -6,7 +6,6 @@ This API is used by the Vue.js frontend to:
 - Manage clients, leagues, and memberships
 - View processing runs and logs
 - Manage alerts and users
-- Receive real-time dashboard updates via WebSocket
 """
 
 from fastapi import APIRouter
@@ -18,7 +17,6 @@ from .leagues import router as leagues_router
 from .processing import router as processing_router
 from .alerts import router as alerts_router
 from .users import router as users_router
-from .websocket import router as websocket_router
 
 management_router = APIRouter()
 
@@ -62,10 +60,4 @@ management_router.include_router(
     users_router,
     prefix="/users",
     tags=["Management API - Users"]
-)
-
-management_router.include_router(
-    websocket_router,
-    prefix="/ws",
-    tags=["Management API - WebSocket"]
 )

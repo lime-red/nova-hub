@@ -93,29 +93,6 @@ export const useDashboardStore = defineStore('dashboard', () => {
     error.value = null
   }
 
-  // WebSocket handling for real-time updates
-  function handleWebSocketMessage(message: { type: string; [key: string]: unknown }): void {
-    switch (message.type) {
-      case 'stats_update':
-        if (message.stats) {
-          stats.value = message.stats as DashboardStats
-        }
-        break
-      case 'packet_received':
-        // Reload activity feed
-        loadActivity()
-        break
-      case 'alert_created':
-        // Reload alerts
-        loadDashboard()
-        break
-      case 'processing_complete':
-        // Reload stats
-        loadStats()
-        break
-    }
-  }
-
   return {
     // State
     stats,
@@ -130,6 +107,5 @@ export const useDashboardStore = defineStore('dashboard', () => {
     loadStats,
     loadActivity,
     clearError,
-    handleWebSocketMessage
   }
 })

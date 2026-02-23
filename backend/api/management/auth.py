@@ -1,14 +1,17 @@
 """Management API authentication (session-based JWT)"""
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
+from backend.core.config import get_config
 from backend.core.database import get_db
+from backend.core.rate_limiter import check_rate_limit, record_failed_attempt
 from backend.core.security import (
     COOKIE_NAME,
     create_session_token,
     get_current_user,
     get_password_hash,
+    validate_password,
     verify_password,
 )
 from backend.logging_config import get_logger
@@ -27,6 +30,7 @@ router = APIRouter()
 
 @router.post("/login", response_model=LoginResponse, summary="Login")
 async def login(
+    http_request: Request,
     request: LoginRequest,
     response: Response,
     db: Session = Depends(get_db),
@@ -48,22 +52,28 @@ async def login(
       -c cookies.txt
     ```
     """
+    # Check rate limit before processing credentials
+    check_rate_limit(http_request)
+
     user = db.query(SysopUser).filter(SysopUser.username == request.username).first()
 
     if not user or not verify_password(request.password, user.hashed_password):
+        record_failed_attempt(http_request)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid username or password",
         )
 
+    config = get_config()
     # Create session token and set cookie
     token = create_session_token(user.username)
     response.set_cookie(
         key=COOKIE_NAME,
         value=token,
         httponly=True,
+        secure=config.security.cookie_secure,
         samesite="lax",
-        max_age=24 * 3600,  # 24 hours
+        max_age=config.security.jwt_expiry_hours * 3600,
     )
 
     logger.info(f"User {user.username} logged in")
@@ -153,6 +163,12 @@ async def change_password(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="New passwords do not match",
         )
+
+    # Enforce password policy
+    try:
+        validate_password(request.new_password)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
     # Update password
     current_user.hashed_password = get_password_hash(request.new_password)

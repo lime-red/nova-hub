@@ -2,12 +2,13 @@
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Form, HTTPException, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from backend.core.database import get_db
+from backend.core.rate_limiter import check_rate_limit, record_failed_attempt
 from backend.core.security import (
-    create_access_token,
+    create_service_token,
     get_current_client,
     verify_client_credentials,
 )
@@ -22,6 +23,7 @@ router = APIRouter()
 
 @router.post("/token", response_model=TokenResponse, summary="Get Access Token")
 async def login_for_access_token(
+    request: Request,
     grant_type: str = Form(..., description="Must be 'client_credentials'"),
     client_id: str = Form(..., description="Your client ID provided by the hub administrator"),
     client_secret: str = Form(..., description="Your client secret provided by the hub administrator"),
@@ -47,6 +49,9 @@ async def login_for_access_token(
       -d "client_secret=your_secret"
     ```
     """
+    # Check rate limit before processing credentials
+    check_rate_limit(request)
+
     # Validate grant type
     if grant_type != "client_credentials":
         raise HTTPException(
@@ -58,6 +63,7 @@ async def login_for_access_token(
     client = verify_client_credentials(client_id, client_secret, db)
 
     if not client:
+        record_failed_attempt(request)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid client credentials",
@@ -70,7 +76,7 @@ async def login_for_access_token(
 
     # Create token
     logger.debug(f"Creating token for client_id: {client.client_id}")
-    access_token = create_access_token(data={"sub": client.client_id})
+    access_token = create_service_token(client.client_id)
     logger.info(f"Token created successfully for {client.client_id}")
 
     return TokenResponse(access_token=access_token, token_type="bearer")

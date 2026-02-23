@@ -28,7 +28,6 @@ class HubConfig(BaseModel):
 
 class ProcessingConfig(BaseModel):
     """Packet processing configuration"""
-    hold_time_hours: int = 0
     poll_interval: int = 60
     retention_days: int = 30
 
@@ -50,12 +49,16 @@ class SecurityConfig(BaseModel):
     """Security configuration"""
     jwt_secret: str = "change-me-in-production"
     jwt_expiry_hours: int = 24
+    max_upload_size_bytes: int = 10 * 1024 * 1024  # 10 MB
+    min_password_length: int = 12
+    cookie_secure: bool = True
 
 
 class RateLimitingConfig(BaseModel):
     """Rate limiting configuration"""
-    enabled: bool = False
-    requests_per_minute: int = 30
+    enabled: bool = True
+    auth_attempts_per_minute: int = 10
+    auth_lockout_seconds: int = 300
 
 
 class Config(BaseModel):

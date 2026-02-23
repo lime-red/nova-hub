@@ -8,7 +8,6 @@ bbs_name = "Nova Hub"
 bbs_index = "01"
 
 [processing]
-hold_time_hours = 0
 poll_interval = 60
 retention_days = 30
 
@@ -24,18 +23,18 @@ timeout = 300
 #                      ./data/dosemu/<league_number>/<game_type>/outbound/
 
 [dosemu.555.bre]
-game_folder = "/home/user/.dosemu/drive_c/bbs/doors/bre_555"
+game_folder = "/home/novahub/.dosemu/drive_c/bbs/doors/bre_555"
 game_dos_path = "C:\\bbs\\doors\\bre_555"
-inbound_folder = "/home/user/.dosemu/drive_c/bbs/doors/bre_555/INBOUND"
-outbound_folder = "/home/user/.dosemu/drive_c/bbs/doors/bre_555/OUTBOUND"
+inbound_folder = "/home/novahub/.dosemu/drive_c/bbs/doors/bre_555/INBOUND"
+outbound_folder = "/home/novahub/.dosemu/drive_c/bbs/doors/bre_555/OUTBOUND"
 processing_command = "BRE.EXE PLANETARY /DETAILED"
 scores_command = "BRE.EXE SCORES"
 
 [dosemu.555.fe]
-game_folder = "/home/user/.dosemu/drive_c/bbs/doors/fe_555"
+game_folder = "/home/novahub/.dosemu/drive_c/bbs/doors/fe_555"
 game_dos_path = "C:\\bbs\\doors\\fe_555"
-inbound_folder = "/home/user/.dosemu/drive_c/bbs/doors/fe_555/INBOUND"
-outbound_folder = "/home/user/.dosemu/drive_c/bbs/doors/fe_555/OUTBOUND"
+inbound_folder = "/home/novahub/.dosemu/drive_c/bbs/doors/fe_555/INBOUND"
+outbound_folder = "/home/novahub/.dosemu/drive_c/bbs/doors/fe_555/OUTBOUND"
 processing_command = "FE.EXE PLANETARY /DETAILED"
 scores_command = "FE.EXE SCORES"
 
@@ -43,9 +42,20 @@ scores_command = "FE.EXE SCORES"
 path = "./data/nova-hub.db"
 
 [security]
+# REQUIRED: Generate with: python generate_jwt_secret.py
+# Application will refuse to start if this is set to the default value.
 jwt_secret = "change-me-in-production"
 jwt_expiry_hours = 24
+# Maximum packet upload size in bytes (default: 10 MB)
+max_upload_size_bytes = 10485760
+# Minimum password length for management users (default: 12)
+min_password_length = 12
+# Set cookie_secure = true when serving over HTTPS (recommended for production)
+cookie_secure = true
 
 [rate_limiting]
-enabled = false
-requests_per_minute = 30
+enabled = true
+# Maximum authentication attempts per minute per IP before lockout
+auth_attempts_per_minute = 10
+# Lockout duration in seconds after exceeding auth_attempts_per_minute
+auth_lockout_seconds = 300

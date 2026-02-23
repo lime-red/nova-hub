@@ -32,6 +32,50 @@ def get_jwt_settings():
     }
 
 
+_INSECURE_JWT_SECRETS = {
+    "change-me-in-production",
+    "secret",
+    "changeme",
+    "password",
+    "",
+}
+_JWT_SECRET_MIN_LENGTH = 32
+
+
+def validate_jwt_secret(secret: str) -> None:
+    """
+    Validate JWT secret strength.  Call at startup; raises ValueError if weak.
+    """
+    if secret.lower() in _INSECURE_JWT_SECRETS:
+        raise ValueError(
+            "JWT secret is set to an insecure default value. "
+            "Generate a strong secret with: python generate_jwt_secret.py"
+        )
+    if len(secret) < _JWT_SECRET_MIN_LENGTH:
+        raise ValueError(
+            f"JWT secret must be at least {_JWT_SECRET_MIN_LENGTH} characters. "
+            f"Current length: {len(secret)}. "
+            "Generate a strong secret with: python generate_jwt_secret.py"
+        )
+
+
+def validate_password(password: str) -> None:
+    """
+    Enforce password policy.  Raises ValueError with a descriptive message if policy fails.
+    Policy: minimum length from config, at least one uppercase, one lowercase, one digit.
+    """
+    config = get_config()
+    min_len = config.security.min_password_length
+    if len(password) < min_len:
+        raise ValueError(f"Password must be at least {min_len} characters long.")
+    if not any(c.isupper() for c in password):
+        raise ValueError("Password must contain at least one uppercase letter.")
+    if not any(c.islower() for c in password):
+        raise ValueError("Password must contain at least one lowercase letter.")
+    if not any(c.isdigit() for c in password):
+        raise ValueError("Password must contain at least one digit.")
+
+
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     """
     Create a JWT access token
@@ -114,6 +158,10 @@ async def get_current_client(
     if payload is None:
         raise credentials_exception
 
+    # Enforce token type to prevent management tokens from being used here
+    if payload.get("type") != "service":
+        raise credentials_exception
+
     client_id: str = payload.get("sub")
     if client_id is None:
         raise credentials_exception
@@ -189,6 +237,13 @@ async def get_current_user(request: Request, db: Session = Depends(get_db)):
             detail="Invalid or expired session"
         )
 
+    # Enforce token type to prevent service tokens from being used here
+    if payload.get("type") != "management":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired session"
+        )
+
     username: str = payload.get("sub")
     if username is None:
         raise HTTPException(
@@ -247,14 +302,15 @@ def create_session_response(response, username: str):
         response: FastAPI response object
         username: Username to store in session
     """
-    token = create_access_token(data={"sub": username, "type": "session"})
+    config = get_config()
+    token = create_access_token(data={"sub": username, "type": "management"})
     response.set_cookie(
         key=COOKIE_NAME,
         value=token,
         httponly=True,
-        secure=False,  # Set to True in production with HTTPS
+        secure=config.security.cookie_secure,
         samesite="lax",
-        max_age=get_config().security.jwt_expiry_hours * 3600
+        max_age=config.security.jwt_expiry_hours * 3600
     )
     return response
 
@@ -265,17 +321,30 @@ def clear_session_response(response):
     return response
 
 
+def create_service_token(client_id: str) -> str:
+    """
+    Create a service token for nova_client OAuth2 authentication.
+
+    Args:
+        client_id: Client identifier to encode in the token
+
+    Returns:
+        JWT token string with type="service"
+    """
+    return create_access_token(data={"sub": client_id, "type": "service"})
+
+
 def create_session_token(username: str) -> str:
     """
-    Create a session token for management UI authentication
+    Create a session token for management UI authentication.
 
     Args:
         username: Username to encode in the token
 
     Returns:
-        JWT token string
+        JWT token string with type="management"
     """
-    return create_access_token(data={"sub": username, "type": "session"})
+    return create_access_token(data={"sub": username, "type": "management"})
 
 
 async def require_admin(current_user=Depends(get_current_user)):

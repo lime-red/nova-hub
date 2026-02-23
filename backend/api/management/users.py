@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from backend.core.database import get_db
-from backend.core.security import get_password_hash, require_admin
+from backend.core.security import get_password_hash, require_admin, validate_password
 from backend.logging_config import get_logger
 from backend.models.database import SysopUser
 from backend.schemas.auth import UserCreate, UserResponse, UserUpdate
@@ -106,6 +106,12 @@ async def create_user(
     if existing:
         raise HTTPException(status_code=400, detail="Username already exists")
 
+    # Enforce password policy
+    try:
+        validate_password(request.password)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     user = SysopUser(
         username=request.username,
         hashed_password=get_password_hash(request.password),
@@ -172,6 +178,10 @@ async def update_user(
         user.username = request.username
 
     if request.password:
+        try:
+            validate_password(request.password)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
         user.hashed_password = get_password_hash(request.password)
 
     if request.is_admin is not None:

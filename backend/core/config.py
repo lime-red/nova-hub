@@ -135,9 +135,10 @@ def load_config(config_path: str = "config.toml") -> Config:
 
     raw_config = toml.load(config_path)
 
-    alerting_raw = raw_config.get("alerting", {})
-    email_raw = alerting_raw.pop("email", {})
-    webhook_raw = alerting_raw.pop("webhook", {})
+    alerting_raw = dict(raw_config.get("alerting", {}))
+    email_raw = dict(alerting_raw.get("email", {}))
+    webhook_raw = dict(alerting_raw.get("webhook", {}))
+    alerting_base = {k: v for k, v in alerting_raw.items() if k not in ("email", "webhook")}
 
     _config = Config(
         server=ServerConfig(**raw_config.get("server", {})),
@@ -148,7 +149,7 @@ def load_config(config_path: str = "config.toml") -> Config:
         security=SecurityConfig(**raw_config.get("security", {})),
         rate_limiting=RateLimitingConfig(**raw_config.get("rate_limiting", {})),
         alerting=AlertingConfig(
-            **alerting_raw,
+            **alerting_base,
             email=EmailAlertConfig(**email_raw),
             webhook=WebhookAlertConfig(**webhook_raw),
         ),

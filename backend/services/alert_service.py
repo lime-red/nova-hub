@@ -18,7 +18,7 @@ import smtplib
 import ssl
 from datetime import datetime, timezone
 from email.mime.text import MIMEText
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Coroutine
 
 from backend.logging_config import get_logger
 
@@ -26,6 +26,22 @@ if TYPE_CHECKING:
     from backend.models.database import SequenceAlert
 
 logger = get_logger(context="alert_service")
+MAX_PENDING_ALERT_TASKS = 100
+_pending_alert_tasks: set[asyncio.Task] = set()
+
+
+def _spawn_alert_task(coro: Coroutine[Any, Any, None], channel: str) -> None:
+    """Spawn a bounded fire-and-forget task, dropping when queue pressure is high."""
+    if len(_pending_alert_tasks) >= MAX_PENDING_ALERT_TASKS:
+        logger.warning(
+            f"Dropping {channel} alert dispatch: pending task limit "
+            f"({MAX_PENDING_ALERT_TASKS}) reached"
+        )
+        return
+
+    task = asyncio.create_task(coro)
+    _pending_alert_tasks.add(task)
+    task.add_done_callback(_pending_alert_tasks.discard)
 
 
 # ---------------------------------------------------------------------------
@@ -46,10 +62,16 @@ async def dispatch_alert(alert: "SequenceAlert", league_name: str) -> None:
         return
 
     if cfg.email.enabled and cfg.email.to_addresses:
-        asyncio.create_task(_deliver_email(alert, league_name, cfg.email))
+        _spawn_alert_task(
+            _deliver_email(alert, league_name, cfg.email),
+            channel="email",
+        )
 
     if cfg.webhook.enabled and cfg.webhook.url:
-        asyncio.create_task(_deliver_webhook(alert, league_name, cfg.webhook))
+        _spawn_alert_task(
+            _deliver_webhook(alert, league_name, cfg.webhook),
+            channel="webhook",
+        )
 
 
 # ---------------------------------------------------------------------------

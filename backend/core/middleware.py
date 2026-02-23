@@ -4,13 +4,14 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
 from backend.logging_config import current_request_user
+from backend.core.security import COOKIE_NAME
 
 
 class AuthContextMiddleware(BaseHTTPMiddleware):
     """
     Sets the authenticated user in the logging context variable for each request.
 
-    Reads the JWT from the 'session' cookie (management API) or the
+    Reads the JWT from the management session cookie (management API) or the
     Authorization Bearer header (service API) and populates
     `current_request_user` so all log messages emitted during the request
     automatically include the user's identity.
@@ -20,7 +21,7 @@ class AuthContextMiddleware(BaseHTTPMiddleware):
         username = "-"
 
         # Try management cookie first
-        token = request.cookies.get("session")
+        token = request.cookies.get(COOKIE_NAME)
 
         # Fall back to Authorization header (service API)
         if not token:

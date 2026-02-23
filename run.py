@@ -86,7 +86,7 @@ def main():
 
     logger.info("""
     ╔══════════════════════════════════════╗
-    ║         Nova Hub v0.1.0              ║
+    ║         Nova Hub v0.2.0              ║
     ║  BBS Inter-League Routing System     ║
     ╚══════════════════════════════════════╝
     """)

@@ -130,11 +130,24 @@ class ProcessingService:
 
         logger.info(f"Found {len(packets)} packet(s) to process")
 
-        # Group by game type (stored as single letter: B or F)
-        bre_packets = [p for p in packets if self.get_game_type(p) == "B"]
-        fe_packets = [p for p in packets if self.get_game_type(p) == "F"]
+        # Group packets by (game_type_str, league_id_str) so each league is
+        # processed independently with its own DOSEMU config and file ingestion.
+        from collections import defaultdict
+        groups: dict = defaultdict(list)
+        for p in packets:
+            league = self.db.query(League).filter(League.id == p.league_id).first()
+            if league:
+                game_type_str = "BRE" if league.game_type == "B" else "FE"
+                groups[(game_type_str, league.league_id)].append(p)
+            else:
+                logger.warning(f"Skipping packet {p.filename}: league not found")
 
-        # Create processing run
+        if not groups:
+            logger.warning("No packets with valid league associations found")
+            await self.scan_outbound_folders()
+            return
+
+        # Create a single processing run for this batch
         run = ProcessingRun(status="running")
         self.db.add(run)
         self.db.commit()
@@ -143,26 +156,24 @@ class ProcessingService:
         results = {}
 
         try:
-            # Process BRE
-            if bre_packets:
-                logger.info(f"Processing {len(bre_packets)} BRE packet(s)")
-                results["BRE"] = await self.process_game_batch(
-                    "BRE", bre_packets, run.id
+            for (game_type_str, league_id_str), group_packets in groups.items():
+                key = f"{game_type_str}_{league_id_str}"
+                logger.info(
+                    f"Processing {len(group_packets)} packet(s) for "
+                    f"{game_type_str} league {league_id_str}"
                 )
-
-            # Process FE
-            if fe_packets:
-                logger.info(f"Processing {len(fe_packets)} FE packet(s)")
-                results["FE"] = await self.process_game_batch("FE", fe_packets, run.id)
+                results[key] = await self.process_game_batch(
+                    game_type_str, group_packets, run.id
+                )
 
             # Update run status
             run.completed_at = datetime.now()
             run.packets_processed = len(packets)
             run.status = "completed"
 
-            # Combine dosemu output
+            # Combine dosemu output from all groups
             outputs = [r.get("output", "") for r in results.values() if r]
-            run.dosemu_log = "\n\n".join(outputs)
+            run.dosemu_log = "\n\n".join(filter(None, outputs))
 
         except Exception as e:
             logger.error(f"Error: {e}")
@@ -322,7 +333,7 @@ class ProcessingService:
             await self.collect_outbound_packets(game_type, run_id, game_outbound_dir)
 
             # Step 5: Run additional commands and ingest files
-            await self.ingest_processing_files(game_type, league_id, run_id, league_config)
+            await self.ingest_processing_files(game_type, league_id, league.id, run_id, league_config)
 
             # Step 6: Cleanup game inbound directory (remove processed files)
             for f in game_inbound_dir.glob("*"):
@@ -337,7 +348,7 @@ class ProcessingService:
             return {"status": "error", "error": str(e)}
 
     async def ingest_processing_files(
-        self, game_type: str, league_id: str, run_id: int, league_config: dict
+        self, game_type: str, league_id: str, league_db_id: int, run_id: int, league_config: dict
     ):
         """
         Run scores, routes, and bbsinfo commands, then ingest their output files
@@ -401,6 +412,7 @@ class ProcessingService:
                         # Store in database
                         run_file = ProcessingRunFile(
                             processing_run_id=run_id,
+                            league_id=league_db_id,
                             file_type="score",
                             filename=file_path.name,  # Use actual filename found
                             file_data=file_data,
@@ -424,6 +436,7 @@ class ProcessingService:
 
                     run_file = ProcessingRunFile(
                         processing_run_id=run_id,
+                        league_id=league_db_id,
                         file_type="routes",
                         filename=routes_file.name,
                         file_data=file_data,
@@ -447,6 +460,7 @@ class ProcessingService:
 
                     run_file = ProcessingRunFile(
                         processing_run_id=run_id,
+                        league_id=league_db_id,
                         file_type="bbsinfo",
                         filename=bbsinfo_file.name,
                         file_data=file_data,

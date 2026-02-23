@@ -5,7 +5,7 @@ Loads configuration from config.toml and provides typed access via Pydantic.
 """
 
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import toml
 from pydantic import BaseModel
@@ -61,6 +61,35 @@ class RateLimitingConfig(BaseModel):
     auth_lockout_seconds: int = 300
 
 
+class EmailAlertConfig(BaseModel):
+    """SMTP email alerting configuration"""
+    enabled: bool = False
+    smtp_host: str = "localhost"
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    from_address: str = "nova-hub@localhost"
+    to_addresses: List[str] = []
+    use_tls: bool = True
+    timeout: int = 10
+
+
+class WebhookAlertConfig(BaseModel):
+    """Webhook alerting configuration"""
+    enabled: bool = False
+    url: str = ""
+    secret: str = ""  # HMAC-SHA256 signing secret; empty disables signing
+    timeout_seconds: int = 10
+    retry_attempts: int = 3
+
+
+class AlertingConfig(BaseModel):
+    """Out-of-band alert delivery configuration"""
+    enabled: bool = False
+    email: EmailAlertConfig = EmailAlertConfig()
+    webhook: WebhookAlertConfig = WebhookAlertConfig()
+
+
 class Config(BaseModel):
     """Main configuration container"""
     server: ServerConfig = ServerConfig()
@@ -70,6 +99,7 @@ class Config(BaseModel):
     database: DatabaseConfig = DatabaseConfig()
     security: SecurityConfig = SecurityConfig()
     rate_limiting: RateLimitingConfig = RateLimitingConfig()
+    alerting: AlertingConfig = AlertingConfig()
 
     # Raw config for accessing per-league dosemu settings
     _raw: Dict[str, Any] = {}
@@ -105,6 +135,10 @@ def load_config(config_path: str = "config.toml") -> Config:
 
     raw_config = toml.load(config_path)
 
+    alerting_raw = raw_config.get("alerting", {})
+    email_raw = alerting_raw.pop("email", {})
+    webhook_raw = alerting_raw.pop("webhook", {})
+
     _config = Config(
         server=ServerConfig(**raw_config.get("server", {})),
         hub=HubConfig(**raw_config.get("hub", {})),
@@ -113,6 +147,11 @@ def load_config(config_path: str = "config.toml") -> Config:
         database=DatabaseConfig(**raw_config.get("database", {})),
         security=SecurityConfig(**raw_config.get("security", {})),
         rate_limiting=RateLimitingConfig(**raw_config.get("rate_limiting", {})),
+        alerting=AlertingConfig(
+            **alerting_raw,
+            email=EmailAlertConfig(**email_raw),
+            webhook=WebhookAlertConfig(**webhook_raw),
+        ),
     )
     _config._raw = raw_config
 

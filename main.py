@@ -18,6 +18,7 @@ from backend.api.management import management_router
 from backend.api.service import service_router
 from backend.core.config import get_config, init_config
 from backend.core.database import get_db, get_session, init_database
+from backend.core.middleware import AuthContextMiddleware
 from backend.logging_config import get_logger, init_logging_from_config
 
 # Initialize config on module load
@@ -123,6 +124,7 @@ Example: `555B0201.001` = BRE League 555, from BBS 02 to BBS 01, sequence 1
     license_info={"name": "MIT"},
 )
 
+service_app.add_middleware(AuthContextMiddleware)
 service_app.include_router(service_router, prefix="/api/v1")
 
 
@@ -166,6 +168,7 @@ if config.server.environment == "development":
         allow_headers=["*"],
     )
 
+management_app.add_middleware(AuthContextMiddleware)
 management_app.include_router(management_router, prefix="/api/v1")
 
 

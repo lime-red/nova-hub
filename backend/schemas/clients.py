@@ -57,7 +57,7 @@ class ClientStats(BaseModel):
 class PacketHistoryItem(BaseModel):
     """A packet in the client history"""
     filename: str
-    direction: str  # "received" (hub received from client) or "sent" (hub sent to client)
+    direction: str  # "received" | "queued" (awaiting download) | "sent" (downloaded)
     league_name: str
     source: str
     dest: str

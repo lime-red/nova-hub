@@ -183,9 +183,16 @@ class ProcessingService:
 
         self.db.commit()
 
-        # Check for sequence gaps
+        # Check for sequence gaps; dispatch out-of-band alerts for new ones
         validator = SequenceValidator(self.db)
-        validator.check_sequences()
+        new_alerts = validator.check_sequences()
+        if new_alerts:
+            from backend.services.alert_service import dispatch_alert
+            from backend.models.database import League as _League
+            for _alert in new_alerts:
+                _league = self.db.query(_League).filter(_League.id == _alert.league_id).first()
+                _league_name = f"{_league.game_type} {_league.league_id}" if _league else "Unknown"
+                await dispatch_alert(_alert, _league_name)
 
         logger.info("Batch complete")
 

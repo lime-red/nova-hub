@@ -59,3 +59,30 @@ enabled = true
 auth_attempts_per_minute = 10
 # Lockout duration in seconds after exceeding auth_attempts_per_minute
 auth_lockout_seconds = 300
+
+# ─── Out-of-band alert delivery ───────────────────────────────────────────────
+# Alerts are fired when sequence gaps are detected (missing packets).
+# Both channels can be enabled simultaneously.
+[alerting]
+enabled = false
+
+[alerting.email]
+enabled = false
+smtp_host = "smtp.example.com"
+smtp_port = 587
+smtp_user = ""
+smtp_password = ""
+from_address = "nova-hub@example.com"
+to_addresses = ["admin@example.com"]
+use_tls = true
+# SMTP connect/send timeout in seconds
+timeout = 10
+
+[alerting.webhook]
+enabled = false
+url = "https://hooks.example.com/nova-hub-alerts"
+# Optional HMAC-SHA256 signing secret.  Requests will include an
+# X-Nova-Hub-Signature: sha256=<hex> header.  Leave empty to disable signing.
+secret = ""
+timeout_seconds = 10
+retry_attempts = 3

@@ -181,10 +181,6 @@ class ProcessingService:
         # Always scan outbound folders for nodelists
         await self.scan_outbound_folders()
 
-        # Broadcast update via WebSocket
-        from backend.services.websocket_service import broadcast_processing_complete
-
-        await broadcast_processing_complete(run.id)
 
     def get_game_type(self, packet: Packet) -> str:
         """Get game type for packet"""
@@ -313,11 +309,6 @@ class ProcessingService:
                         shutil.copy2(src, dst_outbound)
                         logger.info(f"Direct routed packet {src.name} copied to outbound for BBS {packet.dest_bbs_index}")
 
-                        # Broadcast packet available
-                        from backend.services.websocket_service import (
-                            broadcast_packet_available,
-                        )
-                        await broadcast_packet_available(src.name, packet.dest_bbs_index)
 
                     dst = hub_processed_dir / src.name
                     src.rename(dst)
@@ -579,13 +570,6 @@ class ProcessingService:
 
                 self.db.commit()
 
-                # Broadcast packet available
-                from backend.services.websocket_service import (
-                    broadcast_packet_available,
-                )
-
-                await broadcast_packet_available(normalized_filename, packet_info["dest_bbs_index"])
-
             except Exception as e:
                 logger.error(f"Error collecting {packet_file.name}: {e}")
 
@@ -697,10 +681,3 @@ class ProcessingService:
             self.db.commit()
             logger.info(f"Created/updated {len(memberships)} nodelist packet records")
 
-        # Broadcast nodelist update via WebSocket
-        from backend.services.websocket_service import broadcast_nodelist_available
-
-        try:
-            await broadcast_nodelist_available(league_number, game_type)
-        except Exception as e:
-            logger.error(f"Could not broadcast nodelist update: {e}")

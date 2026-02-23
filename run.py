@@ -30,6 +30,11 @@ def main():
         action="store_true",
         help="Validate configuration without starting server"
     )
+    parser.add_argument(
+        "--dev",
+        action="store_true",
+        help="Development mode: enable auto-reload and verbose output (do NOT use in production)"
+    )
 
     args = parser.parse_args()
 
@@ -56,9 +61,12 @@ def main():
         return
 
     # Normal operation mode - start server
-    # Load config to get data directory
+    # Load config to get server settings
     config = toml.load(args.config)
-    data_dir = config.get("server", {}).get("data_dir", "./data")
+    server_cfg = config.get("server", {})
+    data_dir = server_cfg.get("data_dir", "./data")
+    host = server_cfg.get("host", "0.0.0.0")
+    port = int(server_cfg.get("port", 8000))
 
     # Create required directories
     dirs = [
@@ -83,17 +91,21 @@ def main():
     ╚══════════════════════════════════════╝
     """)
 
+    if args.dev:
+        logger.warning("Starting in DEVELOPMENT mode (auto-reload enabled, do not use in production)")
+
     logger.info("Starting server...")
-    logger.info("Web UI: http://localhost:8000")
-    logger.info("Service API Docs: http://localhost:8000/service/docs")
-    logger.info("Management API Docs: http://localhost:8000/management/docs")
+    logger.info(f"Listening on {host}:{port}")
+    logger.info(f"Web UI: http://{host}:{port}")
+    logger.info(f"Service API Docs: http://{host}:{port}/service/docs")
+    logger.info(f"Management API Docs: http://{host}:{port}/management/docs")
     logger.info("")
 
     uvicorn.run(
         "main:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=True,  # Disable in production
+        host=host,
+        port=port,
+        reload=args.dev,
         log_level="info",
     )
 

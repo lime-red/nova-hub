@@ -85,10 +85,25 @@ async def upload_packet(
             detail=f"Game type mismatch: filename={packet_info['game_type']}, URL={league_game_type}",
         )
 
+    # Enforce upload size limit before reading body
+    content_length = request.headers.get("content-length")
+    max_size = get_config().security.max_upload_size_bytes
+    if content_length and int(content_length) > max_size:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Packet exceeds maximum allowed size of {max_size} bytes",
+        )
+
     # Read raw request body
     content = await request.body()
     if not content:
         raise HTTPException(status_code=400, detail="Empty request body")
+
+    if len(content) > max_size:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Packet exceeds maximum allowed size of {max_size} bytes",
+        )
 
     # Query league by BOTH league_id AND game_type
     league = (

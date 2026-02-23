@@ -1,49 +1,28 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { onMounted, onUnmounted } from 'vue'
 import { useDashboardStore } from '@/stores/dashboard'
 import AppLayout from '@/components/AppLayout.vue'
 import ActivityChart from '@/components/ActivityChart.vue'
 import LeagueChart from '@/components/LeagueChart.vue'
 
 const dashboardStore = useDashboardStore()
-const wsConnection = ref<WebSocket | null>(null)
+const POLL_INTERVAL_MS = 30_000
+
+let pollTimer: ReturnType<typeof setInterval> | null = null
 
 onMounted(async () => {
   await dashboardStore.loadDashboard()
-  connectWebSocket()
+  pollTimer = setInterval(() => {
+    dashboardStore.loadDashboard()
+  }, POLL_INTERVAL_MS)
 })
 
 onUnmounted(() => {
-  if (wsConnection.value) {
-    wsConnection.value.close()
+  if (pollTimer !== null) {
+    clearInterval(pollTimer)
+    pollTimer = null
   }
 })
-
-function connectWebSocket() {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  const wsUrl = `${protocol}//${window.location.host}/management/api/v1/ws/dashboard`
-
-  try {
-    wsConnection.value = new WebSocket(wsUrl)
-
-    wsConnection.value.onmessage = (event) => {
-      try {
-        const message = JSON.parse(event.data)
-        dashboardStore.handleWebSocketMessage(message)
-      } catch {
-        // Ignore parse errors
-      }
-    }
-
-    wsConnection.value.onclose = () => {
-      // Reconnect after 5 seconds
-      setTimeout(connectWebSocket, 5000)
-    }
-  } catch {
-    // WebSocket not available, fall back to polling
-    setTimeout(connectWebSocket, 10000)
-  }
-}
 
 function formatNumber(num: number | undefined): string {
   return (num ?? 0).toLocaleString()

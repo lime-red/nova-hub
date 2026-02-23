@@ -232,7 +232,7 @@
       - name: Create venv and install Python dependencies
         ansible.builtin.shell:
             cmd: |
-                /home/{{ nova_hub_user }}/.local/bin/uv venv --python 3.13 &&
+                /home/{{ nova_hub_user }}/.local/bin/uv venv --python 3.13 --allow-existing &&
                 /home/{{ nova_hub_user }}/.local/bin/uv pip install -r requirements.txt
             chdir: "{{ nova_hub_dir }}"
         become: true

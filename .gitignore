@@ -15,3 +15,4 @@ node_modules/
 frontend/dist/
 ._*
 deploy/inventory.yml
+.claude

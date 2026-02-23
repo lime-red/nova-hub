@@ -297,7 +297,7 @@ async def list_clients():
 async def root():
     return {
         "service": "Nova Hub Mock Server",
-        "version": "0.1.0",
+        "version": "0.2.0",
         "endpoints": {
             "auth": "/auth/token",
             "packets": "/api/v1/leagues/{league_id}/packets",

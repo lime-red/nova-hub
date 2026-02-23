@@ -149,10 +149,17 @@ async def get_run(
                 except Exception:
                     file_data_html = file.file_data
 
+        file_league_name = None
+        if file.league_id:
+            file_league = db.query(League).filter(League.id == file.league_id).first()
+            if file_league:
+                file_league_name = f"{file_league.game_type} {file_league.league_id}"
+
         file_schema = ProcessingRunFileSchema(
             id=file.id,
             filename=file.filename,
             file_type=file.file_type,
+            league_name=file_league_name,
             file_data=file_data,
             file_data_html=file_data_html,
         )

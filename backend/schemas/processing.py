@@ -31,6 +31,7 @@ class ProcessingRunFile(BaseModel):
     id: int
     filename: str
     file_type: str  # "score", "routes", "bbsinfo"
+    league_name: Optional[str] = None  # e.g. "B 555" — identifies source league
     file_data: Optional[str] = None
     file_data_html: Optional[str] = None  # Converted ANSI to HTML
 

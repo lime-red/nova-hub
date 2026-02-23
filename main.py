@@ -117,7 +117,7 @@ Packets follow the format: `<league><game><source><dest>.<seq>`
 
 Example: `555B0201.001` = BRE League 555, from BBS 02 to BBS 01, sequence 1
     """,
-    version="0.1.0",
+    version="0.2.0",
     docs_url="/docs",
     redoc_url="/redoc",
     license_info={"name": "MIT"},
@@ -150,7 +150,7 @@ Uses session-based JWT stored in httpOnly cookies.
 2. Cookie automatically included in subsequent requests
 3. Logout: `POST /api/v1/auth/logout`
     """,
-    version="0.1.0",
+    version="0.2.0",
     docs_url="/docs",
     redoc_url="/redoc",
     license_info={"name": "MIT"},
@@ -190,7 +190,7 @@ Modern routing hub for Solar Realms games: Barren Realms Elite (BRE) and Falcon'
 - **Sequence Validation**: Automatic detection of missing packets
 - **Web Interface**: Comprehensive sysop dashboard
     """,
-    version="0.1.0",
+    version="0.2.0",
     docs_url=None,
     redoc_url=None,
     lifespan=lifespan,

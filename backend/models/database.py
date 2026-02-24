@@ -145,8 +145,8 @@ class Packet(Base):
     source_client_id = Column(Integer, ForeignKey("clients.id"), nullable=True)
     dest_client_id = Column(Integer, ForeignKey("clients.id"), nullable=True)
 
-    # Packet data
-    file_data = Column(LargeBinary, nullable=False)
+    # Packet data (file_data is now deprecated; files are stored on disk)
+    file_data = Column(LargeBinary, nullable=True)
     file_size = Column(Integer, nullable=False)
     checksum = Column(String(64), nullable=True)  # SHA256 hash
 

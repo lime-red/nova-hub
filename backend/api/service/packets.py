@@ -166,7 +166,7 @@ async def upload_packet(
     filepath = inbound_dir / normalized_filename
     filepath.write_bytes(content)
 
-    # Create packet record
+    # Create packet record (file data stored on disk, not in DB)
     packet = Packet(
         filename=normalized_filename,
         league_id=league.id,
@@ -174,7 +174,6 @@ async def upload_packet(
         dest_bbs_index=packet_info["dest_bbs_index"],
         sequence_number=packet_info["sequence_number"],
         file_size=len(content),
-        file_data=content,
         checksum=file_hash,
     )
     db.add(packet)

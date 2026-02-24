@@ -121,7 +121,7 @@ class PacketService:
         source_client: Optional[Client] = None,
         dest_client: Optional[Client] = None,
     ) -> Packet:
-        """Create new packet record"""
+        """Create new packet record (caller is responsible for saving file_data to disk)"""
         checksum = calculate_checksum(file_data)
 
         packet = Packet(
@@ -132,7 +132,6 @@ class PacketService:
             sequence_number=sequence_number,
             source_client_id=source_client.id if source_client else None,
             dest_client_id=dest_client.id if dest_client else None,
-            file_data=file_data,
             file_size=len(file_data),
             checksum=checksum,
             uploaded_at=datetime.utcnow(),

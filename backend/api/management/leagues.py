@@ -472,6 +472,55 @@ async def add_member(
     )
 
 
+@router.post("/{league_id}/generate-nodelist", summary="Generate Nodelist")
+async def generate_nodelist(
+    league_id: int,
+    current_user: SysopUser = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    Generate a BRNODES/FENODES nodelist file from the current league membership (admin only).
+
+    The generated file is written to the nodelists directory and made available
+    for download by `nova_client` via the service API.
+
+    **Path Parameters:**
+    - `league_id`: Database ID of the league
+
+    **Returns:** `{"filename": ..., "members": <count>}`
+    """
+    from backend.core.config import get_config
+    from backend.services.nodelist_generator import NodelistGenerator
+
+    league = db.query(League).filter(League.id == league_id).first()
+    if not league:
+        raise HTTPException(status_code=404, detail="League not found")
+
+    data_dir = get_config().get("server", {}).get("data_dir", "./data")
+    generator = NodelistGenerator(db, data_dir)
+    dest = generator.generate(league_id)
+
+    if dest is None:
+        raise HTTPException(
+            status_code=422,
+            detail="No active members with a BBS index assigned — nodelist not generated",
+        )
+
+    member_count = (
+        db.query(LeagueMembership)
+        .filter(
+            LeagueMembership.league_id == league_id,
+            LeagueMembership.is_active == True,
+            LeagueMembership.bbs_index.isnot(None),
+        )
+        .count()
+    )
+
+    logger.info(f"Generated nodelist {dest.name} for league {league.full_id} by {current_user.username}")
+
+    return {"filename": dest.name, "members": member_count}
+
+
 @router.delete("/{league_id}/members/{member_id}", summary="Remove Member")
 async def remove_member(
     league_id: int,

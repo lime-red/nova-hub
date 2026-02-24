@@ -196,6 +196,22 @@ class ProcessingService:
 
         logger.info("Batch complete")
 
+        # Regenerate hub-side nodelists for all processed leagues
+        from backend.services.nodelist_generator import NodelistGenerator
+        data_dir = self.config.get("server", {}).get("data_dir", "./data")
+        nodelist_gen = NodelistGenerator(self.db, data_dir)
+        for (game_type_str, league_id_str) in groups.keys():
+            league_obj = (
+                self.db.query(League)
+                .filter(
+                    League.league_id == league_id_str,
+                    League.game_type == ("B" if game_type_str == "BRE" else "F"),
+                )
+                .first()
+            )
+            if league_obj:
+                nodelist_gen.generate(league_obj.id)
+
         # Always scan outbound folders for nodelists
         await self.scan_outbound_folders()
 
@@ -565,7 +581,6 @@ class ProcessingService:
                     existing.dest_bbs_index = packet_info["dest_bbs_index"]
                     existing.sequence_number = packet_info["sequence_number"]
                     existing.file_size = len(content)
-                    existing.file_data = content
                     existing.checksum = file_hash
                     existing.processing_run_id = run_id
                     existing.processed_at = datetime.now()
@@ -573,7 +588,7 @@ class ProcessingService:
                     existing.downloaded_at = None
                     logger.info(f"Updated outbound packet: {normalized_filename} (seq: {packet_info['sequence_number']})")
                 else:
-                    # Create new packet record
+                    # Create new packet record (file stored on disk at hub_outbound_dir)
                     packet = Packet(
                         filename=normalized_filename,
                         league_id=league.id,
@@ -581,7 +596,6 @@ class ProcessingService:
                         dest_bbs_index=packet_info["dest_bbs_index"],
                         sequence_number=packet_info["sequence_number"],
                         file_size=len(content),
-                        file_data=content,
                         checksum=file_hash,
                         processing_run_id=run_id,
                         processed_at=datetime.now(),
@@ -629,11 +643,11 @@ class ProcessingService:
         nodelist_file.rename(dest)
         logger.info(f"Updated nodelist: {dest.name} for league {league_number}")
 
-        # Read the nodelist file for database storage
+        # Read the nodelist file to compute metadata (file stored on disk, not in DB)
         with open(dest, 'rb') as f:
-            file_data = f.read()
-        file_size = len(file_data)
-        checksum = hashlib.sha256(file_data).hexdigest()
+            file_content = f.read()
+        file_size = len(file_content)
+        checksum = hashlib.sha256(file_content).hexdigest()
 
         # Find the league in the database
         # Convert game_type to single letter (BRE->B, FE->F)
@@ -669,8 +683,7 @@ class ProcessingService:
                 ).first()
 
                 if existing:
-                    # Update existing packet with new data
-                    existing.file_data = file_data
+                    # Update existing packet with new metadata (file on disk)
                     existing.file_size = file_size
                     existing.checksum = checksum
                     existing.uploaded_at = datetime.utcnow()
@@ -680,7 +693,7 @@ class ProcessingService:
                     existing.downloaded_at = None
                     logger.debug(f"Updated existing nodelist packet for BBS {dest_bbs_hex}")
                 else:
-                    # Create new packet record (use uppercase filename)
+                    # Create new packet record (file stored on disk at nodelists_dir)
                     packet = Packet(
                         filename=filename_upper,
                         league_id=league.id,
@@ -689,7 +702,6 @@ class ProcessingService:
                         sequence_number=0,  # Nodelists don't use sequence numbers
                         source_client_id=None,  # Hub-generated
                         dest_client_id=membership.client_id,
-                        file_data=file_data,
                         file_size=file_size,
                         checksum=checksum,
                         is_processed=True,  # Nodelists don't need processing

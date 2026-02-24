@@ -2,7 +2,20 @@
 
 from datetime import datetime
 from typing import List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
+
+
+def _validate_bbs_name(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    if any(ch in value for ch in ("\n", "\r")):
+        raise ValueError("bbs_name must not contain newline characters")
+    if any(ord(ch) < 32 or ord(ch) == 127 for ch in value):
+        raise ValueError("bbs_name must not contain control characters")
+    trimmed = value.strip()
+    if not trimmed:
+        raise ValueError("bbs_name must not be empty")
+    return trimmed
 
 
 class ClientCreate(BaseModel):
@@ -10,11 +23,24 @@ class ClientCreate(BaseModel):
     bbs_name: str
     client_id: str
 
+    @field_validator("bbs_name")
+    @classmethod
+    def validate_bbs_name(cls, value: str) -> str:
+        validated = _validate_bbs_name(value)
+        if validated is None:
+            raise ValueError("bbs_name must not be empty")
+        return validated
+
 
 class ClientUpdate(BaseModel):
     """Update a client"""
     bbs_name: Optional[str] = None
     is_active: Optional[bool] = None
+
+    @field_validator("bbs_name")
+    @classmethod
+    def validate_bbs_name(cls, value: Optional[str]) -> Optional[str]:
+        return _validate_bbs_name(value)
 
 
 class ClientResponse(BaseModel):

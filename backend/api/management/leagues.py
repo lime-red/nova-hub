@@ -487,7 +487,7 @@ async def generate_nodelist(
     **Path Parameters:**
     - `league_id`: Database ID of the league
 
-    **Returns:** `{"filename": ..., "path": ..., "members": <count>}`
+    **Returns:** `{"filename": ..., "members": <count>}`
     """
     from backend.core.config import get_config
     from backend.services.nodelist_generator import NodelistGenerator
@@ -518,7 +518,7 @@ async def generate_nodelist(
 
     logger.info(f"Generated nodelist {dest.name} for league {league.full_id} by {current_user.username}")
 
-    return {"filename": dest.name, "path": str(dest), "members": member_count}
+    return {"filename": dest.name, "members": member_count}
 
 
 @router.delete("/{league_id}/members/{member_id}", summary="Remove Member")

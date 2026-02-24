@@ -27,6 +27,14 @@ from backend.models.database import League, LeagueMembership, Client
 logger = get_logger(context="nodelist_generator")
 
 
+def _sanitize_nodelist_field(value: str | None) -> str:
+    """Return a line-safe representation for nodes.dat fields."""
+    if not value:
+        return ""
+    value = value.replace("\r", " ").replace("\n", " ")
+    return "".join(ch for ch in value if ord(ch) >= 32 and ord(ch) != 127).strip()
+
+
 class NodelistGenerator:
     """Generate hub-side nodelist files from league membership data."""
 
@@ -65,8 +73,9 @@ class NodelistGenerator:
         lines = []
         for membership in memberships:
             client = self.db.query(Client).filter(Client.id == membership.client_id).first()
-            bbs_name = client.bbs_name if client else f"BBS {membership.bbs_index}"
-            fidonet = membership.fidonet_address or ""
+            raw_bbs_name = client.bbs_name if client else f"BBS {membership.bbs_index}"
+            bbs_name = _sanitize_nodelist_field(raw_bbs_name) or f"BBS {membership.bbs_index}"
+            fidonet = _sanitize_nodelist_field(membership.fidonet_address)
 
             lines.append(str(membership.bbs_index))
             lines.append(bbs_name)

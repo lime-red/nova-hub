@@ -1,18 +1,31 @@
 """Management API league management endpoints"""
 
 import re
+import shutil
+from pathlib import Path
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from backend.core.database import get_db
 from backend.core.security import get_current_user, require_admin
 from backend.logging_config import get_logger
-from backend.models.database import Client, League, LeagueMembership, Packet, ProcessingRun, SysopUser
+from backend.models.database import (
+    Client,
+    League,
+    LeagueMembership,
+    Packet,
+    ProcessingRun,
+    ProcessingRunFile,
+    SequenceAlert,
+    SysopUser,
+)
 from backend.schemas.leagues import (
     AddMemberRequest,
     LeagueCreate,
+    LeagueDeleteRequest,
     LeagueDetailResponse,
     LeagueResponse,
     LeagueStats,
@@ -313,35 +326,82 @@ async def update_league(
 @router.delete("/{league_id}", summary="Delete League")
 async def delete_league(
     league_id: int,
+    request: LeagueDeleteRequest,
     current_user: SysopUser = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     """
-    Delete a league and all memberships (admin only)
+    Delete a league and ALL associated data (admin only).
+
+    Permanently removes: league record, member associations, packets, processing
+    runs, sequence alerts, and all related files on disk (packet files and
+    nodelist directory).
 
     **Path Parameters:**
     - `league_id`: Database ID of the league
 
-    **Returns:** Success message
+    **Request Body:**
+    - `confirmation_name`: Must match the league's confirmation name, e.g. `BRE_014`
 
-    **Example:**
-    ```bash
-    curl -X DELETE "https://hub.example.com/management/api/v1/leagues/1" \\
-      -b cookies.txt
-    ```
+    **Returns:** Success message
     """
     league = db.query(League).filter(League.id == league_id).first()
     if not league:
         raise HTTPException(status_code=404, detail="League not found")
 
-    league_name = league.full_id
+    # Validate confirmation name (e.g., "BRE_014" or "FE_555")
+    game_name = "BRE" if league.game_type == "B" else "FE"
+    expected_name = f"{game_name}_{league.league_id}"
+    if request.confirmation_name != expected_name:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Confirmation name does not match. Expected: {expected_name}",
+        )
 
-    # Delete all memberships first
-    db.query(LeagueMembership).filter(LeagueMembership.league_id == league_id).delete()
-    db.delete(league)
+    league_name = league.full_id
+    league_id_str = league.league_id
+    game_type = league.game_type
+
+    # Collect packet filenames for disk cleanup using raw SQL (no ORM tracking)
+    result = db.execute(
+        text("SELECT filename FROM packets WHERE league_id = :lid"), {"lid": league_id}
+    )
+    packet_filenames = [row[0] for row in result]
+
+    # Delete in FK dependency order using raw SQL to bypass SQLAlchemy relationship machinery
+    db.execute(text("DELETE FROM sequence_alerts WHERE league_id = :lid"), {"lid": league_id})
+    db.execute(text("""
+        DELETE FROM processing_run_files
+        WHERE processing_run_id IN (
+            SELECT id FROM processing_runs WHERE league_id = :lid
+        )
+    """), {"lid": league_id})
+    db.execute(text("DELETE FROM processing_run_files WHERE league_id = :lid"), {"lid": league_id})
+    db.execute(text("DELETE FROM packets WHERE league_id = :lid"), {"lid": league_id})
+    db.execute(text("DELETE FROM processing_runs WHERE league_id = :lid"), {"lid": league_id})
+    db.execute(text("DELETE FROM league_memberships WHERE league_id = :lid"), {"lid": league_id})
+    db.execute(text("DELETE FROM leagues WHERE id = :lid"), {"lid": league_id})
     db.commit()
 
-    logger.info(f"Deleted league {league_name} by {current_user.username}")
+    # Clean up packet files from disk
+    from backend.core.config import get_config
+
+    data_dir = Path(get_config().get("server", {}).get("data_dir", "./data"))
+    for filename in packet_filenames:
+        for subdir in ("inbound", "outbound", "processed"):
+            filepath = data_dir / "packets" / subdir / filename
+            if filepath.exists():
+                filepath.unlink()
+                logger.info(f"Deleted packet file {filepath}")
+
+    # Delete nodelist directory
+    game_type_str = "bre" if game_type == "B" else "fe"
+    nodelist_dir = data_dir / "nodelists" / game_type_str / league_id_str
+    if nodelist_dir.exists():
+        shutil.rmtree(nodelist_dir)
+        logger.info(f"Deleted nodelist directory {nodelist_dir}")
+
+    logger.info(f"Deleted league {league_name} and all associated data by {current_user.username}")
 
     return {"message": f"League {league_name} deleted successfully"}
 

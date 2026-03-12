@@ -290,3 +290,83 @@ def test_management_create_and_list_league(client, admin_user):
     list_resp = client.get("/management/api/v1/leagues")
     assert list_resp.status_code == 200
     assert any(l["full_id"] == "013F" for l in list_resp.json())
+
+
+def test_delete_league_full_cleanup(client, db, admin_user, oauth_client):
+    """Delete a league that has packets, processing runs, run files, memberships,
+    and sequence alerts — verifies all related rows are removed without FK errors."""
+    from backend.models.database import Packet, ProcessingRun, ProcessingRunFile, SequenceAlert
+
+    # --- Setup: build a league with one of every related record ---
+    league = League(league_id="014", game_type="B", name="BRE League 014", is_active=True)
+    db.add(league)
+    db.commit()
+    db.refresh(league)
+
+    membership = LeagueMembership(
+        client_id=oauth_client.id,
+        league_id=league.id,
+        bbs_index=3,
+        fidonet_address="13:10/103",
+        is_active=True,
+    )
+    db.add(membership)
+
+    packet = Packet(
+        filename="014B0301.001",
+        league_id=league.id,
+        source_bbs_index="03",
+        dest_bbs_index="01",
+        sequence_number=1,
+        file_size=25,
+    )
+    db.add(packet)
+
+    run = ProcessingRun(league_id=league.id, status="completed")
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+
+    run_file = ProcessingRunFile(
+        processing_run_id=run.id,
+        league_id=league.id,
+        filename="014B0301.001",
+        file_type="packet",
+    )
+    db.add(run_file)
+
+    alert = SequenceAlert(
+        league_id=league.id,
+        source_bbs_index="03",
+        dest_bbs_index="01",
+        expected_sequence=2,
+        received_sequence=5,
+        gap_size=3,
+    )
+    db.add(alert)
+    db.commit()
+
+    league_db_id = league.id
+
+    # --- Act: log in as admin and delete the league ---
+    login = client.post(
+        "/management/api/v1/auth/login",
+        json={"username": "admin", "password": "AdminPass123!"},
+    )
+    assert login.status_code == 200
+
+    resp = client.request(
+        "DELETE",
+        f"/management/api/v1/leagues/{league_db_id}",
+        json={"confirmation_name": "BRE_014"},
+    )
+    assert resp.status_code == 200, resp.text
+
+    # --- Assert: every related table is empty for this league ---
+    db.expire_all()
+    assert db.query(League).filter(League.id == league_db_id).first() is None
+    assert db.query(LeagueMembership).filter(LeagueMembership.league_id == league_db_id).count() == 0
+    assert db.query(Packet).filter(Packet.league_id == league_db_id).count() == 0
+    assert db.query(ProcessingRun).filter(ProcessingRun.league_id == league_db_id).count() == 0
+    assert db.query(ProcessingRunFile).filter(ProcessingRunFile.league_id == league_db_id).count() == 0
+    assert db.query(SequenceAlert).filter(SequenceAlert.league_id == league_db_id).count() == 0

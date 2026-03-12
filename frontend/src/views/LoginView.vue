@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, computed } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
+
+const isHttp = computed(() => window.location.protocol === "http:");
 
 const router = useRouter();
 const route = useRoute();
@@ -39,6 +41,14 @@ async function handleLogin() {
                 </div>
 
                 <form @submit.prevent="handleLogin" class="login-form">
+                    <div v-if="isHttp" class="alert alert-warning">
+                        <strong>Insecure connection:</strong> Session cookies require HTTPS.
+                        Login will appear to succeed but all pages will return 401 Unauthorized.
+                        Place a TLS-terminating reverse proxy (nginx, Caddy, Tailscale) in front
+                        of Nova Hub, or set <code>cookie_secure = false</code> in
+                        <code>[security]</code> of <code>config.toml</code> for local use only.
+                    </div>
+
                     <div v-if="authStore.error" class="alert alert-error">
                         {{ authStore.error }}
                     </div>

@@ -1,10 +1,12 @@
 """Service API league operations (nodelist download)"""
 
+import hashlib
 from datetime import datetime
+from email.utils import formatdate, parsedate_to_datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Path as PathParam, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from sqlalchemy.orm import Session
 
 from backend.core.config import get_config
@@ -18,6 +20,41 @@ from backend.services.processing_service import find_file_case_insensitive
 logger = get_logger(context="service_leagues")
 
 router = APIRouter()
+
+
+def _is_not_modified(request: Request, etag: str, mtime: float) -> bool:
+    """Decide whether a conditional request can be answered with 304.
+
+    Per RFC 9110, If-None-Match wins outright when present - If-Modified-Since
+    is not even consulted then. A client that sends both and whose clock is
+    skewed therefore still gets the right answer.
+    """
+    if request is None:
+        return False
+
+    if_none_match = request.headers.get("if-none-match")
+    if if_none_match:
+        if if_none_match.strip() == "*":
+            return True
+        # The header is a comma-separated list, and a cache may have weakened
+        # any entry to W/"...". Compare on the opaque part only.
+        candidates = {
+            tag.strip().removeprefix("W/").strip('"')
+            for tag in if_none_match.split(",")
+        }
+        return etag.strip('"') in candidates
+
+    if_modified_since = request.headers.get("if-modified-since")
+    if if_modified_since:
+        try:
+            since = parsedate_to_datetime(if_modified_since)
+        except (TypeError, ValueError):
+            return False
+        # HTTP dates have whole-second resolution, so a file modified within the
+        # same second as the client's timestamp must still count as modified.
+        return int(mtime) <= int(since.timestamp())
+
+    return False
 
 
 @router.get("/{league_id}/nodelist", summary="Download Nodelist")
@@ -41,10 +78,16 @@ async def download_nodelist(
 
     **Authentication:** Requires Bearer token and league membership
 
+    **Caching:** The response carries `ETag` and `Last-Modified`. Send the ETag
+    back as `If-None-Match` (or the date as `If-Modified-Since`) and you get a
+    `304 Not Modified` with no body when the nodelist has not changed. Nodelists
+    change rarely but clients poll often, so this is worth doing.
+
     **Example:**
     ```bash
     curl -X GET "https://hub.example.com/service/api/v1/leagues/555B/nodelist" \\
       -H "Authorization: Bearer YOUR_TOKEN" \\
+      -H 'If-None-Match: "8f14e45fceea167a5a36dedd4bea2543"' \\
       -o BRNODES.555
     ```
     """
@@ -97,6 +140,26 @@ async def download_nodelist(
         raise HTTPException(
             status_code=404,
             detail=f"Nodelist not available for league {league_id}",
+        )
+
+    # Conditional request handling. Starlette's FileResponse sets ETag and
+    # Last-Modified but never answers 304 itself, so clients that polled every
+    # couple of minutes re-fetched an unchanged nodelist forever. Compute the
+    # same ETag FileResponse would, from the same stat, so the value we compare
+    # against is the one we handed out.
+    stat = nodelist_path.stat()
+    etag = f'"{hashlib.md5(f"{stat.st_mtime}-{stat.st_size}".encode(), usedforsecurity=False).hexdigest()}"'
+    last_modified = formatdate(stat.st_mtime, usegmt=True)
+
+    if _is_not_modified(request, etag, stat.st_mtime):
+        logger.debug(
+            f"Client {client.client_id} nodelist {nodelist_path.name} unchanged, returning 304"
+        )
+        # Deliberately does not touch downloaded_at: nothing was transferred, so
+        # that column keeps meaning "when this client last actually took a copy".
+        return Response(
+            status_code=304,
+            headers={"ETag": etag, "Last-Modified": last_modified},
         )
 
     logger.info(f"Client {client.client_id} downloading nodelist: {nodelist_path.name}")

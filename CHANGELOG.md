@@ -4,6 +4,13 @@ All notable changes to Nova Hub will be documented in this file.
 
 ## [Unreleased]
 
+### Added (2026-08-06)
+- Nodelist downloads now honour conditional requests. `GET /service/api/v1/leagues/{id}/nodelist`
+  answers `304 Not Modified` to a matching `If-None-Match`, or to an `If-Modified-Since` no older
+  than the file. Starlette's `FileResponse` was already sending `ETag` and `Last-Modified` but
+  never answering 304, so polling clients re-fetched an unchanged nodelist on every sync. A 304
+  deliberately does not touch `downloaded_at`, which keeps meaning "last actual transfer".
+
 ### Added
 - Initial MVP release
 - Complete database schema with Alembic migrations

@@ -16,3 +16,9 @@ frontend/dist/
 ._*
 deploy/inventory.yml
 .claude
+
+# Skills are documentation meant to be shared, unlike the rest of .claude/
+!.claude/
+!.claude/skills/
+!.claude/skills/**
+._*

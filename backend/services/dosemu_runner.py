@@ -1,7 +1,6 @@
 # backend/services/dosemu_runner.py
 
 import asyncio
-import re
 import subprocess
 import tempfile
 from datetime import datetime
@@ -16,10 +15,12 @@ class DosemuRunner:
             self.dosemu_path = config["dosemu"]["dosemu_path"]
             self.dosemu_timeout = config["dosemu"]["timeout"]
             self.server_data_dir = config["server"]["data_dir"]
+            self.dosemu_term = config["dosemu"].get("term", "linux")
         else:
             self.dosemu_path = config.dosemu.dosemu_path
             self.dosemu_timeout = config.dosemu.timeout
             self.server_data_dir = config.server.data_dir
+            self.dosemu_term = getattr(config.dosemu, "term", "linux")
 
     async def run_game_process(self, game_type: str, league_id: str) -> dict:
         """
@@ -70,9 +71,11 @@ class DosemuRunner:
         if isinstance(league_config, dict):
             command = league_config.get(command_key)
             game_dos_path = league_config.get("game_dos_path", "C:\\")
+            completion_marker = league_config.get("completion_marker")
         else:
             command = getattr(league_config, command_key, None)
             game_dos_path = getattr(league_config, "game_dos_path", "C:\\")
+            completion_marker = getattr(league_config, "completion_marker", None)
 
         if not command:
             return {
@@ -121,8 +124,37 @@ class DosemuRunner:
             # Parse output for any useful information
             output_text = self._parse_dosemu_output(output_log)
 
+            if result.returncode != 0:
+                return {
+                    "status": "error",
+                    "returncode": result.returncode,
+                    "output": output_text,
+                    "log_file": str(output_log),
+                }
+
+            # A zero exit only means dosemu itself came back. The DOS program
+            # underneath it can fail without dosemu noticing, so when the league
+            # declares what a finished run looks like, hold the run to it.
+            #
+            # Deliberately not a log-size floor: transcript size scales with how
+            # many peers a league has (a 4-node league runs 19-28 KB where a 2-node
+            # one runs 3.5-5 KB), so any absolute threshold rejects small healthy
+            # leagues. The program's own completion line does not have that problem.
+            if command_key == "processing_command" and completion_marker:
+                if completion_marker not in output_text:
+                    return {
+                        "status": "error",
+                        "returncode": result.returncode,
+                        "error": (
+                            f"dosemu exited 0 but the transcript never reached "
+                            f"{completion_marker!r} - the game did not finish"
+                        ),
+                        "output": output_text,
+                        "log_file": str(output_log),
+                    }
+
             return {
-                "status": "success" if result.returncode == 0 else "error",
+                "status": "success",
                 "returncode": result.returncode,
                 "output": output_text,
                 "log_file": str(output_log),
@@ -141,12 +173,27 @@ class DosemuRunner:
 
     async def _run_command(self, cmd: list, output_log: Path):
         """Run command with script wrapper to capture all output including ANSI codes"""
+        import os
         import shlex
 
-        # Build script command to capture output
+        # dosemu2 refuses to start unless TERM names a terminal that can clear the
+        # screen and position the cursor. When the hub runs without a controlling
+        # terminal (detached / systemd), `script` sets TERM=dumb and dosemu exits 1
+        # with "Your terminal lacks the ability to clear the screen". Pin TERM so
+        # processing works regardless of how the hub itself was launched.
+        env = dict(os.environ)
+        env["TERM"] = self.dosemu_term
+
+        # Build script command to capture output.
+        #
+        # -e is load-bearing: without it `script` reports *its own* exit status,
+        # which is 0 even when the command it ran failed. A dosemu run that died
+        # immediately (TERM=dumb, ~490-byte log) was therefore recorded as a
+        # successful processing run. -e returns the child's exit status instead.
         dosemu_cmd = " ".join([shlex.quote(str(c)) for c in cmd])
         script_cmd = [
             "script",
+            "-e",
             "-c",
             dosemu_cmd,
             str(output_log)
@@ -158,13 +205,17 @@ class DosemuRunner:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
             cwd=self.server_data_dir,
+            env=env,
         )
 
         # Read output (will be empty if script works, but captures script errors)
         stdout_data, _ = await process.communicate()
 
-        # If script failed, write the error output to log file
-        if process.returncode != 0 and stdout_data:
+        # Fall back to script's own stderr only when there is no transcript to keep.
+        # A non-zero return now means "dosemu failed", not "script failed", and in
+        # that case the transcript is the only diagnostic of *why* -- overwriting it
+        # with script's output would destroy the evidence.
+        if stdout_data and not (output_log.exists() and output_log.stat().st_size):
             with open(output_log, 'wb') as f:
                 f.write(stdout_data)
 

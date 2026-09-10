@@ -3,6 +3,7 @@
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from backend.core.database import get_db
@@ -70,7 +71,9 @@ async def list_runs(
                 completed_at=run.completed_at.strftime("%Y-%m-%d %H:%M:%S") if run.completed_at else None,
                 duration=duration,
                 packets_processed=run.packets_processed,
+                packets_unconsumed=run.packets_unconsumed or 0,
                 status=run.status,
+                error_message=run.error_message,
                 league_name=league_name,
             )
         )
@@ -186,9 +189,14 @@ async def get_run(
         completed_at=run.completed_at.strftime("%Y-%m-%d %H:%M:%S") if run.completed_at else None,
         duration=duration,
         packets_processed=run.packets_processed,
+        packets_unconsumed=run.packets_unconsumed or 0,
         status=run.status,
         league_name=league_name,
-        error_message=run.stderr_log,
+        # error_message is where a failed run records why; stderr_log is only ever
+        # populated for subprocess plumbing errors and was almost always empty, so
+        # the detail view showed nothing for a failure that had a perfectly good
+        # explanation recorded next to it.
+        error_message=run.error_message or run.stderr_log,
         dosemu_output=run.dosemu_log,
         dosemu_output_html=dosemu_log_html,
         packets=packet_list,
@@ -222,3 +230,5 @@ async def trigger_processing(
     except Exception as e:
         logger.error(f"Failed to trigger processing: {e}")
         return {"status": "error", "message": str(e)}
+
+

@@ -12,7 +12,11 @@ class ProcessingRunResponse(BaseModel):
     completed_at: Optional[str] = None
     duration: Optional[str] = None
     packets_processed: int = 0
+    # Non-zero means the game was handed packets it never ingested -- almost always
+    # a bad inbound path in its BBS.CFG. They stay put and retry next run.
+    packets_unconsumed: int = 0
     status: str  # "running", "completed", "failed"
+    error_message: Optional[str] = None
     league_name: Optional[str] = None
 
     class Config:
@@ -46,6 +50,7 @@ class ProcessingRunDetail(BaseModel):
     completed_at: Optional[str] = None
     duration: Optional[str] = None
     packets_processed: int = 0
+    packets_unconsumed: int = 0
     status: str
     league_name: Optional[str] = None
     error_message: Optional[str] = None

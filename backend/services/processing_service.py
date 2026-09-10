@@ -115,6 +115,10 @@ class ProcessingService:
         # DosemuRunner expects the full config
         self.dosemu_runner = DosemuRunner(config)
 
+        # Packets handed to a game that it never ingested, accumulated across the
+        # league groups of one batch. See step 6 of process_game_batch().
+        self._unconsumed_count = 0
+
     async def process_batch(self):
         """Process all unprocessed packets"""
         logger.info("Starting batch...")
@@ -154,6 +158,7 @@ class ProcessingService:
         self.db.refresh(run)
 
         results = {}
+        self._unconsumed_count = 0
 
         try:
             for (game_type_str, league_id_str), group_packets in groups.items():
@@ -166,10 +171,30 @@ class ProcessingService:
                     game_type_str, group_packets, run.id
                 )
 
-            # Update run status
             run.completed_at = datetime.now()
-            run.packets_processed = len(packets)
-            run.status = "completed"
+
+            # A group that failed leaves its packets unprocessed and its files in
+            # hub inbound, so the run did not do what it was asked. Reporting that
+            # as "completed" is how a dead dosemu run looked like a successful one.
+            failed = {
+                key: r for key, r in results.items()
+                if not r or r.get("status") != "success"
+            }
+            if failed:
+                run.status = "failed"
+                run.error_message = "; ".join(
+                    f"{key}: {r.get('error') or r.get('status', 'unknown')}"
+                    for key, r in failed.items()
+                )
+                logger.error(f"Processing run {run.id} failed - {run.error_message}")
+            else:
+                run.status = "completed"
+
+            # Count only what actually got through, not everything we were handed.
+            run.packets_processed = sum(
+                1 for p in packets if p.processed_at is not None
+            )
+            run.packets_unconsumed = self._unconsumed_count
 
             # Combine dosemu output from all groups
             outputs = [r.get("output", "") for r in results.values() if r]
@@ -178,7 +203,7 @@ class ProcessingService:
         except Exception as e:
             logger.error(f"Error: {e}")
             run.completed_at = datetime.now()
-            run.status = "error"
+            run.status = "failed"
             run.error_message = str(e)
 
         self.db.commit()
@@ -302,12 +327,15 @@ class ProcessingService:
 
         try:
             # Step 1: Copy packets from hub inbound to game inbound (case-insensitive)
+            # Remember what we handed the game, so step 6 can tell whether it took it.
+            delivered = []
             for packet in packets:
                 src = find_file_case_insensitive(hub_inbound_dir, packet.filename)
 
                 if src:
                     dst = game_inbound_dir / packet.filename
                     shutil.copy2(src, dst)
+                    delivered.append(dst)
                     logger.debug(f"Copied: {src.name} -> {dst}")
                 else:
                     logger.warning(f"Source file not found in hub inbound: {packet.filename}")
@@ -358,11 +386,30 @@ class ProcessingService:
             # Step 5: Run additional commands and ingest files
             await self.ingest_processing_files(game_type, league_id, league.id, run_id, league_config)
 
-            # Step 6: Cleanup game inbound directory (remove processed files)
-            for f in game_inbound_dir.glob("*"):
-                if f.is_file():
-                    f.unlink()
-                    logger.debug(f"Cleaned up game inbound: {f.name}")
+            # Step 6: Check what the game actually took.
+            #
+            # A healthy run consumes every packet handed to it -- the game deletes
+            # each file as it ingests it. Anything still sitting here means the game
+            # never saw it: a wrong or untraversable inbound path in BBS.CFG, or a
+            # crash part-way through.
+            #
+            # Leave those files exactly where they are. The game's inbound folder is
+            # where a packet legitimately waits until the game takes it, so once the
+            # fault is fixed the next run picks it up with no operator action. This
+            # used to unlink the whole directory, which threw away both the evidence
+            # and the retry, and made a silently-ignored packet look identical to a
+            # processed one. Re-offering a packet that *was* consumed is harmless:
+            # both games detect duplicates.
+            unconsumed = [f for f in delivered if f.exists()]
+            if unconsumed:
+                names = ", ".join(f.name for f in unconsumed)
+                logger.warning(
+                    f"{len(unconsumed)} packet(s) left unconsumed by {game_type} "
+                    f"league {league_id}: {names}. The game did not ingest them - "
+                    f"check the inbound path in BBS.CFG. They stay in "
+                    f"{game_inbound_dir} and will be retried on the next run."
+                )
+            self._unconsumed_count += len(unconsumed)
 
             return dosemu_result
 

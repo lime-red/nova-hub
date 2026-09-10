@@ -189,6 +189,11 @@ class ProcessingRun(Base):
     # Statistics
     packets_processed = Column(Integer, default=0)
     packets_failed = Column(Integer, default=0)
+    # Packets copied into a game's inbound folder that the game never ingested.
+    # Non-zero means a bad inbound path in BBS.CFG or a mid-run crash; the files
+    # are left in place and retried on the next run, so this returning to zero is
+    # the all-clear.
+    packets_unconsumed = Column(Integer, default=0)
     exit_code = Column(Integer, nullable=True)
 
     # Logs

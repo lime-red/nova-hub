@@ -22,6 +22,19 @@ timeout = 300
 # Directories will be: ./data/dosemu/<league_number>/<game_type>/inbound/
 #                      ./data/dosemu/<league_number>/<game_type>/outbound/
 
+# NOTE: every directory component of these paths must be valid DOS 8.3 (max 8
+# characters, no spaces). The games resolve inbound_folder as an absolute path
+# through 16-bit path handling that cannot traverse a longer name -- and they fail
+# *silently*: the run completes, exits 0, prints every progress marker, and simply
+# ingests nothing. "bre_555" is 7 characters and fine; "bre_555_node02" would not be.
+#
+# /DETAILED on processing_command is what puts the per-item
+# "Type: <x> <src>-> <dst>" lines in the transcript. Without it the run is
+# identical but what moved between nodes is invisible.
+#
+# completion_marker is optional. When set, a run whose transcript never reaches
+# this string is recorded as failed even if dosemu exited 0 -- which catches the
+# game dying part-way through. Leave it unset to key on the exit code alone.
 [dosemu.555.bre]
 game_folder = "/home/novahub/.dosemu/drive_c/bbs/doors/bre_555"
 game_dos_path = "C:\\bbs\\doors\\bre_555"
@@ -29,6 +42,7 @@ inbound_folder = "/home/novahub/.dosemu/drive_c/bbs/doors/bre_555/INBOUND"
 outbound_folder = "/home/novahub/.dosemu/drive_c/bbs/doors/bre_555/OUTBOUND"
 processing_command = "BRE.EXE PLANETARY /DETAILED"
 scores_command = "BRE.EXE SCORES"
+completion_marker = "Planetary Maintenance Complete"
 
 [dosemu.555.fe]
 game_folder = "/home/novahub/.dosemu/drive_c/bbs/doors/fe_555"

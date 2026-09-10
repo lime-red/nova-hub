@@ -110,11 +110,21 @@ class DosemuRunner:
 
         try:
             # Run dosemu
+            # -K <dir> -E <name>, not a bare host path to the batch file.
+            #
+            # The bare-path form used to work and silently stopped: on the
+            # dosemu2 2.0pre9 / fdpp 1.10 packages from July 2026, dosemu boots,
+            # exits 0, and never executes the batch at all. Nothing in the
+            # transcript says so - the run just does no work and looks fine.
+            # -K makes the directory drive C: and -E names the program on it.
             cmd = [
                 self.dosemu_path,
                 "-f",
                 str(dosemu_conf),
-                str(batch_file),  # Full path to batch file
+                "-K",
+                str(batch_file.parent),
+                "-E",
+                batch_file.name,
             ]
 
             result = await asyncio.wait_for(

@@ -613,7 +613,10 @@ class ProcessingService:
                     logger.debug(f"Overwriting old outbound file: {existing_file.name}")
 
                 dest = hub_outbound_dir / normalized_filename
-                packet_file.rename(dest)
+                # shutil.move, not Path.rename: the game folder and the hub's
+                # data dir are separate paths in config and need not share a
+                # filesystem. rename() raises EXDEV when they don't.
+                shutil.move(str(packet_file), str(dest))
 
                 # Check if already exists in database (case-insensitive via normalization)
                 existing = (
@@ -686,8 +689,10 @@ class ProcessingService:
             existing_file.unlink()
             logger.info(f"Removed old nodelist: {existing_file.name}")
 
-        # Move and rename to uppercase
-        nodelist_file.rename(dest)
+        # Move and rename to uppercase. shutil.move for the same reason as the
+        # outbound collector: this crosses from the game folder into the hub's
+        # data dir, which may be a different filesystem.
+        shutil.move(str(nodelist_file), str(dest))
         logger.info(f"Updated nodelist: {dest.name} for league {league_number}")
 
         # Read the nodelist file to compute metadata (file stored on disk, not in DB)

@@ -211,3 +211,39 @@ class TestRunStatus:
 
 async def _async(value):
     return value
+
+
+# ---------------------------------------------------------------------------
+# dosemu invocation form
+# ---------------------------------------------------------------------------
+
+class TestDosemuInvocation:
+    """Guards the -K/-E form.
+
+    Handing dosemu a bare host path to the batch file boots DOS, exits 0, and
+    runs nothing at all on the July-2026 dosemu2/fdpp packages. Every processing
+    run would then be recorded successful having done no work, so this is the one
+    thing about the command line worth pinning down.
+    """
+
+    @pytest.mark.asyncio
+    async def test_batch_is_run_via_dash_k_and_dash_e(self, tmp_path, monkeypatch):
+        runner = DosemuRunner(_config(tmp_path))
+        seen = {}
+
+        async def capture(cmd, log_file):
+            seen["cmd"] = list(cmd)
+            return _FakeResult(0)
+
+        monkeypatch.setattr(runner, "_run_command", capture)
+        monkeypatch.setattr(runner, "_parse_dosemu_output", lambda _log: "done")
+        await runner.run_game_process("BRE", "900")
+
+        cmd = seen["cmd"]
+        assert "-K" in cmd and "-E" in cmd, cmd
+        assert cmd[cmd.index("-E") + 1] == "PROCESS.BAT", cmd
+        # -K takes the directory; the batch must never appear as a bare path arg.
+        assert cmd[cmd.index("-K") + 1] == str(
+            Path(tmp_path / "dosemu" / "900" / "bre")
+        ), cmd
+        assert not any(a.endswith("PROCESS.BAT") and "/" in a for a in cmd), cmd

@@ -112,11 +112,15 @@ class DosemuRunner:
             # Run dosemu
             # -K <dir> -E <name>, not a bare host path to the batch file.
             #
-            # The bare-path form used to work and silently stopped: on the
-            # dosemu2 2.0pre9 / fdpp 1.10 packages from July 2026, dosemu boots,
-            # exits 0, and never executes the batch at all. Nothing in the
-            # transcript says so - the run just does no work and looks fine.
-            # -K makes the directory drive C: and -E names the program on it.
+            # The bare-path form remaps C: to the batch file's own directory.
+            # This batch then does `C:` and `CD <game_dos_path>`, which no
+            # longer resolves - so the game never runs, while dosemu exits 0 and
+            # the transcript looks ordinary. Verified on novahub-hl: a March-2026
+            # transcript shows the CD succeeding on the packages of the day, and
+            # the same config on the July-2026 packages does not.
+            #
+            # -K leaves C: as the configured drive_c and runs the named program
+            # from <dir>, which is what the batch has always assumed.
             cmd = [
                 self.dosemu_path,
                 "-f",

@@ -27,7 +27,7 @@ table is what actually holds.
 | — | `BRE.EXE FULL` is the interactive player path and blocks forever headless on the ANSI prompt. Maintenance is `PLANETARY`. |
 | — | `/DETAILED` is required for the per-item `Type: <x> <src>-> <dst>` lines. Without it the run is identical and what moved between nodes is invisible. |
 | — | `script -c` returns **its own** exit status, always 0. Without `-e` a dead dosemu is recorded as a successful run — this is R-1, and it was live in both `nova-hub` and `nova-client`. |
-| — | Handing dosemu a bare host path to the batch file stopped working on the July-2026 dosemu2/fdpp packages: DOS boots, exits 0, and the batch never runs. Use `-K <dir> -E <name>`. See the warning in §9. |
+| — | Handing dosemu a bare host path to the batch file remaps `C:` to that file's own directory, so the generated batch's `CD <game_dos_path>` no longer resolves and the game never runs — while dosemu exits 0 and the transcript looks ordinary. Use `-K <dir> -E <name>`, which leaves `C:` alone. See §9. |
 | — | The hub's data dir and the game folders are separate config paths and need not share a filesystem, so moves between them must be `shutil.move`, not `Path.rename`. |
 
 ---
@@ -199,14 +199,31 @@ Deferred, and still worth doing: `900F` (scenario 4), the sequence gap (5),
 multi-day (8), player-driven traffic, and CI wiring. Multi-day is unblocked —
 `REDATE` settles the mechanism — so it is a scenario to write, not a risk.
 
-### A production regression to watch
+### A live production regression
 
-The hub's dosemu invocation form silently stopped working between the March 2026
-packages and the July 2026 ones (`dosemu2 2.0~pre9-10228`, `fdpp 1.10-10002`,
-`comcom64 0.4-0~202607221057`). On the new packages the bare-path form boots DOS,
-exits 0, and never runs the batch at all.
+The hub's dosemu invocation form stopped working somewhere between the March 2026
+packages and the July 2026 ones. The bare-path form now remaps `C:` to the batch
+file's own directory. Since `data_dir` sits outside `~/.dosemu/drive_c`, the
+generated batch's `CD C:\bbs\doors\<game>` no longer resolves, the game is never
+launched, dosemu exits 0, and the run is recorded successful.
 
-Any hub still on the old form will, after a routine `apt upgrade`, process every
-packet by booting dosemu, doing nothing, and recording the run as successful. The
-completion-marker check catches it if the league declares one; without that, it is
-invisible. `novahub-vtr` has deliberately not been inspected.
+Measured on `novahub-hl`, which carries the same dosemu packages as production
+(`dosemu2 2.0~pre9-10228-0aeb4d174+202607270023`, `fdpp 1.10-10002`, `comcom64
+0.4-0~202607221057`), by running the hub's own `DosemuRunner` against a 900-block
+scratch league with a stand-in for `BRE.EXE`:
+
+| invocation | run status | game actually ran |
+|---|---|---|
+| bare host path (pre-fix) | `success`, exit 0 | **no** |
+| `-K <dir> -E <name>` | `success`, exit 0 | yes |
+
+A March 2026 transcript still on that host shows the old behaviour on the same
+config — `Changing to: C:\bbs\doors\bre_013` followed by a successful `CD` and
+BRE's overlay manager starting — so this is a package-level change, not a config
+drift.
+
+**This is not a future risk; it is the current state of any hub on these
+packages.** The completion-marker check added in this phase turns it from silent
+into a failed run, but only for leagues that declare a marker.
+
+`novahub-vtr` has deliberately not been inspected or touched.

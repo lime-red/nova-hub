@@ -99,6 +99,30 @@ def read(league: League, node: Node, sub: str, filename: str) -> bytes:
     return result.stdout
 
 
+def force_packet(league: League, node: Node, kind: str = "REQUEST",
+                 tag: str = "force") -> Path:
+    """Make this node emit another packet today, without waiting for tomorrow.
+
+    A second PLANETARY on the same game day emits nothing -- daily maintenance
+    has already run. But the games will happily produce more traffic when there
+    is something to say, and that can be asked for directly:
+
+        REQUEST   create a recon request to every other board (and a recon back)
+        RECON     create a recon for every other board, requesting nothing back
+
+    Neither writes a packet by itself; both queue traffic that the next OUTBOUND
+    packages. So this is REQUEST/RECON followed by OUTBOUND, and the result is a
+    real packet with the next sequence number.
+
+    Clear the outbound folder first if you want the new packet on its own: a
+    pending packet for the same destination is added to rather than replaced.
+    """
+    kind = kind.upper()
+    assert kind in ("REQUEST", "RECON"), f"unknown traffic generator {kind!r}"
+    run(league, node, kind, tag=f"{tag}_{kind.lower()}")
+    return run(league, node, "OUTBOUND", tag=f"{tag}_outbound")
+
+
 def take_outbound(league: League, node: Node):
     """Collect and remove everything the node has queued for sending.
 

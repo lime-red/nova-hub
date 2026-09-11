@@ -77,17 +77,17 @@ async def test_packet_makes_a_full_round_trip(pristine, hub):
     )
 
 
-async def test_a_node_emits_one_packet_per_game_day(pristine, hub):
+async def test_a_second_planetary_the_same_day_emits_nothing(pristine, hub):
     """Running PLANETARY twice in one day produces one packet, not two.
 
-    BRE's outbound is tied to its daily maintenance, not to the invocation: the
-    second and third runs of the same calendar day emit nothing at all. That is
-    why sequence numbers cannot be exercised by looping in a single test -- doing
-    that needs REDATE, and belongs to the deferred multi-day scenario.
+    Daily maintenance runs once, so the second invocation of the same game day
+    emits nothing. Everything else here assumes exactly one packet from one
+    PLANETARY; if that stopped being true the counts elsewhere would go quietly
+    wrong rather than fail.
 
-    Worth pinning down because everything else here assumes one packet per node
-    per day; if that stopped being true, the sequence assertions elsewhere would
-    go quietly wrong rather than fail.
+    This says nothing about the game as a whole. A node can emit several packets
+    in a day -- REQUEST or RECON queue traffic and OUTBOUND packages it, and the
+    sequence advances each time. See test_sequence.py.
     """
     pristine("900B")
     hub.seed(["900B"])

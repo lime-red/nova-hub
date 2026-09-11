@@ -21,7 +21,7 @@ table is what actually holds.
 |---|---|
 | A dosemu log over a byte-size floor means a healthy run (§4b, §5) | Transcript size scales with how many peers a league has: a 4-node league runs 19–28 KB where a healthy 2-node one runs 3.5–5 KB. Any absolute floor rejects small healthy leagues. Assert on the game's own completion line (`Planetary Maintenance Complete`) instead. A floor is still meaningful for the near-empty (~330–500 B) "dosemu never started" case, nothing more. |
 | Install directory names are free (`bre_900`, §3) | **Names must be 8.3-clean.** The 16-bit Turbo Pascal the games are built with cannot traverse a path with a longer component. It does not error: the game completes, prints every phase marker, exits zero, and ingests nothing. Rig installs are named `b900n01`. |
-| Sequence numbers advance by one per node pair, testable by repeating a round (§4b) | A node emits **one packet per game day**, not per run. A second `PLANETARY` on the same day emits nothing at all, so sequence progression cannot be exercised by looping — it needs a date change, and belongs to the multi-day scenario. |
+| Sequence numbers advance by one per node pair, testable by repeating a round (§4b) | Half right. A second `PLANETARY` on the same game day emits nothing — daily maintenance runs once — so a plain loop proves nothing. But a node is **not** limited to one packet per day: `REQUEST` (recon request to every board, and a recon back) and `RECON` (recons only) queue traffic, and the next `OUTBOUND` packages it into a real packet with the next sequence number. Sequence progression is testable inside one day; no date change needed. |
 | Direct routing falls out of the topology (§6.2) | With HOST routing in `BRNODES.DAT`, every node addresses node 1 and a node-to-node packet never appears. It needs the game's own `ROUTE 3 3` override in `ROUTE.CFG` (see `DOCS/ROUTE.SAM`). The hub relays such a packet byte for byte. |
 | dosemu can present a faked date to DOS (§4a) | Not via `libfaketime`: it is not async-signal-safe, and dosemu2's timer signal handler deadlocks under it — even at `+0d`. Use the DOS-side TSR `REDATE.COM`, which hooks int 21h AH=2Ah. Also: `DATE /T` is invalid under comcom64 and aborts the batch, so the date cannot be read back from the shell — read it from a BACKUP filename or the daily-maintenance marker. |
 | — | `BRE.EXE FULL` is the interactive player path and blocks forever headless on the ANSI prompt. Maintenance is `PLANETARY`. |
@@ -206,9 +206,14 @@ actually happened to, and two different games in one batch — the `015B`/`015F`
 pairing that exists in production, where both share a league number and differ
 only by game type.
 
-Deferred, and still worth doing: the sequence gap (5), multi-day (8),
-player-driven traffic, and CI wiring. Multi-day is unblocked — `REDATE` settles
-the mechanism — so it is a scenario to write, not a risk.
+Scenario 5 (sequence gap) landed on 2026-09-11, once it turned out not to need a
+date change at all: `REQUEST`/`RECON` + `OUTBOUND` forces extra packets within a
+single day, so `.001 .002 .003` come from a real game and the gap detector is fed
+a genuine missing packet rather than a hand-written filename.
+
+Deferred, and still worth doing: multi-day (8), player-driven traffic, and CI
+wiring. Multi-day is unblocked — `REDATE` settles the mechanism — so it is a
+scenario to write, not a risk.
 
 ### Fixtures expire
 

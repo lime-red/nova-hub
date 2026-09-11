@@ -29,6 +29,9 @@ table is what actually holds.
 | — | `script -c` returns **its own** exit status, always 0. Without `-e` a dead dosemu is recorded as a successful run — this is R-1, and it was live in both `nova-hub` and `nova-client`. |
 | — | Handing dosemu a bare host path to the batch file remaps `C:` to that file's own directory, so the generated batch's `CD <game_dos_path>` no longer resolves and the game never runs — while dosemu exits 0 and the transcript looks ordinary. Use `-K <dir> -E <name>`, which leaves `C:` alone. See §9. |
 | — | The hub's data dir and the game folders are separate config paths and need not share a filesystem, so moves between them must be `shutil.move`, not `Path.rename`. |
+| Restoring a fixture makes a run reproducible (§5) | **Only on the day the fixture was captured.** The games number packets by game day, so a fixture restored the next day is byte-identical on disk and one day older in `GAME.DAT` — its next packet is `.002`. `fixtures.stale()` detects this and `run.sh` rebuilds. |
+| — | BRE writes its whole `DATA/` at RESET; **FE does not**. `planet.fe`, `routes.dat` and the rest arrive on the first `PLANETARY` run, which is also game-day one and emits real packets. FE fixtures are therefore captured straight after RESET. |
+| — | One `process_batch()` is **one `ProcessingRun`** even when it spans several leagues or games. The separation is in the `(game_type, league_id)` grouping and in per-file `league_id`, not in the run count. |
 
 ---
 
@@ -194,10 +197,36 @@ The rig lives in `nova-hub/tests/live/`, runs on `novatest-hl`, and is driven by
 `tests/live/run.sh`. `rig/` holds the machinery (provisioning, fixtures, the pty
 runner, the transcript parser, the test hub); one `test_*.py` per scenario.
 
-Scenarios 1, 2, 3, 6 and 7 are implemented, plus the R-3 inbound-path detector.
-Deferred, and still worth doing: `900F` (scenario 4), the sequence gap (5),
-multi-day (8), player-driven traffic, and CI wiring. Multi-day is unblocked —
-`REDATE` settles the mechanism — so it is a scenario to write, not a risk.
+Scenarios 1, 2, 3, 4, 6 and 7 are implemented, plus the R-3 inbound-path
+detector. **21 tests**, green twice in a row from restored fixtures.
+
+`900F` (scenario 4) landed on 2026-09-11: Falcon's Eye across all four nodes,
+covering the round trip, the completion marker from FE itself, R-3 in the game it
+actually happened to, and two different games in one batch — the `015B`/`015F`
+pairing that exists in production, where both share a league number and differ
+only by game type.
+
+Deferred, and still worth doing: the sequence gap (5), multi-day (8),
+player-driven traffic, and CI wiring. Multi-day is unblocked — `REDATE` settles
+the mechanism — so it is a scenario to write, not a risk.
+
+### Fixtures expire
+
+A pristine fixture is a virgin game *on its capture date*. The games derive a
+packet's sequence number from how many game days have passed since `RESET`, so a
+fixture restored the next day gives a byte-identical tree and a game that is one
+day older: its next packet is `.002`, and every scenario asserting `.001` fails
+on arithmetic for reasons that look nothing like the cause.
+
+This cannot be fixed by copying files. The start date lives inside `GAME.DAT`,
+and the only supported way to move the date a game sees is `REDATE.COM` — a TSR
+that would have to load ahead of every invocation, including the ones the hub's
+own product code launches, which the rig does not get to write.
+
+So the fixture is rebuilt instead. `rig.fixtures.stale()` reports any fixture not
+captured today, `conftest.py` turns that into a skip that names the cause, and
+`run.sh` rebuilds automatically before running. Rebuilding all ten installs takes
+a few minutes and happens at most once a day.
 
 ### A live production regression
 

@@ -50,12 +50,14 @@ def hub_config(data_dir: Path, term: str = "linux", leagues=None,
             "game_dos_path": league.dos_path(hub),
             "inbound_folder": str(inbound),
             "outbound_folder": str(install / "OUTBOUND"),
-            # BRE SCORES writes its .ANS bulletins into BULLETIN/, not the game
+            # SCORES writes its .ANS bulletins into BULLETIN/, not the game
             # folder. Point somewhere else and the hub runs the command happily
             # and then ingests nothing at all.
             "scores_folder": str(install / "BULLETIN"),
-            "processing_command": "BRE.EXE PLANETARY /DETAILED",
-            "scores_command": "BRE.EXE SCORES",
+            "processing_command": league.g.maintenance,
+            "scores_command": f"{league.g.exe} SCORES",
+            # Both games print the same line, which is why one constant covers
+            # them. Verified on FE 1.06 on this rig and on prod's fe_015.
             "completion_marker": COMPLETION_MARKER,
         }
 

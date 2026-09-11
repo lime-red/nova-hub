@@ -1,4 +1,4 @@
-"""Run a BRE command on one node's install, as that node's unix user.
+"""Run a game command on one node's install, as that node's unix user.
 
 Nodes are separate users, so the test process (running as the rig owner) reaches
 them through sudo. Everything a scenario needs from a node is here: make it
@@ -29,7 +29,7 @@ def _sudo(node: Node, *args) -> list:
 
 def run(league: League, node: Node, command: str = "PLANETARY",
         tag: str = "run", timeout: int = 240) -> Path:
-    """Run `BRE.EXE <command>` on this node's install. Returns the transcript path.
+    """Run `<GAME>.EXE <command>` on this node's install. Returns the transcript path.
 
     `FULL` is deliberately not supported: it is the *player* path, not a
     maintenance command, and headless it blocks forever on "Do you want ANSI
@@ -51,7 +51,7 @@ def run(league: League, node: Node, command: str = "PLANETARY",
         f"t = Path({str(install)!r});"
         f"(t / 'RUN.BAT').write_bytes("
         f"  '@ECHO OFF\\r\\nC:\\r\\nCD {league.dos_path(node)}\\r\\n"
-        f"BRE.EXE {command.upper()}{flag}\\r\\nEXIT\\r\\n'.encode());"
+        f"{league.g.exe} {command.upper()}{flag}\\r\\nEXIT\\r\\n'.encode());"
         # inuse.flg is the game's mutex. An uncleanly killed run leaves one behind
         # and every later run then exits 1 having printed nothing about why.
         "(t / 'inuse.flg').unlink(missing_ok=True);"
@@ -126,7 +126,7 @@ def give_inbound(league: League, node: Node, filename: str, payload: bytes):
 def set_route(league: League, node: Node, *lines: str):
     """Write ROUTE.CFG, the game's own routing override.
 
-    With HOST routing in BRNODES.DAT every node sends everything to node 1, so a
+    With HOST routing in the nodes file every node sends everything to node 1, so a
     direct node-to-node packet never appears. `ROUTE 3 3` restores node 3 to
     direct (per DOCS/ROUTE.SAM), which is how a scenario gets a genuine
     `900b0203.nnn` rather than a synthesised one.

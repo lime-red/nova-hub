@@ -29,6 +29,20 @@ for arg in "$@"; do
     esac
 done
 
+# A pristine fixture is only pristine on the day it was captured: the games
+# number packets by game day, so yesterday's fixture restores to a game whose
+# next packet is .002. Rebuild rather than let every scenario fail on arithmetic.
+if (( ! build )) && ! "$PYTHON" - <<'EOF'
+import sys
+sys.path.insert(0, "/srv/novatest/nova-hub/tests/live")
+from rig import fixtures
+sys.exit(1 if fixtures.stale() else 0)
+EOF
+then
+    echo "fixtures are not from today - rebuilding (this takes a few minutes)" >&2
+    build=1
+fi
+
 if (( build )); then
     # Provisioning drives each node as its own unix user, so this needs the rig
     # owner's passwordless sudo. Fixtures are captured from trees that have never

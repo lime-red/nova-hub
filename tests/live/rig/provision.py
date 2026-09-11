@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a virgin BRE install for one node in one test league.
+"""Build a virgin BRE or Falcon's Eye install for one node in one test league.
 
 Runs *as the node's own unix user* -- each node needs its own ~/.dosemu/drive_c,
 and dosemu wants a real home directory. Drive it from the rig owner with:
@@ -24,9 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from rig import dosrun
 from rig.dosdrive import DosSession, expand
-from rig.layout import (
-    DOSEMU_CONF, LEAGUES, LOGS, MEDIA, MEDIA as MEDIA_ZIP, NODES, League, Node,
-)
+from rig.layout import DOSEMU_CONF, LEAGUES, LOGS, NODES, League, Node
 
 
 def _crlf(*lines) -> bytes:
@@ -34,20 +32,22 @@ def _crlf(*lines) -> bytes:
 
 
 def _unpack(league: League, node: Node, target: Path):
+    game = league.g
     if target.exists():
         shutil.rmtree(target)
     target.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
-        subprocess.run(["unzip", "-q", str(MEDIA_ZIP), "-d", tmp], check=True)
-        shutil.move(str(Path(tmp) / "bre_sj1"), str(target))
+        subprocess.run(["unzip", "-q", str(game.media), "-d", tmp], check=True)
+        shutil.move(str(Path(tmp) / game.media_dir), str(target))
 
     # Donor game state is meaningless for a new league; RESET rebuilds it.
-    for junk in ("inuse.flg", "DATA/BRE.LOC", "DATA/bre.loc", "DUPES.TXT",
-                 # The media ships "ROUTE * 2", which sends a leaf node's mail to
-                 # itself. None of the working production installs has a route.cfg
-                 # at all -- routing comes from the HOST form in BRNODES.DAT.
-                 "route.cfg"):
+    for junk in game.junk:
         (target / junk).unlink(missing_ok=True)
+    # FE ships a populated BULLETIN/ in the donor tree; the scores collector would
+    # pick those up as this run's output.
+    for stale in (target / "BULLETIN").glob("*"):
+        if stale.is_file():
+            stale.unlink()
     for sub in ("INBOUND", "OUTBOUND", "BACKUP"):
         for f in (target / sub).glob("*"):
             if f.is_file():
@@ -72,7 +72,7 @@ def _write_config(league: League, node: Node, target: Path):
         "NONE",
     ))
 
-    # BRNODES.DAT: node 1 is the league host and HOSTs the rest.
+    # BRNODES.DAT / FENODES.DAT: node 1 is the league host and HOSTs the rest.
     hosted = " ".join(str(i) for i in league.members if i != 1)
     lines = [f"1 HOST {hosted}".strip()]
     for index in league.members:
@@ -80,7 +80,7 @@ def _write_config(league: League, node: Node, target: Path):
         if index != 1:
             lines.append(str(index))
         lines += [peer.name, league.fido_for(index), "Brisbane", "QLD", "AUS", ""]
-    (target / "BRNODES.DAT").write_bytes(_crlf(*lines))
+    (target / league.g.nodes_file).write_bytes(_crlf(*lines))
 
 
 def _batch(target: Path, name: str, dos_path: str, command: str):
@@ -94,14 +94,14 @@ def _dosemu(target: Path, batch: str):
 
 
 def _reset(league: League, node: Node, target: Path, log_dir: Path):
-    """Drive `BRE.EXE RESET` to a virgin game.
+    """Drive `<GAME>.EXE RESET` to a virgin game.
 
     The prompt sequence is neither fixed nor in the order the flow implies:
     confirm, then the *Configuration Editor* opens, and only after ESCaping out of
     it does the league-wide question appear -- and only on the node whose address
     matches the HOST entry. So state the destination and answer what turns up.
     """
-    _batch(target, "RESET.BAT", league.dos_path(node), "BRE.EXE RESET")
+    _batch(target, "RESET.BAT", league.dos_path(node), f"{league.g.exe} RESET")
     (target / "inuse.flg").unlink(missing_ok=True)
 
     session = DosSession(
@@ -133,8 +133,10 @@ def _verify(league: League, node: Node, target: Path):
     problems = []
 
     data = target / "DATA"
-    for required in ("GAME.DAT", "IDS.DAT", "PLANET.BRE"):
-        if not (data / required).exists():
+    for required in league.g.required_data:
+        # FE writes DATA/ lower case, BRE upper. Match case-insensitively so the
+        # check describes the game rather than one game's habits.
+        if not any(f.name.lower() == required.lower() for f in data.iterdir()):
             problems.append(f"DATA/{required} missing - RESET did not complete")
 
     cfg = (target / "bbs.cfg").read_bytes().decode("latin-1").split("\r\n")
@@ -174,18 +176,18 @@ def provision(league: League, node: Node, log_dir: Path = LOGS) -> Path:
     _unpack(league, node, target)
     _write_config(league, node, target)
 
-    # BREDATA regenerates GAME/, not DATA/.
-    _batch(target, "BREDATA.BAT", league.dos_path(node), "BREDATA -Y")
-    dosrun.run(_dosemu(target, "BREDATA.BAT"),
-               log_dir / f"prov_{league.dirname(node.index)}_bredata.log",
+    # BREDATA/FEDATA regenerates GAME/, not DATA/.
+    _batch(target, "GAMEDATA.BAT", league.dos_path(node),
+           f"{league.g.data_exe.replace('.EXE', '')} -Y")
+    dosrun.run(_dosemu(target, "GAMEDATA.BAT"),
+               log_dir / f"prov_{league.dirname(node.index)}_gamedata.log",
                timeout=120)
 
     _reset(league, node, target, log_dir)
 
     # RESET deletes stray .BAT files from the game directory, so the run batch has
     # to be written afterwards or it vanishes.
-    _batch(target, "PROCESS.BAT", league.dos_path(node),
-           "BRE.EXE PLANETARY /DETAILED")
+    _batch(target, "PROCESS.BAT", league.dos_path(node), league.g.maintenance)
 
     _verify(league, node, target)
     print(f"== provisioned {target}: {' '.join(sorted(p.name for p in (target / 'DATA').iterdir()))}")

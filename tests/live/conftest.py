@@ -37,6 +37,15 @@ def _why_not_available():
             "rig fixtures missing for " + ", ".join(missing)
             + " - build them with: python -m rig.build"
         )
+    stale = fixture_store.stale()
+    if stale:
+        when = fixture_store.captured_on(*stale[0])
+        return (
+            f"rig fixtures were captured on {when}, not today. A pristine game is "
+            "only virgin on its capture date -- the games number packets by game "
+            "day, so a day-old fixture starts at .002. Rebuild with: "
+            "tests/live/run.sh --build"
+        )
     return None
 
 

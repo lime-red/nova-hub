@@ -1,0 +1,75 @@
+# Fast checks. No dosemu, no games, no network - everything here runs anywhere
+# Python 3.12 does, in a few seconds.
+#
+# The live rig is deliberately NOT here; it needs real dosemu and real game
+# installs under real unix users. See live-rig.yml.
+name: tests
+
+on:
+  push:
+    branches: [main, "**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Unit and integration tests
+        # Run the unit tree on its own FIRST, with the live tree not even
+        # collected. A conftest hook sees every item in the session, not just
+        # those under its own directory, and one in tests/live once skipped the
+        # entire suite while reporting a clean run. This invocation cannot be
+        # silenced that way, so it is the one that proves the unit tests ran.
+        run: |
+          python -m pytest tests/ --ignore=tests/live -q --tb=short
+
+      - name: Whole tree collects, with the live rig skipping cleanly
+        # Then the full session. Here the live tree is expected to skip -- no
+        # dosemu, no NOVATEST_RIG -- but it must skip rather than error, and it
+        # must not take the unit tests down with it.
+        run: |
+          python -m pytest tests/ -q --tb=short
+
+      - name: Migrations build a database from empty
+        # Not covered by the suite above running green: this asserts the
+        # documented install path works, which it did not until 8f90ffb.
+        run: |
+          NOVA_HUB_DB_URL="sqlite:///$(mktemp -d)/ci.db" python -m alembic upgrade head
+
+      - name: Config example is valid and 8.3-clean
+        # The cheap structural half of the R-3 guard, runnable against any
+        # config. Catches a game path that the game could not traverse.
+        run: |
+          cp config.toml.example config.toml
+          python - <<'PY'
+          import sys, tomllib
+          sys.path.insert(0, "tests/live")
+          from rig.dospath import dos_path_problems
+          cfg = tomllib.load(open("config.toml", "rb"))
+          bad = []
+          for number, games in cfg.get("dosemu", {}).items():
+              if not isinstance(games, dict):
+                  continue
+              for game, settings in games.items():
+                  if not isinstance(settings, dict):
+                      continue
+                  path = settings.get("game_dos_path")
+                  if path:
+                      bad += [f"{number}.{game}: {p}" for p in dos_path_problems(path)]
+          if bad:
+              print("\n".join(bad))
+              sys.exit(1)
+          print("config.toml.example: all game paths are 8.3-clean")
+          PY

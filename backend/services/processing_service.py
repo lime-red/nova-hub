@@ -217,7 +217,7 @@ class ProcessingService:
             for _alert in new_alerts:
                 _league = self.db.query(_League).filter(_League.id == _alert.league_id).first()
                 _league_name = f"{_league.game_type} {_league.league_id}" if _league else "Unknown"
-                await dispatch_alert(_alert, _league_name)
+                await dispatch_alert(_alert, _league_name, self.config)
 
         logger.info("Batch complete")
 

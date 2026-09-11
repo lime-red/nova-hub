@@ -45,20 +45,61 @@ def _spawn_alert_task(coro: Coroutine[Any, Any, None], channel: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+
+def _alerting_config(config: dict | None):
+    """The alerting settings, or None if they cannot be determined.
+
+    Returning None rather than raising keeps the fire-and-forget contract: an
+    alert that cannot be delivered must not take the caller down with it.
+    """
+    from backend.core.config import AlertingConfig, EmailAlertConfig, WebhookAlertConfig
+
+    if config is not None:
+        raw = dict(config.get("alerting", {}))
+        try:
+            email = dict(raw.pop("email", {}))
+            webhook = dict(raw.pop("webhook", {}))
+            return AlertingConfig(
+                **raw,
+                email=EmailAlertConfig(**email),
+                webhook=WebhookAlertConfig(**webhook),
+            )
+        except Exception as exc:  # malformed [alerting] block
+            logger.warning(f"Alerting config could not be read, not alerting: {exc}")
+            return None
+
+    try:
+        from backend.core.config import get_config
+        return get_config().alerting
+    except Exception as exc:
+        logger.warning(f"Alerting config could not be loaded, not alerting: {exc}")
+        return None
+
+
+# ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
 
-async def dispatch_alert(alert: "SequenceAlert", league_name: str) -> None:
+async def dispatch_alert(alert: "SequenceAlert", league_name: str,
+                         config: dict | None = None) -> None:
     """
     Dispatch a new sequence-gap alert to all configured channels.
 
     This function is fire-and-forget: it launches background tasks for each
     channel and returns immediately.  Failures are logged, not raised.
-    """
-    from backend.core.config import get_config
-    cfg = get_config().alerting
 
-    if not cfg.enabled:
+    `config` is the raw config mapping the caller is already working from. Pass
+    it: without it this falls back to get_config(), which lazily reads
+    "config.toml" **relative to the current working directory** and therefore
+    ignores whatever configuration the caller was constructed with. That fallback
+    also used to raise FileNotFoundError straight through a caller promised
+    fire-and-forget, killing the whole processing batch the first time a
+    sequence gap was found in any process whose cwd was not the repo root.
+    """
+    cfg = _alerting_config(config)
+    if cfg is None or not cfg.enabled:
         return
 
     if cfg.email.enabled and cfg.email.to_addresses:

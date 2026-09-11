@@ -8,7 +8,9 @@ import getpass
 import subprocess
 from pathlib import Path
 
-from rig.layout import DOSEMU_CONF, LEAGUES, LOGS, NODES, VENV_PYTHON, League, Node
+from rig.layout import (
+    DOSEMU_CONF, LEAGUES, LOGS, NODES, REDATE, VENV_PYTHON, League, Node,
+)
 
 # Only INBOUND/OUTBOUND/PLANETARY accept /DETAILED, and it is what puts the
 # per-item "Type: <x> <src>-> <dst>" lines in the transcript. Without it the run
@@ -28,7 +30,7 @@ def _sudo(node: Node, *args) -> list:
 
 
 def run(league: League, node: Node, command: str = "PLANETARY",
-        tag: str = "run", timeout: int = 240) -> Path:
+        tag: str = "run", timeout: int = 240, date: str = None) -> Path:
     """Run `<GAME>.EXE <command>` on this node's install. Returns the transcript path.
 
     `FULL` is deliberately not supported: it is the *player* path, not a
@@ -43,15 +45,27 @@ def run(league: League, node: Node, command: str = "PLANETARY",
     flag = " /DETAILED" if command.upper() in DETAILED else ""
     log = LOGS / f"{tag}_{league.dirname(node.index)}_{command.lower()}.log"
 
+    # `date` is "YYYYMMDD", and makes the game believe that is today. The TSR is
+    # installed and removed around the command so it cannot leak into the next
+    # run. Nothing outside the game sees the faked date.
+    redate_in = f"REDATE /i{date}\\r\\n" if date else ""
+    redate_out = "REDATE /r\\r\\n" if date else ""
+
     script = (
         "import sys; sys.path.insert(0, '.');"
         "from pathlib import Path;"
         "from rig import dosrun;"
         "from rig.layout import DOSEMU_CONF;"
         f"t = Path({str(install)!r});"
+        # REDATE.COM lives in the shared media dir, not in the fixture, so it is
+        # copied in on demand rather than baked into every install.
+        f"import shutil;"
+        f"({'shutil.copy(' + repr(str(REDATE)) + ', t / \'REDATE.COM\')' if date else 'None'});"
         f"(t / 'RUN.BAT').write_bytes("
         f"  '@ECHO OFF\\r\\nC:\\r\\nCD {league.dos_path(node)}\\r\\n"
-        f"{league.g.exe} {command.upper()}{flag}\\r\\nEXIT\\r\\n'.encode());"
+        f"{redate_in}"
+        f"{league.g.exe} {command.upper()}{flag}\\r\\n"
+        f"{redate_out}EXIT\\r\\n'.encode());"
         # inuse.flg is the game's mutex. An uncleanly killed run leaves one behind
         # and every later run then exits 1 having printed nothing about why.
         "(t / 'inuse.flg').unlink(missing_ok=True);"

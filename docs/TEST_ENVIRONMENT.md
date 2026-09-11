@@ -32,6 +32,8 @@ table is what actually holds.
 | Restoring a fixture makes a run reproducible (§5) | **Only on the day the fixture was captured.** The games number packets by game day, so a fixture restored the next day is byte-identical on disk and one day older in `GAME.DAT` — its next packet is `.002`. `fixtures.stale()` detects this and `run.sh` rebuilds. |
 | — | BRE writes its whole `DATA/` at RESET; **FE does not**. `planet.fe`, `routes.dat` and the rest arrive on the first `PLANETARY` run, which is also game-day one and emits real packets. FE fixtures are therefore captured straight after RESET. |
 | — | One `process_batch()` is **one `ProcessingRun`** even when it spans several leagues or games. The separation is in the `(game_type, league_id)` grouping and in per-file `league_id`, not in the run count. |
+| Sequence numbers are dense, so any unseen number is a lost packet (the hub's gap detector) | **They are not.** Each new game day consumes *two* sequence numbers and writes one file at the second — `.002`, `.004`, `.006` on three consecutive days. Production has **705 gap alerts, all unresolved**, and gap=1 is the largest bucket. See `ROLLOUT_PLAN.md` card B-4. |
+| — | Re-running while a packet is still pending in OUTBOUND **rewrites it in place and keeps its number** — 176 → 232 → 288 bytes under one filename. A packet sitting in a game outbound folder is not a finished artefact; its contents change until something collects it. |
 
 ---
 

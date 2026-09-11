@@ -10,6 +10,11 @@ from pathlib import Path
 # only the install media, the dosemu conf and the fixture store are shared.
 SRV = Path("/srv/novatest")
 MEDIA = SRV / "media" / "bre_sj1.zip"   # kept for callers that predate GAMES
+# REDATE.COM hooks int 21h AH=2Ah (GET-DATE) only -- exactly where Turbo Pascal's
+# GetDate goes -- so the game sees a faked date and nothing else does. libfaketime
+# is not an option: it is not async-signal-safe and deadlocks dosemu2's timer
+# handler, even at +0d.
+REDATE = SRV / "media" / "REDATE.COM"
 DOSEMU_CONF = SRV / "conf" / "vgaterm.conf"
 FIXTURES = SRV / "fixtures"
 LOGS = SRV / "logs"

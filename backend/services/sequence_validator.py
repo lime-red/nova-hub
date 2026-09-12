@@ -34,6 +34,31 @@ WRAP_DETECTION_THRESHOLD = 500
 MIN_DELTAS_FOR_STRIDE = 2
 STRIDE_DOMINANCE = 0.6
 
+# A stride only helps where there IS one. Measured against eight months of
+# production data, the three BRE leagues number densely -- 1000 packets covering
+# 1000 numbers, every step exactly 1 -- and Falcon's Eye does not. 015F's routes
+# step by 1, 2, 3, 4, 5 and occasionally 45, with no value holding a majority, and
+# they carry 472 of production's 492 standing alerts between them. One route sent
+# 103 packets across a span of 328 numbers: that is not 225 lost packets, it is a
+# game that does not number densely, and no stride can be read from it.
+#
+# So the second question, asked before any gap is reported: does this route's
+# numbering support the inference at all? Density is packets per number of span,
+# which is just the reciprocal of the mean step, and it separates the two
+# populations cleanly -- 1.00 and 0.98 for BRE, 0.31 to 0.66 for FE.
+#
+# Below the threshold the route is exempt: its unseen numbers are not evidence of
+# anything. That does lose the ability to spot a genuine FE loss, which is the
+# honest cost of the trade -- an alarm that has fired 472 times without once being
+# real has no value to trade away. Telling the two apart needs the game's own
+# record of what it sent (ROUTEINFO), not arithmetic on what arrived.
+#
+# The minimum sample matters as much as the threshold: a route with six packets
+# can look sparse by accident, so below MIN_PACKETS_FOR_DENSITY the route stays
+# noisy rather than being quietly excused.
+MIN_PACKETS_FOR_DENSITY = 20
+DENSITY_THRESHOLD = 0.9
+
 
 class SequenceValidator:
     def __init__(self, db=None):
@@ -106,6 +131,23 @@ class SequenceValidator:
             return 1
         return best
 
+    def numbers_densely(self, ordered: list[int]) -> bool:
+        """Does this route number densely enough for a missing number to mean
+        a missing packet?
+
+        `ordered` is chronological. Density is steps per number of span, which is
+        the reciprocal of the mean step. A route with too few packets to judge is
+        treated as dense, which keeps it noisy rather than quietly excusing it.
+        """
+        deltas = [d for d in (self._delta(a, b) for a, b in zip(ordered, ordered[1:]))
+                  if 0 < d < WRAP_DETECTION_THRESHOLD]
+        if len(deltas) + 1 < MIN_PACKETS_FOR_DENSITY:
+            return True
+        span = sum(deltas)
+        if span <= 0:
+            return True
+        return len(deltas) / span >= DENSITY_THRESHOLD
+
     @staticmethod
     def _delta(current: int, next_seq: int) -> int:
         """Distance from one sequence number to the next, across the wrap."""
@@ -121,9 +163,12 @@ class SequenceValidator:
         after wrap-around (999 -> 000), we need to detect actual gaps without
         flagging the wrap-around transition itself.
 
-        `gap_size` counts missing packets, not missing numbers. On a route whose
-        games advance by two per packet, 002 -> 006 is one missing packet, not
-        three -- and 002 -> 004 is none at all. See the stride note above.
+        Two questions are asked before any gap is reported. Does this route number
+        densely enough for an unseen number to mean anything at all (Falcon's Eye
+        does not), and if so, how far does it advance per packet? `gap_size` then
+        counts missing packets, not missing numbers: on a route whose game
+        advances by two, 002 -> 006 is one missing packet, not three, and
+        002 -> 004 is none at all. See the notes on both constants above.
 
         Returns a list of dicts with gap info:
             - expected_sequence: the number the missing packet would have carried
@@ -163,6 +208,11 @@ class SequenceValidator:
             ordered = sorted_seqs[wrap_index + 1:] + sorted_seqs[:wrap_index + 1]
         else:
             ordered = sorted_seqs
+
+        # A route that does not number densely has nothing to say about what is
+        # missing, so do not put words in its mouth.
+        if not self.numbers_densely(ordered):
+            return []
 
         stride = self.route_stride(ordered)
 

@@ -124,3 +124,58 @@ class TestRouteStride:
     def test_stride_survives_the_wrap(self):
         v = self._validator()
         assert v.find_gaps([994, 996, 998, 0, 2]) == []
+
+
+class TestRouteDensity:
+    """Falcon's Eye does not number densely, and no stride can be read from it.
+
+    Measured on eight months of production: the three BRE leagues run at density
+    1.00 and 0.98, Falcon's Eye at 0.31 to 0.66, and FE's routes carry 472 of the
+    492 standing alerts. These tests pin the gate that separates the two.
+    """
+
+    def _validator(self):
+        return SequenceValidator(db=None)
+
+    def test_a_dense_route_is_still_judged(self):
+        v = self._validator()
+        dense = list(range(1, 41))
+        dense.remove(20)
+        gaps = v.find_gaps(dense)
+        assert [g["expected_sequence"] for g in gaps] == [20]
+
+    def test_a_sparse_route_is_exempt(self):
+        v = self._validator()
+        # 30 packets spread over ~150 numbers, the shape of 015F's routes.
+        sparse = [1 + 5 * n for n in range(30)]
+        assert v.numbers_densely(sparse) is False
+        assert v.find_gaps(sparse) == []
+
+    def test_a_short_route_is_not_excused_by_accident(self):
+        v = self._validator()
+        # Four packets, one clear hole. Too small a sample to call the route
+        # sparse, and no stride to read either, so the hole is still reported.
+        short = [1, 2, 3, 9]
+        assert v.numbers_densely(short) is True
+        assert [g["expected_sequence"] for g in v.find_gaps(short)] == [4, 5, 6, 7, 8]
+
+    def test_a_regular_wide_step_is_a_stride_not_a_loss(self):
+        """[1, 5, 9, 13, 17, 21] is a route that steps by four, every time. The
+        sample is too small for density to judge, and that is exactly when the
+        stride rule has to carry it."""
+        v = self._validator()
+        assert v.route_stride([1, 5, 9, 13, 17, 21]) == 4
+        assert v.find_gaps([1, 5, 9, 13, 17, 21]) == []
+
+    def test_the_rig_pattern_is_dense_enough_to_judge(self):
+        """Three game days at stride two is a small sample, so density defers and
+        the stride rule is what keeps it quiet. The two gates cover different
+        regimes and both are needed."""
+        v = self._validator()
+        assert v.numbers_densely([2, 4, 6]) is True
+        assert v.find_gaps([2, 4, 6]) == []
+
+    def test_density_is_measured_across_the_wrap(self):
+        v = self._validator()
+        dense = [(990 + n) % 1000 for n in range(30)]
+        assert v.numbers_densely(sorted(set(dense))) is True

@@ -9,7 +9,11 @@ bbs_index = "01"
 
 [processing]
 poll_interval = 60
+# Days of bulk content to keep. Dosemu transcripts and the bodies of generated
+# files older than this are dropped; the run rows, their counts and their
+# per-league attribution are kept. 0 disables the pass entirely.
 retention_days = 30
+retention_batch_size = 500
 
 [dosemu]
 dosemu_path = "/usr/bin/dosemu"

@@ -29,7 +29,11 @@ class HubConfig(BaseModel):
 class ProcessingConfig(BaseModel):
     """Packet processing configuration"""
     poll_interval: int = 60
+    # Days of bulk content to keep. Dosemu transcripts and generated file bodies
+    # older than this are dropped; the rows themselves, and every count on them,
+    # are kept. 0 disables the pass. See backend/services/retention_service.py.
     retention_days: int = 30
+    retention_batch_size: int = 500
 
 
 class DosemuConfig(BaseModel):
@@ -38,6 +42,9 @@ class DosemuConfig(BaseModel):
     config_dir: str = "./dosemu_configs"
     capture_output: bool = True
     timeout: int = 300
+    # TERM passed to dosemu. It refuses to start under TERM=dumb, which is what
+    # `script` supplies when the hub has no controlling terminal.
+    term: str = "linux"
 
 
 class DatabaseConfig(BaseModel):

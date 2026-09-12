@@ -75,6 +75,12 @@ async def lifespan(app: FastAPI):
     finally:
         db_session.close()
 
+    # Honour [processing] retention_days. Runs once at startup and daily after,
+    # so a hub that is restarted often still prunes exactly once per day's worth
+    # of uptime rather than on every boot. See retention_service.py for why this
+    # blanks bulk columns instead of deleting rows.
+    app.state.retention_task = asyncio.create_task(_retention_loop(config))
+
     logger.info("Nova Hub started successfully")
 
     yield
@@ -83,7 +89,39 @@ async def lifespan(app: FastAPI):
     if hasattr(app.state, "watcher") and app.state.watcher:
         app.state.watcher.stop()
 
+    task = getattr(app.state, "retention_task", None)
+    if task is not None:
+        task.cancel()
+
     logger.info("Nova Hub shutting down...")
+
+
+async def _retention_loop(config):
+    """Daily retention pass.
+
+    Deliberately a plain loop rather than a scheduler dependency: it has one
+    job, and a purge that fails must not be able to take the hub down with it.
+    """
+    import asyncio
+
+    from backend.services.retention_service import from_config
+
+    logger = get_logger(context="retention")
+    while True:
+        session = get_session()
+        try:
+            service = from_config(session, config)
+            if not service.enabled:
+                logger.debug("retention disabled; loop idle")
+            else:
+                await asyncio.to_thread(service.purge)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.exception(f"Retention pass failed (the hub is unaffected): {e}")
+        finally:
+            session.close()
+        await asyncio.sleep(24 * 60 * 60)
 
 
 # --- Service API Sub-Application ---

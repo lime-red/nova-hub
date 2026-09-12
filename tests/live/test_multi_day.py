@@ -265,6 +265,50 @@ async def test_a_stale_false_alert_resolves_itself(pristine, hub):
     assert "never issued" in stale.resolution_note
 
 
+async def test_a_processing_run_resolves_stale_alerts_by_itself(pristine, hub):
+    """auto_resolve_alerts() had no caller anywhere until 2026-09-12.
+
+    That is why production accumulated 213 alerts for packets that had arrived
+    months earlier: nothing ever asked. Resolving is now part of a processing
+    run, so this asserts the wiring and not just the function.
+    """
+    from backend.models.database import SequenceAlert
+
+    pristine("900B")
+    hub.seed(["900B"])
+
+    for tag, date in (("w1", DAY1), ("w2", DAY2), ("w3", DAY3)):
+        node_rig.run(LEAGUE, NODE02, "PLANETARY", tag=tag, date=date)
+        for name, payload in node_rig.take_outbound(LEAGUE, NODE02):
+            if name.lower().startswith("900b0201."):
+                hub.deliver(name, payload)
+
+    packet = hub.db.query(Packet).filter(
+        Packet.source_bbs_index == "02", Packet.dest_bbs_index == "01"
+    ).order_by(Packet.sequence_number).first()
+    assert packet is not None, "no packet reached the hub"
+
+    stale = SequenceAlert(
+        league_id=packet.league_id,
+        source_bbs_index=packet.source_bbs_index,
+        dest_bbs_index=packet.dest_bbs_index,
+        expected_sequence=packet.sequence_number + 1,
+        received_sequence=packet.sequence_number + 2,
+        gap_size=1,
+        description="planted: the shape of the rows in production",
+    )
+    hub.db.add(stale)
+    hub.db.commit()
+
+    await hub.process()
+
+    hub.db.refresh(stale)
+    assert stale.is_resolved, (
+        "a processing run did not resolve a stale alert -- "
+        "auto_resolve_alerts() is unwired again"
+    )
+
+
 async def test_a_multi_day_round_trip_still_processes(pristine, hub):
     """Whatever the numbering does, the packets themselves must still flow.
 

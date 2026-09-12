@@ -208,8 +208,16 @@ class ProcessingService:
 
         self.db.commit()
 
-        # Check for sequence gaps; dispatch out-of-band alerts for new ones
+        # Retire what is no longer missing before looking for what is. Until
+        # 2026-09-12 auto_resolve_alerts() had no caller anywhere in the codebase,
+        # so no alert had ever been resolved automatically -- production carried
+        # 213 alerts for packets that had long since arrived, on top of the false
+        # ones. Resolving first also means a gap that closed in this very run is
+        # never re-reported.
         validator = SequenceValidator(self.db)
+        validator.auto_resolve_alerts()
+
+        # Check for sequence gaps; dispatch out-of-band alerts for new ones
         new_alerts = validator.check_sequences()
         if new_alerts:
             from backend.services.alert_service import dispatch_alert

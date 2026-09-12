@@ -72,3 +72,55 @@ class TestFindGaps:
         v = self._validator()
         gaps = v.find_gaps([1, 1, 2, 2, 3])
         assert gaps == []
+
+
+class TestRouteStride:
+    """The games do not hand out sequence numbers one at a time.
+
+    Each new game day consumes two and writes its packet at the second, so a
+    healthy route reads 002, 004, 006. These tests pin the rule that decides
+    when the detector is allowed to believe that -- and when it must not.
+    """
+
+    def _validator(self):
+        return SequenceValidator(db=None)
+
+    def test_a_route_that_advances_by_two_has_no_gaps(self):
+        v = self._validator()
+        assert v.find_gaps([2, 4, 6, 8]) == []
+
+    def test_a_lost_packet_on_a_stride_two_route_is_still_found(self):
+        v = self._validator()
+        # 006 never arrived; 002 004 008 010 did.
+        gaps = v.find_gaps([2, 4, 8, 10])
+        assert [g["expected_sequence"] for g in gaps] == [6]
+        assert gaps[0]["gap_size"] == 1
+        assert gaps[0]["received_sequence"] == 8
+
+    def test_two_lost_packets_in_a_row_count_as_two(self):
+        v = self._validator()
+        gaps = v.find_gaps([2, 4, 10, 12])
+        assert [g["expected_sequence"] for g in gaps] == [6, 8]
+        assert all(g["gap_size"] == 2 for g in gaps)
+
+    def test_a_stride_that_is_not_a_clean_multiple_still_alerts(self):
+        v = self._validator()
+        # Stride 2, then a jump of 5: whatever happened, something was lost.
+        gaps = v.find_gaps([2, 4, 6, 11])
+        assert gaps and all(g["received_sequence"] == 11 for g in gaps)
+
+    def test_one_step_is_not_enough_evidence_to_learn_a_stride(self):
+        v = self._validator()
+        # A brand new route with two packets proves nothing, so stay noisy:
+        # 004 -> 008 reads as three missing numbers, the old behaviour.
+        gaps = v.find_gaps([4, 8])
+        assert {g["expected_sequence"] for g in gaps} == {5, 6, 7}
+
+    def test_a_mixed_route_falls_back_to_dense_numbering(self):
+        v = self._validator()
+        # No stride dominates, so nothing is assumed away.
+        assert v.route_stride([1, 3, 7]) == 1
+
+    def test_stride_survives_the_wrap(self):
+        v = self._validator()
+        assert v.find_gaps([994, 996, 998, 0, 2]) == []

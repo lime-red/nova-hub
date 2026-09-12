@@ -11,6 +11,7 @@ Each install is provisioned as its own node user, because each node needs its ow
 captured last, from a tree that has never processed a packet.
 """
 import argparse
+import getpass
 import subprocess
 import sys
 from pathlib import Path
@@ -22,6 +23,15 @@ from rig.layout import LEAGUES, NODES, REPO, SRV, VENV_PYTHON, installs
 
 
 def _sudo(user: str, *args) -> list:
+    """Run as `user`, without sudo when we already are them.
+
+    The rig's sudoers grant is one-way: novahub-t may become node02..04, but
+    nothing may become novahub-t. So driving the build from the hub user -- which
+    is how CI and `run.sh` do it -- would fail on the hub's own install for no
+    reason other than asking sudo for a change of user that is not a change.
+    """
+    if user == getpass.getuser():
+        return list(args)
     return ["sudo", "-u", user, "--", *args]
 
 

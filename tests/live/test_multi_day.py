@@ -11,6 +11,7 @@ what the hub assumes.
 """
 import pytest
 
+from backend.models.database import Packet
 from rig import node as node_rig
 from rig.layout import HUB_INDEX, LEAGUES, NODES
 
@@ -20,7 +21,8 @@ LEAGUE = LEAGUES["900B"]
 NODE02 = NODES[2]
 HUB = NODES[HUB_INDEX]
 
-DAY1, DAY2, DAY3 = "20261001", "20261002", "20261003"
+DAY1, DAY2, DAY3, DAY4, DAY5, DAY6 = ("20261001", "20261002", "20261003",
+                                     "20261004", "20261005", "20261006")
 
 
 def _maintenance_fired(log_path) -> bool:
@@ -151,17 +153,16 @@ async def test_each_game_day_consumes_two_sequence_numbers(pristine):
     )
 
 
-async def test_the_gap_detector_alerts_when_nothing_was_lost(pristine, hub):
-    """Reproduces the 705 unresolved alerts sitting in production.
+async def test_the_gap_detector_stays_quiet_when_nothing_was_lost(pristine, hub):
+    """The test that reproduced production's 705 false alerts, now inverted.
 
     Every packet this node produced is delivered to the hub. None is lost, none
-    is delayed, nothing is out of order. The detector alerts anyway, because the
-    game skipped a sequence number of its own accord.
+    is delayed, nothing is out of order -- but the game skipped a sequence number
+    of its own accord on each new day. The detector used to alert on every one of
+    those, which is the entire content of production's alert table.
 
-    This is the false-positive path, and it is why production's alert table is
-    705 rows of noise that nobody can act on. Marked xfail rather than asserted
-    as correct: it documents current behaviour, and it will start passing --
-    loudly -- the day the detector learns the difference.
+    ROLLOUT_PLAN card B-4. This was xfail until the detector learned that a
+    route's numbering is its own business.
     """
     from backend.services.sequence_validator import SequenceValidator
 
@@ -176,15 +177,92 @@ async def test_the_gap_detector_alerts_when_nothing_was_lost(pristine, hub):
                 hub.deliver(name, payload)
                 delivered.append(name)
 
-    assert len(delivered) >= 2, f"not enough traffic to test with: {delivered}"
+    assert len(delivered) >= 3, f"not enough traffic to test with: {delivered}"
 
     alerts = SequenceValidator(hub.db).check_sequences()
-    pytest.xfail(
+    assert alerts == [], (
         f"delivered every packet the game produced ({delivered}) and the gap "
-        f"detector still raised {len(alerts)} alert(s)"
-        if alerts else
-        "no false alert this time - see the test body"
+        f"detector raised {len(alerts)} alert(s): "
+        + "; ".join(a.description for a in alerts)
     )
+
+
+async def test_an_idle_league_stops_producing_after_three_game_days(pristine):
+    """Six game days, three packets. Days four onward emit nothing at all.
+
+    Found while trying to build a stride-two route long enough to hide a lost
+    packet in: it cannot be done from game days alone. Maintenance runs and
+    prints its completion marker on every one of the six days -- the game is
+    healthy and doing its job -- there is simply nothing left to say once the
+    opening recon exchange has settled and no player has touched the game.
+
+    Two things follow. The first is a limit on this scenario: the numbering
+    evidence a route can offer is bounded by its traffic, so anything needing a
+    long route needs player activity to generate it. The second is a caution for
+    production monitoring -- silence from a node is not evidence of a fault, and
+    a health check built on "a packet a day" would cry wolf exactly the way the
+    gap detector did (ROLLOUT_PLAN B-4).
+    """
+    pristine("900B")
+
+    produced = []
+    for n, date in enumerate((DAY1, DAY2, DAY3, DAY4, DAY5, DAY6)):
+        log = node_rig.run(LEAGUE, NODE02, "PLANETARY", tag=f"i{n}", date=date)
+        assert _maintenance_fired(log), f"day {n + 1} did not run maintenance"
+        produced.append([
+            name for name, _ in node_rig.take_outbound(LEAGUE, NODE02)
+            if name.lower().startswith("900b0201.")
+        ])
+
+    assert [len(day) for day in produced] == [1, 1, 1, 0, 0, 0], (
+        f"the emission pattern changed: {produced}. If an idle league now keeps "
+        f"producing, the multi-day scenarios can be extended and this test "
+        f"should say so rather than be deleted"
+    )
+
+
+async def test_a_stale_false_alert_resolves_itself(pristine, hub):
+    """Production carries 705 of these. Nobody is going to close them by hand.
+
+    Plant an alert at a number the games never issue -- exactly the shape of the
+    rows sitting in production -- and confirm the next auto-resolve pass retires
+    it with a note saying why, rather than leaving it for an operator to tell
+    apart from a real one.
+    """
+    from backend.models.database import SequenceAlert
+    from backend.services.sequence_validator import SequenceValidator
+
+    pristine("900B")
+    hub.seed(["900B"])
+
+    for tag, date in (("s1", DAY1), ("s2", DAY2), ("s3", DAY3)):
+        node_rig.run(LEAGUE, NODE02, "PLANETARY", tag=tag, date=date)
+        for name, payload in node_rig.take_outbound(LEAGUE, NODE02):
+            if name.lower().startswith("900b0201."):
+                hub.deliver(name, payload)
+
+    # source/dest are stored as the two-character hex text from the filename.
+    packet = hub.db.query(Packet).filter(
+        Packet.source_bbs_index == "02", Packet.dest_bbs_index == "01"
+    ).order_by(Packet.sequence_number).first()
+    assert packet is not None, "no packet reached the hub"
+
+    stale = SequenceAlert(
+        league_id=packet.league_id,
+        source_bbs_index=packet.source_bbs_index,
+        dest_bbs_index=packet.dest_bbs_index,
+        expected_sequence=packet.sequence_number + 1,
+        received_sequence=packet.sequence_number + 2,
+        gap_size=1,
+        description="planted: the shape of the rows in production",
+    )
+    hub.db.add(stale)
+    hub.db.commit()
+
+    assert SequenceValidator(hub.db).auto_resolve_alerts() == 1
+    hub.db.refresh(stale)
+    assert stale.is_resolved
+    assert "never issued" in stale.resolution_note
 
 
 async def test_a_multi_day_round_trip_still_processes(pristine, hub):

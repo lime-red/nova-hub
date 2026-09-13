@@ -370,3 +370,35 @@ def test_delete_league_full_cleanup(client, db, admin_user, oauth_client):
     assert db.query(ProcessingRun).filter(ProcessingRun.league_id == league_db_id).count() == 0
     assert db.query(ProcessingRunFile).filter(ProcessingRunFile.league_id == league_db_id).count() == 0
     assert db.query(SequenceAlert).filter(SequenceAlert.league_id == league_db_id).count() == 0
+
+
+def test_delete_league_refuses_a_wrong_confirmation_name(client, db, admin_user):
+    """The typed confirmation is the only thing standing between a stray click and
+    a league's entire history, so a mismatch must refuse and change nothing."""
+    league = League(league_id="014", game_type="B", name="BRE League 014", is_active=True)
+    db.add(league)
+    db.commit()
+    db.refresh(league)
+    league_db_id = league.id
+
+    login = client.post(
+        "/management/api/v1/auth/login",
+        json={"username": "admin", "password": "AdminPass123!"},
+    )
+    assert login.status_code == 200
+
+    # Right shape, wrong league: "FE_014" is what the other game would be called.
+    resp = client.request(
+        "DELETE",
+        f"/management/api/v1/leagues/{league_db_id}",
+        json={"confirmation_name": "FE_014"},
+    )
+    assert resp.status_code == 400
+    assert "BRE_014" in resp.json()["detail"]
+
+    # Omitting it entirely is a schema violation, not a deletion.
+    resp = client.request("DELETE", f"/management/api/v1/leagues/{league_db_id}", json={})
+    assert resp.status_code == 422
+
+    db.expire_all()
+    assert db.query(League).filter(League.id == league_db_id).first() is not None

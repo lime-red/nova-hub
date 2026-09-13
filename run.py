@@ -35,6 +35,11 @@ def main():
         action="store_true",
         help="Development mode: enable auto-reload and verbose output (do NOT use in production)"
     )
+    parser.add_argument(
+        "--reload",
+        action="store_true",
+        help="Enable auto-reload on code changes (implies --dev behaviour)"
+    )
 
     args = parser.parse_args()
 
@@ -91,8 +96,9 @@ def main():
     ╚══════════════════════════════════════╝
     """)
 
-    if args.dev:
-        logger.warning("Starting in DEVELOPMENT mode (auto-reload enabled, do not use in production)")
+    enable_reload = args.dev or args.reload
+    if enable_reload:
+        logger.warning("Starting with auto-reload enabled (do not use in production)")
 
     logger.info("Starting server...")
     logger.info(f"Listening on {host}:{port}")
@@ -105,7 +111,7 @@ def main():
         "main:app",
         host=host,
         port=port,
-        reload=args.dev,
+        reload=enable_reload,
         log_level="info",
     )
 

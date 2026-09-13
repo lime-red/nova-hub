@@ -98,6 +98,11 @@ class UpdateFidonetRequest(BaseModel):
     fidonet_address: str
 
 
+class LeagueDeleteRequest(BaseModel):
+    """Confirmation required to delete a league"""
+    confirmation_name: str  # Must match "{game_name}_{league_id}", e.g. "BRE_014"
+
+
 class LeagueListResponse(BaseModel):
     """List of leagues"""
     leagues: List[LeagueResponse]

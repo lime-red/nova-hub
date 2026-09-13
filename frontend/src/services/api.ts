@@ -114,8 +114,8 @@ export const leaguesApi = {
   }) =>
     api.put(`/leagues/${id}`, data),
 
-  delete: (id: number) =>
-    api.delete(`/leagues/${id}`),
+  delete: (id: number, confirmationName: string) =>
+    api.delete(`/leagues/${id}`, { data: { confirmation_name: confirmationName } }),
 
   addMember: (leagueId: number, data: {
     client_id: number
@@ -143,7 +143,7 @@ export const processingApi = {
     api.get(`/processing/runs/${id}`),
 
   trigger: () =>
-    api.post('/processing/trigger')
+    api.post('/processing/trigger'),
 }
 
 // Alerts API functions

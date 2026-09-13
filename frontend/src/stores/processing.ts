@@ -118,6 +118,6 @@ export const useProcessingStore = defineStore('processing', () => {
     loadRun,
     triggerProcessing,
     clearError,
-    clearCurrentRun
+    clearCurrentRun,
   }
 })

@@ -14,9 +14,18 @@ const leagueId = computed(() => Number(route.params.id))
 
 const showAddMemberModal = ref(false)
 const showDeleteModal = ref(false)
+const deleteConfirmInput = ref('')
 const selectedClientId = ref<number | null>(null)
 const newBbsIndex = ref('')
 const newFidonet = ref('')
+
+const confirmationName = computed(() => {
+  if (!leaguesStore.currentLeague) return ''
+  const gameName = leaguesStore.currentLeague.game_type === 'B' ? 'BRE' : 'FE'
+  return `${gameName}_${leaguesStore.currentLeague.league_id}`
+})
+
+const deleteConfirmValid = computed(() => deleteConfirmInput.value === confirmationName.value)
 
 onMounted(async () => {
   await leaguesStore.loadLeague(leagueId.value)
@@ -36,6 +45,12 @@ function openAddMemberModal() {
   newFidonet.value = ''
   leaguesStore.clearError()
   showAddMemberModal.value = true
+}
+
+function openDeleteModal() {
+  deleteConfirmInput.value = ''
+  leaguesStore.clearError()
+  showDeleteModal.value = true
 }
 
 async function handleAddMember() {
@@ -66,7 +81,8 @@ async function handleToggleActive() {
 }
 
 async function handleDelete() {
-  const success = await leaguesStore.deleteLeague(leagueId.value)
+  if (!deleteConfirmValid.value) return
+  const success = await leaguesStore.deleteLeague(leagueId.value, confirmationName.value)
   if (success) {
     router.push('/leagues')
   }
@@ -110,7 +126,7 @@ async function handleDelete() {
             >
               {{ leaguesStore.currentLeague.is_active ? 'Disable' : 'Enable' }}
             </button>
-            <button class="btn btn-danger" @click="showDeleteModal = true">Delete</button>
+            <button class="btn btn-danger" @click="openDeleteModal">Delete</button>
           </div>
         </header>
 
@@ -307,21 +323,50 @@ async function handleDelete() {
 
       <!-- Delete Modal -->
       <div v-if="showDeleteModal" class="modal-overlay" @click.self="showDeleteModal = false">
-        <div class="modal">
+        <div class="modal modal-danger">
           <div class="modal-header">
             <h3>Delete League</h3>
             <button class="modal-close" @click="showDeleteModal = false">&times;</button>
           </div>
           <div class="modal-body">
-            <p>Are you sure you want to delete <strong>{{ leaguesStore.currentLeague?.name }}</strong>?</p>
-            <p class="text-muted mt-2">This will also remove all member associations. This action cannot be undone.</p>
+            <div v-if="leaguesStore.error" class="alert alert-error mb-4">
+              {{ leaguesStore.error }}
+            </div>
+            <div class="danger-zone-banner">
+              <span class="danger-zone-label">&#9888; DANGER ZONE</span>
+            </div>
+            <p class="mt-2">This will <strong>permanently delete</strong> the <strong>{{ leaguesStore.currentLeague?.name }}</strong> league and all associated data:</p>
+            <ul class="delete-consequences">
+              <li>All league members and associations</li>
+              <li>All packets (database records and files on disk)</li>
+              <li>All processing runs and generated files</li>
+              <li>All sequence alerts</li>
+              <li>Nodelist files on disk</li>
+            </ul>
+            <p class="delete-warning mt-2">This action cannot be undone.</p>
+            <div class="form-group mt-3">
+              <label>To confirm, type <code class="confirm-code">{{ confirmationName }}</code> below:</label>
+              <input
+                v-model="deleteConfirmInput"
+                type="text"
+                class="confirm-input"
+                :placeholder="confirmationName"
+                autocomplete="off"
+                spellcheck="false"
+              />
+            </div>
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" @click="showDeleteModal = false">
               Cancel
             </button>
-            <button type="button" class="btn btn-danger" @click="handleDelete" :disabled="leaguesStore.loading">
-              Delete League
+            <button
+              type="button"
+              class="btn btn-danger"
+              @click="handleDelete"
+              :disabled="leaguesStore.loading || !deleteConfirmValid"
+            >
+              I understand, delete this league
             </button>
           </div>
         </div>
@@ -453,6 +498,65 @@ async function handleDelete() {
 
 table .actions {
   justify-content: flex-end;
+}
+
+/* Danger modal */
+.modal-danger {
+  border: 1px solid #f85149;
+}
+
+.danger-zone-banner {
+  background: rgba(248, 81, 73, 0.12);
+  border: 1px solid #f85149;
+  border-radius: var(--radius-md);
+  padding: 0.5rem 0.875rem;
+}
+
+.danger-zone-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #f85149;
+}
+
+.delete-consequences {
+  margin: 0.75rem 0 0 1.25rem;
+  padding: 0;
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+}
+
+.delete-consequences li {
+  margin-bottom: 0.25rem;
+}
+
+.delete-warning {
+  font-weight: 600;
+  color: #f85149;
+}
+
+.confirm-code {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 0.125rem 0.375rem;
+  font-size: 0.9em;
+  color: #f85149;
+  user-select: all;
+}
+
+.confirm-input {
+  margin-top: 0.5rem;
+  font-family: monospace;
+}
+
+.mt-2 {
+  margin-top: 0.5rem;
+}
+
+.mt-3 {
+  margin-top: 0.75rem;
 }
 
 /* Modal styles */

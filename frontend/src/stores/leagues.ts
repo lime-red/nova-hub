@@ -135,12 +135,12 @@ export const useLeaguesStore = defineStore('leagues', () => {
     }
   }
 
-  async function deleteLeague(id: number): Promise<boolean> {
+  async function deleteLeague(id: number, confirmationName: string): Promise<boolean> {
     loading.value = true
     error.value = null
 
     try {
-      await leaguesApi.delete(id)
+      await leaguesApi.delete(id, confirmationName)
       await loadLeagues()
       return true
     } catch (err: unknown) {

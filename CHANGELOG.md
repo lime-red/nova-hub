@@ -4,6 +4,51 @@ All notable changes to Nova Hub will be documented in this file.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-14
+
+First tagged release since 0.1.0, and the version production is pinned to.
+Thirty-five commits; the ones that change behaviour:
+
+### Security
+- Service tokens carry a `type` claim, so a management session token can no
+  longer be presented to the service API or the reverse. Every token issued
+  before the upgrade is rejected; clients re-authenticate on their next sync.
+- Rate limiting counts failed authentication attempts only, so a healthy client
+  cannot trip it.
+- `min_password_length` and `cookie_secure` are stated rather than inherited.
+
+### Added
+- Two-tier retention. `retention_days` was configured, documented and never
+  read for the life of the project; it now blanks aged transcripts and generated
+  file bodies while keeping every row, count and filename. `VACUUM` stays an
+  opt-in operator step.
+- Out-of-band alerting via email or webhook, disabled until a transport is
+  configured.
+- `packets_unconsumed` on a processing run: packets copied into a game's inbound
+  folder that the game never ingested are counted and left in place to be
+  retried, instead of being deleted along with the evidence.
+- A live test rig on real dosemu with real games, covering BRE and Falcon's Eye.
+- `GET /management/api/v1/system/version` reports version, commit, commit date
+  and whether the deployed tree is dirty. The admin sidebar shows it.
+- City, state and country on clients, and the hub's per-league FidoNet address
+  and routing mode on leagues, all editable in the UI.
+
+### Fixed
+- Generated nodelists contained no node 1 and no `HOST` routing line, because
+  the hub has no client record to iterate. They are now written from config plus
+  the league's own address, with CRLF endings, atomically, and generation
+  refuses rather than overwriting a good file with a partial one.
+- Dosemu failures were reported as successes: `script` masked the child's exit
+  code, so a run that never started was recorded as completed.
+- Sequence gap detection no longer raises false alerts on sparse routes or at
+  wraparound.
+- Multi-league processing attributed generated files to the wrong league.
+- League deletion failed on foreign key constraints.
+
+### Removed
+- The WebSocket endpoints, which nothing in either the hub or the client used.
+
+
 ### Added
 - Initial MVP release
 - Complete database schema with Alembic migrations

@@ -6,6 +6,9 @@ export interface Client {
   id: number
   bbs_name: string
   client_id: string
+  city?: string
+  state?: string
+  country?: string
   is_active: boolean
   last_seen?: string
   packets_sent_24h: number
@@ -16,6 +19,9 @@ export interface ClientDetail {
   id: number
   bbs_name: string
   client_id: string
+  city?: string
+  state?: string
+  country?: string
   is_active: boolean
   created_at?: string
   stats: {
@@ -111,7 +117,13 @@ export const useClientsStore = defineStore('clients', () => {
     }
   }
 
-  async function updateClient(id: number, data: { bbs_name?: string; is_active?: boolean }): Promise<boolean> {
+  async function updateClient(id: number, data: {
+    bbs_name?: string
+    city?: string
+    state?: string
+    country?: string
+    is_active?: boolean
+  }): Promise<boolean> {
     loading.value = true
     error.value = null
 

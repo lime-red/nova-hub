@@ -11,10 +11,23 @@ const clientsStore = useClientsStore()
 const authStore = useAuthStore()
 
 const clientId = computed(() => Number(route.params.id))
+
+// The last three lines of this BBS's nodes.dat entry. Any of them may be blank.
+const clientLocation = computed(() => {
+  const client = clientsStore.currentClient
+  if (!client) return 'Not set'
+  const parts = [client.city, client.state, client.country].filter(Boolean)
+  return parts.length ? parts.join(', ') : 'Not set'
+})
 const showEditModal = ref(false)
 const showDeleteModal = ref(false)
 const showSecretModal = ref(false)
 const editBbsName = ref('')
+// Location lines for this BBS's entry in generated nodelists. Blank is valid --
+// nodes.dat carries an empty line rather than omitting the field.
+const editCity = ref('')
+const editState = ref('')
+const editCountry = ref('')
 const newSecret = ref('')
 
 onMounted(async () => {
@@ -24,13 +37,21 @@ onMounted(async () => {
 function openEditModal() {
   if (clientsStore.currentClient) {
     editBbsName.value = clientsStore.currentClient.bbs_name
+    editCity.value = clientsStore.currentClient.city || ''
+    editState.value = clientsStore.currentClient.state || ''
+    editCountry.value = clientsStore.currentClient.country || ''
     clientsStore.clearError()
     showEditModal.value = true
   }
 }
 
 async function handleEdit() {
-  const success = await clientsStore.updateClient(clientId.value, { bbs_name: editBbsName.value })
+  const success = await clientsStore.updateClient(clientId.value, {
+    bbs_name: editBbsName.value,
+    city: editCity.value,
+    state: editState.value,
+    country: editCountry.value
+  })
   if (success) {
     showEditModal.value = false
   }
@@ -130,6 +151,10 @@ async function copySecret() {
                 <div class="info-item">
                   <dt>Last Seen</dt>
                   <dd>{{ clientsStore.currentClient.stats.last_seen || 'Never' }}</dd>
+                </div>
+                <div class="info-item">
+                  <dt>Location</dt>
+                  <dd>{{ clientLocation }}</dd>
                 </div>
               </dl>
 
@@ -268,6 +293,26 @@ async function copySecret() {
               <div class="form-group">
                 <label for="editBbsName">BBS Name</label>
                 <input id="editBbsName" v-model="editBbsName" type="text" required />
+                <small class="form-hint">
+                  Appears in generated nodelists. The games match nodes by index,
+                  not by name, so a rename is safe.
+                </small>
+              </div>
+              <div class="form-group">
+                <label for="editCity">City</label>
+                <input id="editCity" v-model="editCity" type="text" />
+              </div>
+              <div class="form-group">
+                <label for="editState">State / Province</label>
+                <input id="editState" v-model="editState" type="text" />
+              </div>
+              <div class="form-group">
+                <label for="editCountry">Country</label>
+                <input id="editCountry" v-model="editCountry" type="text" />
+                <small class="form-hint">
+                  City, state and country are the last three lines of this BBS's
+                  nodes.dat entry. Leave blank to write empty lines.
+                </small>
               </div>
             </div>
             <div class="modal-footer">
@@ -447,6 +492,14 @@ async function copySecret() {
   display: block;
   font-weight: 500;
   margin-bottom: 0.375rem;
+}
+
+.form-hint {
+  display: block;
+  margin-top: 0.375rem;
+  color: var(--color-text-muted);
+  font-size: 0.8125rem;
+  line-height: 1.4;
 }
 
 .secret-display {

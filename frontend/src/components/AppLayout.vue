@@ -1,13 +1,48 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { systemApi } from '@/services/api'
 
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
 
 const isSidebarOpen = ref(true)
+
+// What build is running. Shown in the sidebar footer because the login screen
+// is otherwise the only place it appears, and reading it there means logging
+// out. Failure is silent -- a missing version is not worth an error banner.
+const build = ref<{
+  version: string
+  revision: string | null
+  released_at: string | null
+  dirty: boolean
+} | null>(null)
+
+onMounted(async () => {
+  try {
+    const response = await systemApi.version()
+    build.value = response.data
+  } catch {
+    build.value = null
+  }
+})
+
+const buildLabel = computed(() => {
+  if (!build.value) return ''
+  const revision = build.value.revision ? ` · ${build.value.revision}` : ''
+  return `v${build.value.version}${revision}${build.value.dirty ? '+' : ''}`
+})
+
+const buildTitle = computed(() => {
+  if (!build.value) return ''
+  const parts = [`Version ${build.value.version}`]
+  if (build.value.revision) parts.push(`commit ${build.value.revision}`)
+  if (build.value.released_at) parts.push(`released ${build.value.released_at}`)
+  if (build.value.dirty) parts.push('working tree has uncommitted changes')
+  return parts.join(' — ')
+})
 
 const navigation = computed(() => [
   { name: 'Dashboard', path: '/dashboard', icon: 'dashboard' },
@@ -78,13 +113,19 @@ function toggleSidebar() {
       </nav>
 
       <div class="sidebar-footer">
-        <div class="user-info" v-if="isSidebarOpen">
-          <span class="user-name">{{ authStore.username }}</span>
-          <span class="user-role">{{ authStore.isAdmin ? 'Admin' : 'User' }}</span>
+        <div class="sidebar-footer-row">
+          <div class="user-info" v-if="isSidebarOpen">
+            <span class="user-name">{{ authStore.username }}</span>
+            <span class="user-role">{{ authStore.isAdmin ? 'Admin' : 'User' }}</span>
+          </div>
+          <button class="btn btn-secondary btn-sm" @click="handleLogout">
+            {{ isSidebarOpen ? 'Logout' : 'X' }}
+          </button>
         </div>
-        <button class="btn btn-secondary btn-sm" @click="handleLogout">
-          {{ isSidebarOpen ? 'Logout' : 'X' }}
-        </button>
+        <div v-if="build && isSidebarOpen" class="build-info" :title="buildTitle">
+          <span class="build-version">{{ buildLabel }}</span>
+          <span v-if="build.released_at" class="build-date">{{ build.released_at }}</span>
+        </div>
       </div>
     </aside>
 
@@ -223,9 +264,38 @@ function toggleSidebar() {
   padding: 1rem;
   border-top: 1px solid var(--color-surface-dark);
   display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+.sidebar-footer-row {
+  display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
+}
+
+/* Build identity. Quiet by design -- it is reference information, not status,
+   and should not compete with the navigation above it. */
+.build-info {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.6875rem;
+  line-height: 1.2;
+  color: var(--color-text-muted);
+  cursor: default;
+}
+
+.build-version {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  white-space: nowrap;
+}
+
+.build-date {
+  white-space: nowrap;
+  opacity: 0.8;
 }
 
 .user-info {

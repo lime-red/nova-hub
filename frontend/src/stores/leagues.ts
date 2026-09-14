@@ -9,6 +9,8 @@ export interface League {
   full_id: string
   name: string
   description?: string
+  hub_fidonet_address?: string
+  hub_routes_mail?: boolean
   is_active: boolean
   member_count: number
 }
@@ -43,6 +45,8 @@ export interface LeagueDetail {
   full_id: string
   name: string
   description?: string
+  hub_fidonet_address?: string
+  hub_routes_mail?: boolean
   dosemu_path?: string
   game_executable?: string
   is_active: boolean
@@ -114,6 +118,8 @@ export const useLeaguesStore = defineStore('leagues', () => {
   async function updateLeague(id: number, data: {
     name?: string
     description?: string
+    hub_fidonet_address?: string
+    hub_routes_mail?: boolean
     is_active?: boolean
   }): Promise<boolean> {
     loading.value = true

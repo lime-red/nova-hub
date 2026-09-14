@@ -74,10 +74,22 @@ export const clientsApi = {
   get: (id: number) =>
     api.get(`/clients/${id}`),
 
-  create: (data: { bbs_name: string; client_id: string }) =>
+  create: (data: {
+    bbs_name: string
+    client_id: string
+    city?: string
+    state?: string
+    country?: string
+  }) =>
     api.post('/clients', data),
 
-  update: (id: number, data: { bbs_name?: string; is_active?: boolean }) =>
+  update: (id: number, data: {
+    bbs_name?: string
+    city?: string
+    state?: string
+    country?: string
+    is_active?: boolean
+  }) =>
     api.put(`/clients/${id}`, data),
 
   delete: (id: number) =>
@@ -102,6 +114,8 @@ export const leaguesApi = {
     description?: string
     dosemu_path?: string
     game_executable?: string
+    hub_fidonet_address?: string
+    hub_routes_mail?: boolean
   }) =>
     api.post('/leagues', data),
 
@@ -110,6 +124,8 @@ export const leaguesApi = {
     description?: string
     dosemu_path?: string
     game_executable?: string
+    hub_fidonet_address?: string
+    hub_routes_mail?: boolean
     is_active?: boolean
   }) =>
     api.put(`/leagues/${id}`, data),
@@ -177,4 +193,10 @@ export const usersApi = {
 
   delete: (id: number) =>
     api.delete(`/users/${id}`)
+}
+
+// System API functions — what build is running
+export const systemApi = {
+  version: () =>
+    api.get('/system/version')
 }

@@ -17,6 +17,7 @@ from .leagues import router as leagues_router
 from .processing import router as processing_router
 from .alerts import router as alerts_router
 from .users import router as users_router
+from .system import router as system_router
 
 management_router = APIRouter()
 
@@ -60,4 +61,10 @@ management_router.include_router(
     users_router,
     prefix="/users",
     tags=["Management API - Users"]
+)
+
+management_router.include_router(
+    system_router,
+    prefix="/system",
+    tags=["Management API - System"]
 )

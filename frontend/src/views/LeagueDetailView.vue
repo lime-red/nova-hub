@@ -13,7 +13,12 @@ const authStore = useAuthStore()
 const leagueId = computed(() => Number(route.params.id))
 
 const showAddMemberModal = ref(false)
+const showEditModal = ref(false)
 const showDeleteModal = ref(false)
+// The hub is node 1 of this league but has no membership row, so its nodelist
+// entry is configured here rather than being derived from a client.
+const editHubFidonet = ref('')
+const editHubRoutesMail = ref(true)
 const deleteConfirmInput = ref('')
 const selectedClientId = ref<number | null>(null)
 const newBbsIndex = ref('')
@@ -27,9 +32,40 @@ const confirmationName = computed(() => {
 
 const deleteConfirmValid = computed(() => deleteConfirmInput.value === confirmationName.value)
 
+// Line 1 of the hub's nodes.dat entry, exactly as the generator will write it.
+const hubEntryLine = computed(() => {
+  const league = leaguesStore.currentLeague
+  if (!league) return ''
+  if (league.hub_routes_mail === false) return '1'
+  const targets = league.members
+    .filter((m) => m.is_active && m.bbs_index)
+    .map((m) => m.bbs_index)
+    .sort((a, b) => a - b)
+  return targets.length ? `1 HOST ${targets.join(' ')}` : '1 HOST (no members)'
+})
+
 onMounted(async () => {
   await leaguesStore.loadLeague(leagueId.value)
 })
+
+function openEditModal() {
+  if (leaguesStore.currentLeague) {
+    editHubFidonet.value = leaguesStore.currentLeague.hub_fidonet_address || ''
+    editHubRoutesMail.value = leaguesStore.currentLeague.hub_routes_mail !== false
+    leaguesStore.clearError()
+    showEditModal.value = true
+  }
+}
+
+async function handleEdit() {
+  const success = await leaguesStore.updateLeague(leagueId.value, {
+    hub_fidonet_address: editHubFidonet.value,
+    hub_routes_mail: editHubRoutesMail.value
+  })
+  if (success) {
+    showEditModal.value = false
+  }
+}
 
 function gameTypeName(type: string): string {
   return type === 'B' ? 'BRE' : type === 'F' ? "Falcon's Eye" : type
@@ -119,6 +155,7 @@ async function handleDelete() {
             </p>
           </div>
           <div v-if="authStore.isAdmin" class="actions">
+            <button class="btn btn-secondary" @click="openEditModal">Edit</button>
             <button
               class="btn"
               :class="leaguesStore.currentLeague.is_active ? 'btn-secondary' : 'btn-primary'"
@@ -161,7 +198,24 @@ async function handleDelete() {
                   <dt>Description</dt>
                   <dd>{{ leaguesStore.currentLeague.description }}</dd>
                 </div>
+                <div class="info-item">
+                  <dt>Hub Address</dt>
+                  <dd>
+                    <span v-if="leaguesStore.currentLeague.hub_fidonet_address" class="font-mono">
+                      {{ leaguesStore.currentLeague.hub_fidonet_address }}
+                    </span>
+                    <span v-else class="badge badge-warning">Not set</span>
+                  </dd>
+                </div>
+                <div class="info-item">
+                  <dt>Hub Routes Mail</dt>
+                  <dd class="font-mono">{{ hubEntryLine }}</dd>
+                </div>
               </dl>
+              <p v-if="!leaguesStore.currentLeague.hub_fidonet_address" class="form-hint mt-2">
+                Nodelist generation is blocked for this league until the hub's
+                FidoNet address is set. The previous nodelist is left untouched.
+              </p>
             </div>
           </div>
 
@@ -249,6 +303,60 @@ async function handleDelete() {
           </div>
         </div>
       </template>
+
+      <!-- Edit Modal -->
+      <div v-if="showEditModal" class="modal-overlay" @click.self="showEditModal = false">
+        <div class="modal">
+          <div class="modal-header">
+            <h3>Edit League</h3>
+            <button class="modal-close" @click="showEditModal = false">&times;</button>
+          </div>
+          <form @submit.prevent="handleEdit">
+            <div class="modal-body">
+              <div v-if="leaguesStore.error" class="alert alert-error mb-4">
+                {{ leaguesStore.error }}
+              </div>
+              <div class="form-group">
+                <label for="editHubFidonet">Hub FidoNet Address</label>
+                <input
+                  id="editHubFidonet"
+                  v-model="editHubFidonet"
+                  type="text"
+                  class="font-mono"
+                  placeholder="135:1/1"
+                />
+                <small class="form-hint">
+                  The hub's own address <em>in this league</em> — it differs
+                  between leagues. The hub has no client record, so its nodes.dat
+                  entry comes from here. Nodelist generation is blocked while this
+                  is empty, which leaves the existing nodelist in place.
+                </small>
+              </div>
+              <div class="form-group">
+                <label class="checkbox-label">
+                  <input v-model="editHubRoutesMail" type="checkbox" />
+                  <span>Hub routes mail for this league</span>
+                </label>
+                <small class="form-hint">
+                  Writes the game's routing directive on line 1 of the hub's
+                  entry — <code>{{ hubEntryLine }}</code> — instead of a bare
+                  index. With no route.cfg present this line is the whole routing
+                  configuration, so only change it if you know the league's games
+                  expect the other form.
+                </small>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" @click="showEditModal = false">
+                Cancel
+              </button>
+              <button type="submit" class="btn btn-primary" :disabled="leaguesStore.loading">
+                Save Changes
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
 
       <!-- Add Member Modal -->
       <div v-if="showAddMemberModal" class="modal-overlay" @click.self="showAddMemberModal = false">
@@ -494,6 +602,35 @@ async function handleDelete() {
 .form-group small {
   display: block;
   margin-top: 0.25rem;
+}
+
+.form-hint {
+  display: block;
+  margin-top: 0.375rem;
+  color: var(--color-text-muted);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
+.form-hint code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  background: rgba(127, 127, 127, 0.12);
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+}
+
+/* The label wraps the checkbox, so it must not be a block with a bottom gap. */
+.checkbox-label {
+  display: flex !important;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 500;
+  margin-bottom: 0 !important;
+}
+
+.checkbox-label input {
+  width: auto;
+  margin: 0;
 }
 
 table .actions {

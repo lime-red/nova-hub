@@ -35,6 +35,33 @@ def test_main_does_not_hardcode_a_second_version():
     assert main_py.count("version=__version__") == 3
 
 
+def test_the_frontend_reports_the_same_version():
+    """The login page bakes package.json's version in at build time.
+
+    It cannot ask the API -- it is the page you see because you are not
+    authenticated yet -- so the two numbers have to be kept in step by hand.
+    This is what makes that a test failure rather than a stale string in a
+    corner of the UI, which is how it went wrong last time.
+    """
+    import json
+
+    package_json = Path(__file__).parent.parent / "frontend" / "package.json"
+    frontend_version = json.loads(package_json.read_text())["version"]
+    assert frontend_version == version_module.__version__
+
+
+def test_no_version_is_hardcoded_in_the_frontend():
+    """LoginView carried 'Nova Hub v0.2.0' as a literal for two releases."""
+    import re
+
+    src = Path(__file__).parent.parent / "frontend" / "src"
+    offenders = []
+    for path in src.rglob("*.vue"):
+        for match in re.finditer(r"v\d+\.\d+\.\d+", path.read_text()):
+            offenders.append(f"{path.name}: {match.group()}")
+    assert not offenders, f"hardcoded version(s): {offenders}"
+
+
 def test_missing_git_degrades_to_none_rather_than_raising(monkeypatch):
     """A tree deployed without .git must still start."""
     monkeypatch.setattr(version_module, "_git", lambda *args: None)

@@ -5,6 +5,10 @@ import { useAuthStore } from "@/stores/auth";
 
 const isHttp = computed(() => window.location.protocol === "http:");
 
+// Baked in by vite from package.json. The login page cannot ask the API for a
+// version -- it is the page you see precisely because you are not authenticated.
+const appVersion = __APP_VERSION__;
+
 const router = useRouter();
 const route = useRoute();
 const authStore = useAuthStore();
@@ -90,7 +94,7 @@ async function handleLogin() {
                 </form>
             </div>
 
-            <p class="login-footer text-muted">Nova Hub v0.2.0</p>
+            <p class="login-footer text-muted">Nova Hub v{{ appVersion }}</p>
         </div>
     </div>
 </template>

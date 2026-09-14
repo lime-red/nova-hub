@@ -13,6 +13,9 @@ labs.sh
 dosemu_configs/bre.conf
 node_modules/
 frontend/dist/
+# Incremental typecheck caches. They are rewritten by every `pnpm run build`,
+# which would leave a freshly deployed tree dirty and trip the deploy guard.
+*.tsbuildinfo
 ._*
 deploy/inventory.yml
 .claude

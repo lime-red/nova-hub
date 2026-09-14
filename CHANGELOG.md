@@ -4,6 +4,16 @@ All notable changes to Nova Hub will be documented in this file.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-09-14
+
+### Fixed
+- The login page carried `Nova Hub v0.2.0` as a literal, which is where the
+  version was read from and which had been wrong since 0.2.0. It is now baked in
+  from `package.json` at build time -- the page cannot ask the API, being the
+  page you see when you are not authenticated -- and a test fails if a version
+  is hardcoded in a `.vue` file again, or if the frontend and backend versions
+  drift apart.
+
 ## [0.3.0] - 2026-09-14
 
 First tagged release since 0.1.0, and the version production is pinned to.

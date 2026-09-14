@@ -13,6 +13,12 @@ class LeagueCreate(BaseModel):
     description: Optional[str] = None
     dosemu_path: Optional[str] = None
     game_executable: Optional[str] = None
+    # The hub's own FidoNet address in this league. Nodelist generation is
+    # blocked until it is set -- see NodelistGenerator.
+    hub_fidonet_address: Optional[str] = None
+    # Whether the hub's nodelist entry carries the game's HOST routing
+    # directive. True for every live league.
+    hub_routes_mail: Optional[bool] = True
     is_active: Optional[bool] = True
 
 
@@ -22,6 +28,8 @@ class LeagueUpdate(BaseModel):
     description: Optional[str] = None
     dosemu_path: Optional[str] = None
     game_executable: Optional[str] = None
+    hub_fidonet_address: Optional[str] = None
+    hub_routes_mail: Optional[bool] = None
     is_active: Optional[bool] = None
 
 
@@ -33,6 +41,8 @@ class LeagueResponse(BaseModel):
     full_id: str  # e.g., "555B"
     name: str
     description: Optional[str] = None
+    hub_fidonet_address: Optional[str] = None
+    hub_routes_mail: Optional[bool] = None
     is_active: bool
     member_count: int = 0
 
@@ -70,6 +80,8 @@ class LeagueDetailResponse(BaseModel):
     full_id: str
     name: str
     description: Optional[str] = None
+    hub_fidonet_address: Optional[str] = None
+    hub_routes_mail: Optional[bool] = None
     dosemu_path: Optional[str] = None
     game_executable: Optional[str] = None
     is_active: bool

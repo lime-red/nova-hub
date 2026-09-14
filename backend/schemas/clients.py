@@ -5,6 +5,22 @@ from typing import List, Optional
 from pydantic import BaseModel, field_validator
 
 
+def _validate_location(value: Optional[str]) -> Optional[str]:
+    """City/state/country become whole lines in a nodes.dat entry.
+
+    A newline here would shift every following field up a line and silently
+    re-point the rest of the nodelist, so it is rejected at the edge rather
+    than stripped later by the generator.
+    """
+    if value is None:
+        return None
+    if any(ch in value for ch in ("\n", "\r")):
+        raise ValueError("location fields must not contain newline characters")
+    if any(ord(ch) < 32 or ord(ch) == 127 for ch in value):
+        raise ValueError("location fields must not contain control characters")
+    return value.strip()
+
+
 def _validate_bbs_name(value: Optional[str]) -> Optional[str]:
     if value is None:
         return None
@@ -22,6 +38,10 @@ class ClientCreate(BaseModel):
     """Create a new client"""
     bbs_name: str
     client_id: str
+    # Nodelist location lines. Optional -- an empty line is valid in nodes.dat.
+    city: Optional[str] = None
+    state: Optional[str] = None
+    country: Optional[str] = None
 
     @field_validator("bbs_name")
     @classmethod
@@ -31,10 +51,18 @@ class ClientCreate(BaseModel):
             raise ValueError("bbs_name must not be empty")
         return validated
 
+    @field_validator("city", "state", "country")
+    @classmethod
+    def validate_location(cls, value: Optional[str]) -> Optional[str]:
+        return _validate_location(value)
+
 
 class ClientUpdate(BaseModel):
     """Update a client"""
     bbs_name: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    country: Optional[str] = None
     is_active: Optional[bool] = None
 
     @field_validator("bbs_name")
@@ -42,12 +70,20 @@ class ClientUpdate(BaseModel):
     def validate_bbs_name(cls, value: Optional[str]) -> Optional[str]:
         return _validate_bbs_name(value)
 
+    @field_validator("city", "state", "country")
+    @classmethod
+    def validate_location(cls, value: Optional[str]) -> Optional[str]:
+        return _validate_location(value)
+
 
 class ClientResponse(BaseModel):
     """Client response with basic stats"""
     id: int
     bbs_name: str
     client_id: str
+    city: Optional[str] = None
+    state: Optional[str] = None
+    country: Optional[str] = None
     is_active: bool
     last_seen: Optional[str] = None
     packets_sent_24h: int = 0
@@ -107,6 +143,9 @@ class ClientDetailResponse(BaseModel):
     id: int
     bbs_name: str
     client_id: str
+    city: Optional[str] = None
+    state: Optional[str] = None
+    country: Optional[str] = None
     is_active: bool
     created_at: Optional[str] = None
     stats: ClientStats

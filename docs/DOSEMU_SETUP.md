@@ -188,6 +188,48 @@ Clients download them via:
 GET /service/api/v1/leagues/{league_id}/packets/BRNODES.<league_number>
 ```
 
+### What a generated nodelist has to contain
+
+The hub is node 1 of every league it runs, but it is not a client and has no
+membership row, so it is written from `[hub]` config plus the league's own
+`hub_fidonet_address` — which is per-league, because 013 addresses the hub as
+`13:10/1` and 015 as `135:1/1`.
+
+Line 1 of that entry carries the game's routing directive:
+
+```
+1 HOST 2 3 4
+```
+
+With no `route.cfg` present — and none of the production installs has one —
+that line is the only thing telling the game where mail goes. A nodelist
+without it is not a degraded nodelist, it is a broken one. The targets are the
+league's member indices. A league that does not route through the hub sets
+`hub_routes_mail = false` and gets a bare `1` instead; do not change this on a
+running league without knowing which form its games expect.
+
+Because a partial nodelist is worse than a stale one, generation **refuses to
+write** when it cannot build the hub entry — `hub_fidonet_address` unset — and
+leaves the previous file in place. The management endpoint returns 422 saying
+so; the automatic post-run generation logs an error.
+
+Files are written CRLF, atomically, to match the nodes.dat the games use.
+
+### Backfilling an existing deployment
+
+`hub_fidonet_address`, `hub_routes_mail` and the clients' city/state/country
+start empty, so generation is blocked until they are filled in.
+`backfill_nodelist_identity.py` reads them out of the nodes.dat each game is
+already using rather than inventing them:
+
+```bash
+.venv/bin/python backfill_nodelist_identity.py           # dry run
+.venv/bin/python backfill_nodelist_identity.py --apply
+```
+
+It does not touch `bbs_name`. Where the database and the file disagree on a
+name, it says so and leaves both alone — that is a decision, not a migration.
+
 ---
 
 ## Troubleshooting

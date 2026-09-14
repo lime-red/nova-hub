@@ -6,6 +6,13 @@ data_dir = "./data"
 [hub]
 bbs_name = "Nova Hub"
 bbs_index = "01"
+# The hub's own location lines in generated nodelists. The hub is node
+# bbs_index of every league it runs, but it is not a client, so its entry comes
+# from here rather than from the database. Its FidoNet address differs per
+# league and lives on the league instead (hub_fidonet_address).
+city = "Brisbane"
+state = "QLD"
+country = "AUS"
 
 [processing]
 poll_interval = 60

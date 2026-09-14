@@ -24,6 +24,12 @@ class HubConfig(BaseModel):
     """Hub identification"""
     bbs_name: str = "Nova Hub"
     bbs_index: str = "01"
+    # Location lines for the hub's own entry in generated nodelists. The
+    # hub's FidoNet address is not here because it differs per league; it
+    # lives on League.hub_fidonet_address.
+    city: str = ""
+    state: str = ""
+    country: str = ""
 
 
 class ProcessingConfig(BaseModel):

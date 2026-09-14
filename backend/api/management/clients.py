@@ -55,6 +55,9 @@ async def list_clients(
                 id=client.id,
                 bbs_name=client.bbs_name,
                 client_id=client.client_id,
+                city=client.city,
+                state=client.state,
+                country=client.country,
                 is_active=client.is_active,
                 last_seen=client_stats.get("last_seen"),
                 packets_sent_24h=client_stats.get("sent_24h", 0),
@@ -175,6 +178,9 @@ async def get_client(
         id=client.id,
         bbs_name=client.bbs_name,
         client_id=client.client_id,
+        city=client.city,
+        state=client.state,
+        country=client.country,
         is_active=client.is_active,
         created_at=client.created_at.strftime("%Y-%m-%d %H:%M") if client.created_at else None,
         stats=ClientStats(
@@ -201,6 +207,8 @@ async def create_client(
     **Request Body:**
     - `bbs_name`: Display name for the BBS
     - `client_id`: OAuth2 client ID (must be unique)
+    - `city`, `state`, `country`: location lines for generated nodelists
+      (optional)
 
     **Returns:** Created client with plain-text secret (shown only once)
 
@@ -224,6 +232,9 @@ async def create_client(
         bbs_name=request.bbs_name,
         client_id=request.client_id,
         client_secret=get_password_hash(client_secret),
+        city=request.city,
+        state=request.state,
+        country=request.country,
         is_active=True,
     )
     db.add(client)
@@ -255,6 +266,8 @@ async def update_client(
 
     **Request Body:**
     - `bbs_name`: New display name (optional)
+    - `city`, `state`, `country`: location lines for generated nodelists
+      (optional)
     - `is_active`: Active status (optional)
 
     **Returns:** Updated client
@@ -273,6 +286,12 @@ async def update_client(
 
     if request.bbs_name is not None:
         client.bbs_name = request.bbs_name
+    if request.city is not None:
+        client.city = request.city or None
+    if request.state is not None:
+        client.state = request.state or None
+    if request.country is not None:
+        client.country = request.country or None
     if request.is_active is not None:
         client.is_active = request.is_active
 
@@ -288,6 +307,9 @@ async def update_client(
         id=client.id,
         bbs_name=client.bbs_name,
         client_id=client.client_id,
+        city=client.city,
+        state=client.state,
+        country=client.country,
         is_active=client.is_active,
         last_seen=client_stats.get("last_seen"),
         packets_sent_24h=client_stats.get("sent_24h", 0),

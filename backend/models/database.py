@@ -62,6 +62,11 @@ class Client(Base):
     bbs_name = Column(String(100), nullable=False)
     contact_email = Column(String(100), nullable=True)
     contact_name = Column(String(100), nullable=True)
+    # Nodelist presentation fields. Properties of the BBS, not of any one
+    # league membership, so they are the same in every nodelist it appears in.
+    city = Column(String(50), nullable=True)
+    state = Column(String(50), nullable=True)
+    country = Column(String(50), nullable=True)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     last_seen = Column(DateTime, nullable=True)
@@ -97,6 +102,16 @@ class League(Base):
     # Dosemu configuration
     dosemu_path = Column(String(255), nullable=True)
     game_executable = Column(String(100), nullable=True)
+
+    # The hub's own FidoNet address within this league. Per-league, so it
+    # cannot live in [hub] config next to the hub's name and index.
+    # NodelistGenerator will not write a nodelist while this is unset.
+    hub_fidonet_address = Column(String(50), nullable=True)
+
+    # Whether the hub's nodelist entry carries the game's "N HOST x y z"
+    # routing directive. True for every live league; 013 predates the
+    # convention and uses a bare index.
+    hub_routes_mail = Column(Boolean, default=True)
 
     # Relationships
     packets = relationship("Packet", back_populates="league")

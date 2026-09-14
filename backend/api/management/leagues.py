@@ -77,6 +77,8 @@ async def list_leagues(
                 full_id=league.full_id,
                 name=league.name,
                 description=league.description,
+                hub_fidonet_address=league.hub_fidonet_address,
+                hub_routes_mail=league.hub_routes_mail,
                 is_active=league.is_active,
                 member_count=member_count,
             )
@@ -173,6 +175,8 @@ async def get_league(
         full_id=league.full_id,
         name=league.name,
         description=league.description,
+        hub_fidonet_address=league.hub_fidonet_address,
+        hub_routes_mail=league.hub_routes_mail,
         dosemu_path=league.dosemu_path,
         game_executable=league.game_executable,
         is_active=league.is_active,
@@ -232,6 +236,10 @@ async def create_league(
         description=request.description,
         dosemu_path=request.dosemu_path,
         game_executable=request.game_executable,
+        hub_fidonet_address=request.hub_fidonet_address,
+        hub_routes_mail=(
+            request.hub_routes_mail if request.hub_routes_mail is not None else True
+        ),
         is_active=request.is_active if request.is_active is not None else True,
     )
     db.add(league)
@@ -247,6 +255,8 @@ async def create_league(
         full_id=league.full_id,
         name=league.name,
         description=league.description,
+        hub_fidonet_address=league.hub_fidonet_address,
+        hub_routes_mail=league.hub_routes_mail,
         is_active=league.is_active,
         member_count=0,
     )
@@ -270,6 +280,10 @@ async def update_league(
     - `description`: New description (optional)
     - `dosemu_path`: New DOSemu path (optional)
     - `game_executable`: New game executable (optional)
+    - `hub_fidonet_address`: The hub's own FidoNet address in this league
+      (optional). Nodelist generation is blocked until this is set.
+    - `hub_routes_mail`: whether the hub's nodelist entry carries the game's
+      HOST routing directive (optional).
     - `is_active`: New active status (optional)
 
     **Returns:** Updated league
@@ -294,6 +308,10 @@ async def update_league(
         league.dosemu_path = request.dosemu_path if request.dosemu_path else None
     if request.game_executable is not None:
         league.game_executable = request.game_executable if request.game_executable else None
+    if request.hub_fidonet_address is not None:
+        league.hub_fidonet_address = request.hub_fidonet_address or None
+    if request.hub_routes_mail is not None:
+        league.hub_routes_mail = request.hub_routes_mail
     if request.is_active is not None:
         league.is_active = request.is_active
 
@@ -318,6 +336,8 @@ async def update_league(
         full_id=league.full_id,
         name=league.name,
         description=league.description,
+        hub_fidonet_address=league.hub_fidonet_address,
+        hub_routes_mail=league.hub_routes_mail,
         is_active=league.is_active,
         member_count=member_count,
     )
@@ -556,11 +576,21 @@ async def generate_nodelist(
     if not league:
         raise HTTPException(status_code=404, detail="League not found")
 
-    data_dir = get_config().get("server", {}).get("data_dir", "./data")
-    generator = NodelistGenerator(db, data_dir)
+    config = get_config()
+    data_dir = config.get("server", {}).get("data_dir", "./data")
+    generator = NodelistGenerator(db, data_dir, config.get("hub", {}))
     dest = generator.generate(league_id)
 
     if dest is None:
+        if not (league.hub_fidonet_address or "").strip():
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "League has no hub_fidonet_address, so the hub's own node entry "
+                    "and its HOST routing line cannot be written. Set it first; the "
+                    "existing nodelist has been left untouched."
+                ),
+            )
         raise HTTPException(
             status_code=422,
             detail="No active members with a BBS index assigned — nodelist not generated",

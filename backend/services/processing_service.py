@@ -232,7 +232,9 @@ class ProcessingService:
         # Regenerate hub-side nodelists for all processed leagues
         from backend.services.nodelist_generator import NodelistGenerator
         data_dir = self.config.get("server", {}).get("data_dir", "./data")
-        nodelist_gen = NodelistGenerator(self.db, data_dir)
+        nodelist_gen = NodelistGenerator(
+            self.db, data_dir, self.config.get("hub", {})
+        )
         for (game_type_str, league_id_str) in groups.keys():
             league_obj = (
                 self.db.query(League)

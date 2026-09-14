@@ -270,8 +270,13 @@ class HubValidator:
                         )
                     )
 
-        # Check for nodes in file that aren't in database
+        # Check for nodes in file that aren't in database.
+        # The hub itself is deliberately not a membership -- it has no client
+        # row -- so its own index is expected here rather than missing.
         db_indices = {m.bbs_index for m, _ in memberships}
+        hub_index = self._hub_index()
+        if hub_index is not None:
+            db_indices.add(hub_index)
         for node in parser.nodes:
             if node.bbs_index not in db_indices:
                 self.warnings.append(
@@ -282,6 +287,14 @@ class HubValidator:
                         severity="WARNING"
                     )
                 )
+
+    def _hub_index(self) -> int | None:
+        """The hub's own node number from [hub] bbs_index (a string like "01")."""
+        raw = (self.config or {}).get("hub", {}).get("bbs_index")
+        try:
+            return int(str(raw), 10)
+        except (TypeError, ValueError):
+            return None
 
     def validate(self) -> bool:
         """

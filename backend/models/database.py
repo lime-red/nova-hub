@@ -256,6 +256,11 @@ class SequenceAlert(Base):
     expected_sequence = Column(Integer, nullable=False)
     received_sequence = Column(Integer, nullable=False)
     gap_size = Column(Integer, nullable=False)
+    # Which time round the 000-999 numbering this gap was. expected_sequence
+    # alone stopped identifying a gap once routes began wrapping; production's
+    # busiest has been round six times. Null on rows raised before the detector
+    # could see past a single cycle.
+    sequence_epoch = Column(Integer, nullable=True)
 
     # Alert tracking
     detected_at = Column(DateTime, default=datetime.utcnow, index=True)

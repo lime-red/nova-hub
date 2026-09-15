@@ -7,6 +7,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from backend.services.sequence_epoch import build_timeline
 from backend.services.sequence_validator import SequenceValidator
 
 
@@ -176,6 +177,37 @@ class TestRouteDensity:
         assert v.find_gaps([2, 4, 6]) == []
 
     def test_density_is_measured_across_the_wrap(self):
+        """A route that rolls over mid-window is still a dense route.
+
+        This used to be asserted by handing numbers_densely the sorted numbers
+        and trusting it to recognise the roll. It now takes absolute positions,
+        where the roll is a step of one and there is nothing to recognise -- so
+        the guarantee is checked end to end instead, through find_gaps, which is
+        the only way the density gate is ever reached in production.
+        """
         v = self._validator()
         dense = [(990 + n) % 1000 for n in range(30)]
-        assert v.numbers_densely(sorted(set(dense))) is True
+
+        timeline = build_timeline(dense)
+        assert timeline.cycles == 2, "the sample is meant to roll over once"
+        assert v.numbers_densely(sorted(set(timeline.absolute))) is True
+        assert v.find_gaps(dense) == []
+
+    def test_a_route_six_cycles_deep_still_finds_a_loss(self):
+        """The case that made this rewrite necessary.
+
+        League 3's route 02->01 has sent 5,891 packets across six complete
+        cycles. Sorted into a set those collapse to a flawless 000-999 run, so
+        the old detector reported nothing missing there no matter what went
+        astray -- it had been blind on that route for months.
+        """
+        v = self._validator()
+        arrivals = [s for _ in range(6) for s in range(1000)]
+        assert v.find_gaps(arrivals) == []
+
+        # Lose one packet in the fifth cycle, where the old model could not look.
+        lossy = list(arrivals)
+        del lossy[4 * 1000 + 512]
+
+        gaps = v.find_gaps(lossy)
+        assert [(g["sequence_epoch"], g["expected_sequence"]) for g in gaps] == [(4, 512)]

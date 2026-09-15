@@ -3,20 +3,29 @@
 from collections import Counter
 from datetime import datetime
 
+import sqlalchemy as sa
 from sqlalchemy import text
 
 from backend.models.database import SequenceAlert
 from backend.logging_config import get_logger
+from backend.services.sequence_epoch import SEQUENCE_RANGE, build_timeline
 
 logger = get_logger(context="sequence_validator")
 
-# Sequence numbers range from 000-999 (1000 values)
+# Sequence numbers range from 000-999 (1000 values). SEQUENCE_RANGE comes from
+# sequence_epoch, which is where the 000-999 space is now reasoned about.
 MAX_SEQUENCE = 999
-SEQUENCE_RANGE = 1000
 
-# Threshold for detecting wrap-around: if the gap between consecutive
-# sorted sequences is larger than this, it's likely a wrap-around point
-WRAP_DETECTION_THRESHOLD = 500
+# Wrap-around used to be *inferred* here, by looking for one suspiciously large
+# gap in the sorted numbers and splicing the list at it. That could represent
+# exactly one wrap, and production passed that point long ago: league 3's route
+# 02->01 has sent 5,891 packets over six complete cycles, which collapse into a
+# flawless 000-999 run with no gap for the detector to find. It has been blind on
+# its busiest routes for months.
+#
+# Cycles are now *counted* from arrival order instead -- see sequence_epoch --
+# and everything below works in an absolute space that only increases, where a
+# wrap is a step of one like any other and needs no special case at all.
 
 # A route's sequence numbers are NOT dense. BRE and FE consume more than one
 # number per packet they actually emit -- in the rig, each new game day burns two
@@ -72,6 +81,13 @@ class SequenceValidator:
         """)).fetchall()
 
     def _sequences_for(self, route) -> list[int]:
+        """One route's sequence numbers, in the order they arrived.
+
+        Arrival order, not numerical order. Sorting here is what made the wrap
+        undetectable: it is precisely the information that says how many times
+        the numbering has been round. `id` breaks ties so the order is total and
+        the same on every run.
+        """
         rows = self.db.execute(
             text("""
             SELECT sequence_number
@@ -79,7 +95,7 @@ class SequenceValidator:
             WHERE league_id = :league_id
               AND source_bbs_index = :source_bbs_index
               AND dest_bbs_index = :dest_bbs_index
-            ORDER BY sequence_number
+            ORDER BY uploaded_at, id
         """),
             {"league_id": route[0], "source_bbs_index": route[1], "dest_bbs_index": route[2]},
         ).fetchall()
@@ -107,19 +123,31 @@ class SequenceValidator:
 
         return new_alerts
 
-    def route_stride(self, ordered: list[int]) -> int:
+    @staticmethod
+    def _usable_deltas(ordered: list[int], reset_starts: set) -> list[int]:
+        """Steps between consecutive positions, excluding restart crossings.
+
+        `ordered` is ascending absolute positions, so every step is forward and
+        no step is a wrap artefact. The one distance that must be thrown away is
+        the one spanning a game reset: 347 to the next cycle's 001 is a step of
+        654 that measures how early the game was reset, not how the route
+        numbers, and feeding it to either the stride or the density calculation
+        would corrupt both.
+        """
+        return [
+            b - a
+            for a, b in zip(ordered, ordered[1:])
+            if b not in reset_starts and b > a
+        ]
+
+    def route_stride(self, ordered: list[int], reset_starts: set | None = None) -> int:
         """How far this route's sequence numbers advance per packet.
 
-        `ordered` is chronological, not sorted -- wrap-around has already been
-        unwound by the caller. Returns 1 unless one stride clearly dominates,
-        so an unproven route keeps the conservative (noisy) reading.
+        `ordered` is ascending absolute positions. Returns 1 unless one stride
+        clearly dominates, so an unproven route keeps the conservative (noisy)
+        reading.
         """
-        deltas = []
-        for current, next_seq in zip(ordered, ordered[1:]):
-            delta = self._delta(current, next_seq)
-            # A wrap-sized step is the wrap itself, not evidence about stride.
-            if 0 < delta < WRAP_DETECTION_THRESHOLD:
-                deltas.append(delta)
+        deltas = self._usable_deltas(ordered, reset_starts or set())
 
         if len(deltas) < MIN_DELTAS_FOR_STRIDE:
             return 1
@@ -131,16 +159,16 @@ class SequenceValidator:
             return 1
         return best
 
-    def numbers_densely(self, ordered: list[int]) -> bool:
+    def numbers_densely(self, ordered: list[int], reset_starts: set | None = None) -> bool:
         """Does this route number densely enough for a missing number to mean
         a missing packet?
 
-        `ordered` is chronological. Density is steps per number of span, which is
-        the reciprocal of the mean step. A route with too few packets to judge is
-        treated as dense, which keeps it noisy rather than quietly excusing it.
+        `ordered` is ascending absolute positions. Density is steps per number of
+        span, which is the reciprocal of the mean step. A route with too few
+        packets to judge is treated as dense, which keeps it noisy rather than
+        quietly excusing it.
         """
-        deltas = [d for d in (self._delta(a, b) for a, b in zip(ordered, ordered[1:]))
-                  if 0 < d < WRAP_DETECTION_THRESHOLD]
+        deltas = self._usable_deltas(ordered, reset_starts or set())
         if len(deltas) + 1 < MIN_PACKETS_FOR_DENSITY:
             return True
         span = sum(deltas)
@@ -148,81 +176,57 @@ class SequenceValidator:
             return True
         return len(deltas) / span >= DENSITY_THRESHOLD
 
-    @staticmethod
-    def _delta(current: int, next_seq: int) -> int:
-        """Distance from one sequence number to the next, across the wrap."""
-        if next_seq > current:
-            return next_seq - current
-        return (SEQUENCE_RANGE - current) + next_seq
-
     def find_gaps(self, sequences: list[int]) -> list[dict]:
         """
-        Find missing *packets*, properly handling wrap-around.
+        Find missing *packets* across however many times the numbering has
+        been round.
 
-        Sequence numbers are 000-999. When we receive packets out of order or
-        after wrap-around (999 -> 000), we need to detect actual gaps without
-        flagging the wrap-around transition itself.
+        `sequences` is in arrival order. It is turned into absolute positions
+        first -- see sequence_epoch -- after which the numbering only ever
+        increases and every wrap-around special case disappears: 999 to the next
+        cycle's 000 is a step of one, and a packet lost at the roll is found the
+        same way as a packet lost anywhere else.
 
-        Two questions are asked before any gap is reported. Does this route number
-        densely enough for an unseen number to mean anything at all (Falcon's Eye
-        does not), and if so, how far does it advance per packet? `gap_size` then
-        counts missing packets, not missing numbers: on a route whose game
-        advances by two, 002 -> 006 is one missing packet, not three, and
-        002 -> 004 is none at all. See the notes on both constants above.
+        Three questions are then asked before any gap is reported. Did the game
+        restart here, in which case the distance across that point measures a
+        reset and not a loss? Does this route number densely enough for an unseen
+        number to mean anything at all (Falcon's Eye does not)? And if so, how far
+        does it advance per packet? `gap_size` counts missing packets, not missing
+        numbers: on a route whose game advances by two, 002 -> 006 is one missing
+        packet, not three, and 002 -> 004 is none at all. See the notes on both
+        constants above.
 
         Returns a list of dicts with gap info:
             - expected_sequence: the number the missing packet would have carried
+            - sequence_epoch: which time round the numbering that was
             - received_sequence: the sequence that was received instead
             - gap_size: number of missing packets in this gap
         """
         if len(sequences) < 2:
             return []
 
-        # Sort sequences numerically
-        sorted_seqs = sorted(set(sequences))
-
-        if len(sorted_seqs) < 2:
+        timeline = build_timeline(sequences)
+        ordered = sorted(set(timeline.absolute))
+        if len(ordered) < 2:
             return []
-
-        # Find the wrap-around point (if any) - it's the largest gap
-        # between consecutive sorted sequences
-        max_gap = 0
-        wrap_index = -1
-
-        for i in range(len(sorted_seqs) - 1):
-            gap = sorted_seqs[i + 1] - sorted_seqs[i]
-            if gap > max_gap:
-                max_gap = gap
-                wrap_index = i
-
-        # Also check the "virtual gap" from the last sequence wrapping to the first
-        # This represents: if last=999 and first=2, the wrap gap is (1000-999)+(2-0)=3
-        wrap_gap = (SEQUENCE_RANGE - sorted_seqs[-1]) + sorted_seqs[0]
-
-        # Determine if wrap-around occurred
-        # If the largest internal gap is bigger than the wrap gap, that's the wrap point
-        # Otherwise, the wrap is at the end (normal case)
-        if max_gap > WRAP_DETECTION_THRESHOLD and max_gap > wrap_gap:
-            # Sequences after wrap_index are chronologically earlier, so putting
-            # them first unwinds the wrap and leaves one chronological run.
-            ordered = sorted_seqs[wrap_index + 1:] + sorted_seqs[:wrap_index + 1]
-        else:
-            ordered = sorted_seqs
 
         # A route that does not number densely has nothing to say about what is
         # missing, so do not put words in its mouth.
-        if not self.numbers_densely(ordered):
+        if not self.numbers_densely(ordered, timeline.reset_starts):
             return []
 
-        stride = self.route_stride(ordered)
+        stride = self.route_stride(ordered, timeline.reset_starts)
 
         gaps = []
-        for current, next_seq in zip(ordered, ordered[1:]):
-            delta = self._delta(current, next_seq)
-
-            # The splice point of an unwound wrap, not a gap.
-            if delta >= WRAP_DETECTION_THRESHOLD:
+        for current, next_abs in zip(ordered, ordered[1:]):
+            # The game restarted here. Everything between where it stopped and
+            # the end of that cycle was never issued, so there is nothing
+            # missing -- reporting it would recreate the false-alarm problem the
+            # density and stride gates exist to prevent, at 600-odd per reset.
+            if next_abs in timeline.reset_starts:
                 continue
+
+            delta = next_abs - current
 
             # Round rather than floor: a route striding by 2 that jumps by 3 has
             # still lost a packet, and should say so.
@@ -231,9 +235,11 @@ class SequenceValidator:
                 continue
 
             for j in range(1, missing + 1):
+                expected = current + j * stride
                 gaps.append({
-                    "expected_sequence": (current + j * stride) % SEQUENCE_RANGE,
-                    "received_sequence": next_seq,
+                    "expected_sequence": expected % SEQUENCE_RANGE,
+                    "sequence_epoch": expected // SEQUENCE_RANGE,
+                    "received_sequence": next_abs % SEQUENCE_RANGE,
                     "gap_size": missing,
                 })
 
@@ -248,14 +254,24 @@ class SequenceValidator:
         expected_sequence = gap_info["expected_sequence"]
         received_sequence = gap_info["received_sequence"]
         gap_size = gap_info["gap_size"]
+        sequence_epoch = gap_info.get("sequence_epoch")
 
-        # Check if alert already exists for this gap
+        # Check if alert already exists for this gap. The epoch is part of the
+        # identity: once a route has been round the numbering, "missing 992" on
+        # its own names one packet per cycle, and matching on the number alone
+        # would let a stale alert from two cycles back swallow a real loss now.
+        # Rows predating the column match on the number alone, which is the
+        # behaviour they were raised under.
         existing = self.db.query(SequenceAlert).filter(
             SequenceAlert.league_id == league_id,
             SequenceAlert.source_bbs_index == source_bbs_index,
             SequenceAlert.dest_bbs_index == dest_bbs_index,
             SequenceAlert.expected_sequence == expected_sequence,
-            SequenceAlert.is_resolved == False
+            SequenceAlert.is_resolved == False,
+            sa.or_(
+                SequenceAlert.sequence_epoch == sequence_epoch,
+                SequenceAlert.sequence_epoch.is_(None),
+            ),
         ).first()
 
         if existing:
@@ -274,6 +290,7 @@ class SequenceValidator:
             expected_sequence=expected_sequence,
             received_sequence=received_sequence,
             gap_size=gap_size,
+            sequence_epoch=sequence_epoch,
             description=description
         )
         self.db.add(alert)
@@ -311,13 +328,29 @@ class SequenceValidator:
         still_missing: dict[tuple, set] = {}
 
         def gaps_for(alert) -> set:
+            """The route's outstanding gaps, as (epoch, number) pairs."""
             key = (alert.league_id, alert.source_bbs_index, alert.dest_bbs_index)
             if key not in still_missing:
                 seqs = self._sequences_for(key)
                 still_missing[key] = {
-                    g["expected_sequence"] for g in self.find_gaps(seqs)
+                    (g["sequence_epoch"], g["expected_sequence"])
+                    for g in self.find_gaps(seqs)
                 }
             return still_missing[key]
+
+        def outstanding(alert) -> bool:
+            """Is this alert still one of the route's gaps?
+
+            An alert raised before the epoch column exists cannot say which time
+            round it meant, so it matches on the number in any cycle. That is
+            deliberately the generous reading: it retires an old alert when the
+            number is no longer missing anywhere, rather than leaving rows nobody
+            can act on standing forever.
+            """
+            gaps = gaps_for(alert)
+            if alert.sequence_epoch is None:
+                return any(number == alert.expected_sequence for _, number in gaps)
+            return (alert.sequence_epoch, alert.expected_sequence) in gaps
 
         resolved_count = 0
         stale_count = 0
@@ -341,7 +374,7 @@ class SequenceValidator:
 
             if exists:
                 note = "Missing packet received"
-            elif alert.expected_sequence not in gaps_for(alert):
+            elif not outstanding(alert):
                 note = (
                     "Not a lost packet: this route's sequence numbers do not "
                     "advance one at a time, so this number was never issued"

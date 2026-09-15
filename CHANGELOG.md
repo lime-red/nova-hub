@@ -5,6 +5,20 @@ All notable changes to Nova Hub will be documented in this file.
 ## [Unreleased]
 
 ### Fixed
+- Sequence gap detection was blind on every route that had wrapped, which by now
+  is every busy route in production. Wrap-around was *inferred* -- sort the
+  numbers, find the one gap wider than 500, splice there -- which can represent
+  exactly one wrap. League 3's route 02->01 has sent 5,891 packets over eight
+  cycles, and sorted into a set those collapse into a flawless 000-999 run with
+  no gap to find, so the detector reported nothing missing there no matter what
+  went astray. Cycles are now counted from arrival order instead, and the gap
+  arithmetic runs in a space that only increases, where a wrap is a step of one
+  and needs no special case.
+- A game reset restarts the numbering early, and used to look like either a wrap
+  or a loss of everything between where the game stopped and 999. Resets are now
+  told apart from wraps by where the old cycle ended, and the distance across one
+  is not counted as missing packets. Production's busiest route has two, at 494
+  and 633.
 - Retention honoured `retention_days` in the database and ignored it on disk.
   Every dosemu transcript is written to `<data_dir>/logs/dosemu/*.log` before it
   is copied into `ProcessingRun.dosemu_log`, so blanking the column left the
@@ -14,6 +28,11 @@ All notable changes to Nova Hub will be documented in this file.
   recursing or following symlinks.
 
 ### Added
+- `sequence_alerts.sequence_epoch` records which time round the numbering a gap
+  was, so an alert is identified per cycle. Without it "missing 992" names one
+  packet per cycle and a stale alert could swallow a real loss.
+- `tools/sequence_timeline.py` reports a route's wraps and resets from exported
+  data, without running the hub.
 - `deploy.sh` prunes its own database backups, keeping the three most recent.
   Each deploy leaves a ~70 MB copy, and nothing had a ceiling.
 - `deploy/deploy.sh` and `deploy/prune_backups.sh` are in the repository. The

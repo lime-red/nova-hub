@@ -4,7 +4,11 @@ All notable changes to Nova Hub will be documented in this file.
 
 ## [Unreleased]
 
-## [0.3.2] - 2026-09-15
+Not yet released, and not yet deployed. Against production's real history the
+sequence work below reports 623 gaps where the previous model reported 16, and
+590 of the 593 runs are a single isolated number on an otherwise dense route --
+which is not the shape of packet loss. Whether those are losses or numbers the
+games consume without emitting a packet needs `ROUTEINFO` from the rig to settle.
 
 ### Fixed
 - Sequence gap detection was blind on every route that had wrapped, which by now
@@ -21,6 +25,17 @@ All notable changes to Nova Hub will be documented in this file.
   told apart from wraps by where the old cycle ended, and the distance across one
   is not counted as missing packets. Production's busiest route has two, at 494
   and 633.
+
+### Added
+- `sequence_alerts.sequence_epoch` records which time round the numbering a gap
+  was, so an alert is identified per cycle. Without it "missing 992" names one
+  packet per cycle and a stale alert could swallow a real loss.
+- `tools/sequence_timeline.py` reports a route's wraps and resets from exported
+  data, without running the hub.
+
+## [0.3.2] - 2026-09-15
+
+### Fixed
 - Retention honoured `retention_days` in the database and ignored it on disk.
   Every dosemu transcript is written to `<data_dir>/logs/dosemu/*.log` before it
   is copied into `ProcessingRun.dosemu_log`, so blanking the column left the
@@ -30,11 +45,6 @@ All notable changes to Nova Hub will be documented in this file.
   recursing or following symlinks.
 
 ### Added
-- `sequence_alerts.sequence_epoch` records which time round the numbering a gap
-  was, so an alert is identified per cycle. Without it "missing 992" names one
-  packet per cycle and a stale alert could swallow a real loss.
-- `tools/sequence_timeline.py` reports a route's wraps and resets from exported
-  data, without running the hub.
 - `deploy.sh` prunes its own database backups, keeping the three most recent.
   Each deploy leaves a ~70 MB copy, and nothing had a ceiling.
 - `deploy/deploy.sh` and `deploy/prune_backups.sh` are in the repository. The

@@ -4,6 +4,8 @@ All notable changes to Nova Hub will be documented in this file.
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-09-15
+
 ### Fixed
 - Sequence gap detection was blind on every route that had wrapped, which by now
   is every busy route in production. Wrap-around was *inferred* -- sort the

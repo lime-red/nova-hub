@@ -69,10 +69,35 @@ MIN_PACKETS_FOR_DENSITY = 20
 DENSITY_THRESHOLD = 0.9
 
 
+# Routes the hub itself sends on cannot be judged for gaps, and the reason is
+# structural rather than a threshold to tune.
+#
+# Inbound packets arrive over the API and each upload creates its own row, so a
+# route like 02->01 holds a true history -- production's has 5,891 rows across
+# 1,000 numbers, which is exactly what makes counting cycles worthwhile. Packets
+# the hub *generates* go through collect_outbound_packets instead, which on a
+# filename collision deliberately updates the existing row rather than adding
+# one (it resets is_downloaded so the client re-fetches). That is correct for
+# delivery and fatal for history: once such a route has been round the numbering
+# its rows stop being packets and become a fixed table of 1,000 slots.
+#
+# Ask that table for gaps and it answers "none", every time, whatever happened.
+# Confirmed on the rig: 1,100 forced cycles rolled 999 -> 000 at cycle 1,002 and
+# then reissued 900b0102.002 onwards with fresh contents under names already
+# used. A false all-clear is worse than no answer, so these routes are skipped.
+HUB_ROUTES_ARE_SLOTS_NOT_HISTORY = True
+
+
 class SequenceValidator:
-    def __init__(self, db=None):
-        """Initialize with database session"""
+    def __init__(self, db=None, hub_index: str | None = None):
+        """Initialize with database session.
+
+        `hub_index` is the hub's own BBS index (e.g. "01"). Without it every
+        route is judged, which is the previous behaviour and reports a
+        meaningless all-clear on the hub's own outbound.
+        """
         self.db = db
+        self.hub_index = hub_index
 
     def _routes(self):
         return self.db.execute(text("""
@@ -109,8 +134,14 @@ class SequenceValidator:
         can dispatch out-of-band notifications.
         """
         new_alerts = []
+        skipped = 0
 
         for route in self._routes():
+            if self.hub_index is not None and route[1] == self.hub_index:
+                # Recycled rows, not a packet history -- see the note above.
+                skipped += 1
+                continue
+
             seq_list = self._sequences_for(route)
             if not seq_list:
                 continue
@@ -120,6 +151,12 @@ class SequenceValidator:
                 alert = self.create_alert_if_new(route, gap_info)
                 if alert is not None:
                     new_alerts.append(alert)
+
+        if skipped:
+            logger.debug(
+                f"sequence check skipped {skipped} hub-originated route(s): their "
+                f"packet rows are recycled per filename, so gaps cannot be read from them"
+            )
 
         return new_alerts
 

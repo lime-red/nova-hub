@@ -214,7 +214,7 @@ class ProcessingService:
         # 213 alerts for packets that had long since arrived, on top of the false
         # ones. Resolving first also means a gap that closed in this very run is
         # never re-reported.
-        validator = SequenceValidator(self.db)
+        validator = SequenceValidator(self.db, hub_index=self.config["hub"]["bbs_index"])
         validator.auto_resolve_alerts()
 
         # Check for sequence gaps; dispatch out-of-band alerts for new ones

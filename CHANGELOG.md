@@ -26,7 +26,18 @@ games consume without emitting a packet needs `ROUTEINFO` from the rig to settle
   is not counted as missing packets. Production's busiest route has two, at 494
   and 633.
 
+- Gap detection reported a confident "no gaps" on the hub's own outbound routes,
+  which it cannot know. Packets the hub generates are recorded by
+  `collect_outbound_packets`, which updates the existing row when a filename is
+  reissued rather than adding one -- right for delivery, since it resets
+  `is_downloaded` so the client re-fetches, but it means a wrapped route's rows
+  are a fixed table of 1,000 slots instead of a history. Those routes are now
+  skipped rather than given a false all-clear.
+
 ### Added
+- `tests/live/rig/grind.sh` walks a rig install through the whole sequence space,
+  and `tests/live/rig/dupseq.sh` checks whether a receiving game accepts a
+  reissued filename. Both run unattended.
 - `sequence_alerts.sequence_epoch` records which time round the numbering a gap
   was, so an alert is identified per cycle. Without it "missing 992" names one
   packet per cycle and a stale alert could swallow a real loss.

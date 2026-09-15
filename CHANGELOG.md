@@ -59,6 +59,8 @@ Thirty-five commits; the ones that change behaviour:
 - The WebSocket endpoints, which nothing in either the hub or the client used.
 
 
+## [0.1.0] - 2026-01-08
+
 ### Added
 - Initial MVP release
 - Complete database schema with Alembic migrations
@@ -99,81 +101,50 @@ Thirty-five commits; the ones that change behaviour:
 - Added troubleshooting sections for common issues
 - Added systemd service example for production deployment
 
-## Version History
+## Known issues
 
-### [0.1.0] - 2026-01-08
-- Initial working release
-- All core features implemented
-- Database migrations working
-- Web interface functional
-- API endpoints operational
-- Admin user creation working
+### A genuine Falcon's Eye packet loss does not raise an alert
+The sequence validator's density and stride gates stop `015F`'s naturally sparse
+numbering from raising false alerts, but the cost is symmetrical: a real lost
+Falcon's Eye packet no longer raises one either. Separating a true loss from
+ordinary sparse numbering needs the game's own `ROUTEINFO` output, not arithmetic
+over filenames.
 
-## Migration Notes
+### Wrap-around is inferred from the data, not tracked
+Sequence numbers run 000-999. The validator finds the wrap by looking for a step
+larger than 500 inside the window it was handed. That holds for a single wrap in
+dense traffic, but it cannot tell a wrap from a genuinely large gap, and it has
+nothing to say about a window spanning more than one wrap. Carrying an epoch
+alongside the number would remove the guess.
 
-### From Pre-Release to 0.1.0
+### `passlib` is an unused dependency
+`requirements.txt` pins `passlib[bcrypt]==1.7.4` and `bcrypt==4.0.1` against a
+compatibility problem that no longer applies: nothing imports passlib. Both the
+application (`backend/core/security.py`, `backend/models/database.py`) and
+`create_admin_sql.py` call bcrypt directly.
 
-If you have an old database with incorrect schema:
+## Upgrading
+
+Production is pinned to a tag and deploys from gitea. On `novahub-vtr`:
 
 ```bash
-# Backup existing data
-cp ./data/nova-hub.db ~/backups/
-
-# Remove old database and migrations
-rm ./data/nova-hub.db
-rm -rf alembic/versions/*.py
-
-# Recreate with new schema
-.venv/bin/alembic revision --autogenerate -m "Initial schema"
-.venv/bin/alembic upgrade head
-
-# Recreate admin user
-.venv/bin/python create_admin_sql.py
+sudo -niu novahub /home/novahub/deploy.sh          # what is running, tags available
+sudo -niu novahub /home/novahub/deploy.sh v0.3.1   # pin to a version
+sudo systemctl restart nova-hub                    # deliberately separate
 ```
 
-## Known Issues
+`deploy.sh` backs up the database, checks the tag out on a detached HEAD,
+rebuilds the frontend, applies migrations and validates the config. It refuses to
+run if the working tree is dirty, since checking out over hand-edited production
+files would destroy them silently.
 
-### passlib/bcrypt Compatibility
-- passlib 1.7.4 has compatibility issues with newer bcrypt versions
-- Workaround: Use `create_admin_sql.py` which uses bcrypt directly
-- Long-term solution: Migrate to a more modern password hashing library
+Two things it deliberately does not do. It does not restart the service -- that
+stays a human decision. And it does not touch `config.toml` or `frontend/dist`,
+both of which are gitignored; `dist` is rebuilt rather than delivered, which is
+why a bare `git checkout` would otherwise leave the UI on the previous version.
 
-### Template References
-- Some old field names may still exist in templates
-- These will be fixed as they're encountered in testing
-
-## Upgrade Instructions
-
-### To Future Versions
-
-When upgrading Nova Hub:
-
-1. **Backup database:**
-   ```bash
-   cp ./data/nova-hub.db ~/backups/nova-hub-$(date +%Y%m%d).db
-   ```
-
-2. **Update code:**
-   ```bash
-   git pull  # or download new version
-   ```
-
-3. **Update dependencies:**
-   ```bash
-   uv pip install -r requirements.txt
-   ```
-
-4. **Run migrations:**
-   ```bash
-   .venv/bin/alembic upgrade head
-   ```
-
-5. **Restart service:**
-   ```bash
-   sudo systemctl restart nova-hub
-   # or
-   .venv/bin/uvicorn main:app --reload
-   ```
+After a restart, hard-reload the browser: `index.html` is not content-hashed, so
+a cached copy keeps asking for the old bundle.
 
 ## Contributing
 

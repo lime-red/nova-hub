@@ -4,6 +4,8 @@ All notable changes to Nova Hub will be documented in this file.
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-09-15
+
 ### Fixed
 - Retention honoured `retention_days` in the database and ignored it on disk.
   Every dosemu transcript is written to `<data_dir>/logs/dosemu/*.log` before it

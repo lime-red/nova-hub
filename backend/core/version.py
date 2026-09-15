@@ -18,7 +18,7 @@ import subprocess
 from functools import lru_cache
 from pathlib import Path
 
-__version__ = "0.3.1"
+__version__ = "0.3.2"
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _GIT_TIMEOUT = 2

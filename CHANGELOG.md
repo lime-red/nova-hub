@@ -4,6 +4,21 @@ All notable changes to Nova Hub will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- Retention honoured `retention_days` in the database and ignored it on disk.
+  Every dosemu transcript is written to `<data_dir>/logs/dosemu/*.log` before it
+  is copied into `ProcessingRun.dosemu_log`, so blanking the column left the
+  file: production held 53,930 log files and 860 MB across eight months while
+  the database tier was working correctly. The daily pass now deletes aged log
+  files too, bounded to that one directory and to `.log` files in it, without
+  recursing or following symlinks.
+
+### Added
+- `deploy.sh` prunes its own database backups, keeping the three most recent.
+  Each deploy leaves a ~70 MB copy, and nothing had a ceiling.
+- `deploy/deploy.sh` and `deploy/prune_backups.sh` are in the repository. The
+  script that deploys production had existed only on production.
+
 ## [0.3.1] - 2026-09-14
 
 ### Fixed

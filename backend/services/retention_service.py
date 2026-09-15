@@ -21,12 +21,22 @@ codes, per-league attribution and the sequence record all survive; the 18 KB
 transcript of a run nobody has looked at since February does not. `file_size`
 is left as it was, so the row still says how big the thing was.
 
-Nothing is deleted outright. That is deliberate: every id stays valid, no
+No *row* is deleted outright. That is deliberate: every id stays valid, no
 foreign key is orphaned, and a purge cannot cascade into data somebody still
 needs. It also means the pass is re-runnable and its effect is monotonic.
+
+**The same setting has a filesystem half.** `dosemu_runner` writes every
+transcript to `<data_dir>/logs/dosemu/*.log` before `processing_service` reads it
+into `ProcessingRun.dosemu_log`, so the text exists twice. Blanking the column
+and leaving the file behind honours the setting only halfway, which is how
+production accumulated 53,930 log files and 860 MB over eight months while the
+database tier was working correctly. Aged log files are therefore deleted -- and
+here deletion is right, because the file is the bulk content, there is no row to
+preserve, and anything still inside the window keeps both copies.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from sqlalchemy import func, text
 
@@ -50,6 +60,13 @@ _TIMESTAMP = {
     ProcessingRunFile: "created_at",
 }
 
+# The one directory on disk this service will touch, relative to data_dir, and
+# the only suffix it will remove from it. Both are deliberately narrow: this is
+# the single place in the codebase that deletes operator files, so it should be
+# impossible to point somewhere else by accident.
+LOG_SUBDIR = ("logs", "dosemu")
+LOG_SUFFIX = ".log"
+
 
 class RetentionService:
     """Drop aged bulk content in bounded batches.
@@ -59,14 +76,30 @@ class RetentionService:
     setting, and it is honoured rather than ignored.
     """
 
-    def __init__(self, db, retention_days: int, batch_size: int = DEFAULT_BATCH_SIZE):
+    def __init__(
+        self,
+        db,
+        retention_days: int,
+        batch_size: int = DEFAULT_BATCH_SIZE,
+        data_dir: str | Path | None = None,
+    ):
         self.db = db
         self.retention_days = retention_days
         self.batch_size = max(1, batch_size)
+        # Optional so that every existing caller and test keeps working and
+        # simply does no filesystem work.
+        self.data_dir = Path(data_dir) if data_dir else None
 
     @property
     def enabled(self) -> bool:
         return self.retention_days > 0
+
+    @property
+    def log_dir(self) -> Path | None:
+        """Where dosemu transcripts land, or None if this service has no data_dir."""
+        if self.data_dir is None:
+            return None
+        return self.data_dir.joinpath(*LOG_SUBDIR)
 
     def cutoff(self, now: datetime | None = None) -> datetime:
         # Rows are stamped with datetime.utcnow(), so compare in the same frame.
@@ -94,6 +127,7 @@ class RetentionService:
             total_rows += rows or 0
             total_bytes += int(size or 0)
 
+        files, file_bytes = self._aged_logs(cutoff)
         return {
             "enabled": True,
             "retention_days": self.retention_days,
@@ -101,6 +135,8 @@ class RetentionService:
             "tiers": tiers,
             "rows": total_rows,
             "bytes": total_bytes,
+            "log_files": len(files),
+            "log_bytes": file_bytes,
         }
 
     def purge(self) -> dict:
@@ -118,10 +154,14 @@ class RetentionService:
             total_rows += rows
             total_bytes += freed
 
-        if total_rows:
+        log_files, log_bytes = self.purge_logs(cutoff)
+
+        if total_rows or log_files:
             logger.info(
                 f"retention: cleared {total_rows} aged value(s), "
-                f"{total_bytes / 1_048_576:.1f} MB, older than {cutoff.isoformat()}"
+                f"{total_bytes / 1_048_576:.1f} MB, and deleted {log_files} aged "
+                f"log file(s), {log_bytes / 1_048_576:.1f} MB, "
+                f"older than {cutoff.isoformat()}"
             )
         return {
             "enabled": True,
@@ -130,6 +170,8 @@ class RetentionService:
             "tiers": tiers,
             "rows": total_rows,
             "bytes": total_bytes,
+            "log_files": log_files,
+            "log_bytes": log_bytes,
         }
 
     def _purge_column(self, model, column: str, cutoff: datetime) -> tuple[int, int]:
@@ -162,6 +204,60 @@ class RetentionService:
 
         return rows_done, bytes_done
 
+    def _aged_logs(self, cutoff: datetime) -> tuple[list[Path], int]:
+        """Log files older than the cutoff, and their total size.
+
+        Age comes from the file's own mtime rather than from its name. The names
+        do carry a timestamp, but a name is a claim and a stat is a fact, and a
+        file whose name will not parse should not therefore become immortal.
+        """
+        log_dir = self.log_dir
+        if log_dir is None or not log_dir.is_dir():
+            return [], 0
+
+        # cutoff comes from utcnow(), which is naive -- .timestamp() on a naive
+        # datetime reads it as *local* time, which would shift the window by the
+        # host's UTC offset. Say the frame explicitly so the comparison against
+        # st_mtime (epoch seconds, UTC) is right wherever this runs.
+        cutoff_ts = cutoff.replace(tzinfo=timezone.utc).timestamp()
+        aged, total = [], 0
+        for entry in log_dir.iterdir():
+            # No recursion, no symlink following, nothing but plain .log files
+            # directly in this directory.
+            if entry.suffix != LOG_SUFFIX or entry.is_symlink() or not entry.is_file():
+                continue
+            try:
+                stat = entry.stat()
+            except OSError:
+                continue
+            if stat.st_mtime < cutoff_ts:
+                aged.append(entry)
+                total += stat.st_size
+        return aged, total
+
+    def purge_logs(self, cutoff: datetime | None = None) -> tuple[int, int]:
+        """Delete aged dosemu transcripts from disk.
+
+        Failures are counted as skips, not raised: a log file that cannot be
+        removed is a permissions problem for an operator, and it must not be able
+        to abort a retention pass that has real database work left to do.
+        """
+        if not self.enabled or self.log_dir is None:
+            return 0, 0
+
+        aged, _ = self._aged_logs(cutoff or self.cutoff())
+        deleted, freed = 0, 0
+        for entry in aged:
+            try:
+                size = entry.stat().st_size
+                entry.unlink()
+            except OSError as e:
+                logger.warning(f"retention: could not delete {entry.name}: {e}")
+                continue
+            deleted += 1
+            freed += size
+        return deleted, freed
+
     def vacuum(self) -> None:
         """Reclaim the freed pages.
 
@@ -176,17 +272,31 @@ class RetentionService:
         logger.info("retention: VACUUM complete")
 
 
+def _data_dir(config) -> str | None:
+    """`[server] data_dir`, from either a parsed Config or the raw dict."""
+    server = getattr(config, "server", None)
+    if server is not None:
+        return getattr(server, "data_dir", None)
+    try:
+        return (config or {}).get("server", {}).get("data_dir")
+    except AttributeError:
+        return None
+
+
 def from_config(db, config) -> RetentionService:
     """Build a service from a parsed `Config` or the raw dict."""
+    data_dir = _data_dir(config)
     processing = getattr(config, "processing", None)
     if processing is not None:
         return RetentionService(
             db, processing.retention_days,
             getattr(processing, "retention_batch_size", DEFAULT_BATCH_SIZE),
+            data_dir=data_dir,
         )
     raw = (config or {}).get("processing", {})
     return RetentionService(
         db,
         raw.get("retention_days", 30),
         raw.get("retention_batch_size", DEFAULT_BATCH_SIZE),
+        data_dir=data_dir,
     )

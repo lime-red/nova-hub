@@ -1,7 +1,7 @@
 # backend/services/sequence_validator.py
 
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import sqlalchemy as sa
 from sqlalchemy import text
@@ -87,17 +87,27 @@ DENSITY_THRESHOLD = 0.9
 # used. A false all-clear is worse than no answer, so these routes are skipped.
 HUB_ROUTES_ARE_SLOTS_NOT_HISTORY = True
 
+# How recent a gap must be to be worth an alert, when the config does not say.
+# Two weeks is well past the point where a missing attach can be chased and well
+# short of turning the alert list into an archive.
+DEFAULT_ALERT_MAX_AGE_DAYS = 14
+
 
 class SequenceValidator:
-    def __init__(self, db=None, hub_index: str | None = None):
+    def __init__(self, db=None, hub_index: str | None = None,
+                 max_age_days: float | None = None):
         """Initialize with database session.
 
         `hub_index` is the hub's own BBS index (e.g. "01"). Without it every
         route is judged, which is the previous behaviour and reports a
         meaningless all-clear on the hub's own outbound.
+
+        `max_age_days` bounds how far back a gap may be and still be worth
+        raising. None means no bound, which is the old behaviour.
         """
         self.db = db
         self.hub_index = hub_index
+        self.max_age_days = max_age_days
 
     def _routes(self):
         return self.db.execute(text("""
@@ -113,9 +123,13 @@ class SequenceValidator:
         the numbering has been round. `id` breaks ties so the order is total and
         the same on every run.
         """
+        return [seq for seq, _ in self._arrivals_for(route)]
+
+    def _arrivals_for(self, route) -> list[tuple]:
+        """One route's (sequence number, arrival time) pairs, in arrival order."""
         rows = self.db.execute(
             text("""
-            SELECT sequence_number
+            SELECT sequence_number, uploaded_at
             FROM packets
             WHERE league_id = :league_id
               AND source_bbs_index = :source_bbs_index
@@ -124,7 +138,7 @@ class SequenceValidator:
         """),
             {"league_id": route[0], "source_bbs_index": route[1], "dest_bbs_index": route[2]},
         ).fetchall()
-        return [r[0] for r in rows]
+        return [(r[0], r[1]) for r in rows]
 
     def check_sequences(self) -> list:
         """
@@ -135,6 +149,8 @@ class SequenceValidator:
         """
         new_alerts = []
         skipped = 0
+        aged_out = 0
+        cutoff = self._alert_cutoff()
 
         for route in self._routes():
             if self.hub_index is not None and route[1] == self.hub_index:
@@ -142,15 +158,38 @@ class SequenceValidator:
                 skipped += 1
                 continue
 
-            seq_list = self._sequences_for(route)
-            if not seq_list:
+            arrivals = self._arrivals_for(route)
+            if not arrivals:
                 continue
 
+            seq_list = [seq for seq, _ in arrivals]
+            timeline = build_timeline(seq_list)
+            # When a gap was noticed is the arrival that revealed it, so map
+            # absolute position back to the moment the packet after the hole
+            # turned up. Later arrivals win: a position reached twice is being
+            # read for recency, and the recent visit is the relevant one.
+            noticed_at = {
+                position: when
+                for position, (_, when) in zip(timeline.absolute, arrivals)
+            }
+
             for gap_info in self.find_gaps(seq_list):
+                if cutoff is not None:
+                    when = noticed_at.get(gap_info.get("received_absolute"))
+                    if when is not None and when < cutoff:
+                        aged_out += 1
+                        continue
+
                 # Create alert if not already exists; collect new ones for delivery
                 alert = self.create_alert_if_new(route, gap_info)
                 if alert is not None:
                     new_alerts.append(alert)
+
+        if aged_out:
+            logger.info(
+                f"sequence check passed over {aged_out} gap(s) older than "
+                f"{self.max_age_days} day(s): too late to act on"
+            )
 
         if skipped:
             logger.debug(
@@ -159,6 +198,28 @@ class SequenceValidator:
             )
 
         return new_alerts
+
+    def _alert_cutoff(self):
+        """The oldest a gap may be and still be worth raising, or None.
+
+        A sequence alert is only ever actionable while the packet might still be
+        recoverable -- somebody notices an attach went missing in transit, and
+        the hub can say which number never arrived on which route. Days later
+        there is nothing to do with that but file it.
+
+        This matters most on the very first run after an upgrade. Counting
+        cycles instead of inferring one wrap means the detector can suddenly see
+        the whole history it was blind to, and against production's real data
+        that is 623 gaps stretching back to January. Raised all at once they
+        would bury the next real one, which is precisely the failure the
+        detector exists to prevent. Age them out and the list stays readable.
+
+        Nothing here rewrites history: the gaps are still found and still
+        counted, they simply do not raise an alarm nobody can answer.
+        """
+        if not self.max_age_days:
+            return None
+        return datetime.utcnow() - timedelta(days=self.max_age_days)
 
     @staticmethod
     def _usable_deltas(ordered: list[int], reset_starts: set) -> list[int]:
@@ -277,6 +338,7 @@ class SequenceValidator:
                     "expected_sequence": expected % SEQUENCE_RANGE,
                     "sequence_epoch": expected // SEQUENCE_RANGE,
                     "received_sequence": next_abs % SEQUENCE_RANGE,
+                    "received_absolute": next_abs,
                     "gap_size": missing,
                 })
 

@@ -11,6 +11,7 @@ Reproduced on the rig: 1,100 forced cycles rolled 999 -> 000 at cycle 1,002 and
 then reissued 900b0102.002 onward with fresh contents under names already used.
 """
 
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -29,13 +30,20 @@ class FakeDB:
         self._routes = routes
         self._sequences = sequences
         self.queried = []
+        self._clock = datetime.utcnow() - timedelta(days=1)
 
     def execute(self, statement, params=None):
         if params is None:
             return SimpleNamespace(fetchall=lambda: self._routes)
         key = (params["league_id"], params["source_bbs_index"], params["dest_bbs_index"])
         self.queried.append(key)
-        rows = [(n,) for n in self._sequences.get(key, [])]
+        # (sequence_number, uploaded_at), a minute apart within the last day, so
+        # arrival order is unambiguous and these routes stay recent enough to
+        # alert on whatever cutoff a caller sets.
+        rows = [
+            (n, self._clock + timedelta(minutes=i))
+            for i, n in enumerate(self._sequences.get(key, []))
+        ]
         return SimpleNamespace(fetchall=lambda: rows)
 
     def query(self, *a, **kw):  # pragma: no cover - no alert is ever created here

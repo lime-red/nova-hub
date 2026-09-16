@@ -21,6 +21,13 @@ poll_interval = 60
 # per-league attribution are kept. 0 disables the pass entirely.
 retention_days = 30
 retention_batch_size = 500
+# How recent a sequence gap must be to raise an alert. A missing packet is only
+# actionable while it might still be recovered -- someone reports an attach went
+# missing in transit and the hub can name the number that never arrived. Older
+# gaps are still detected and still counted; they just do not raise an alarm
+# nobody can act on, which keeps a genuine one from being buried. 0 disables the
+# bound and alerts on everything, including the whole back catalogue.
+sequence_alert_max_age_days = 14
 
 [dosemu]
 dosemu_path = "/usr/bin/dosemu"

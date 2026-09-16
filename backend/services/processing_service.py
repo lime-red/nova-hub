@@ -16,7 +16,10 @@ from backend.core.database import get_session
 from backend.logging_config import get_logger
 from backend.services.dosemu_runner import DosemuRunner
 from backend.services.packet_service import parse_packet_filename
-from backend.services.sequence_validator import SequenceValidator
+from backend.services.sequence_validator import (
+    DEFAULT_ALERT_MAX_AGE_DAYS,
+    SequenceValidator,
+)
 
 logger = get_logger(context="processing")
 
@@ -214,7 +217,13 @@ class ProcessingService:
         # 213 alerts for packets that had long since arrived, on top of the false
         # ones. Resolving first also means a gap that closed in this very run is
         # never re-reported.
-        validator = SequenceValidator(self.db, hub_index=self.config["hub"]["bbs_index"])
+        validator = SequenceValidator(
+            self.db,
+            hub_index=self.config["hub"]["bbs_index"],
+            max_age_days=self.config.get("processing", {}).get(
+                "sequence_alert_max_age_days", DEFAULT_ALERT_MAX_AGE_DAYS
+            ),
+        )
         validator.auto_resolve_alerts()
 
         # Check for sequence gaps; dispatch out-of-band alerts for new ones

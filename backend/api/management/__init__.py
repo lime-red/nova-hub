@@ -14,6 +14,7 @@ from .auth import router as auth_router
 from .dashboard import router as dashboard_router
 from .clients import router as clients_router
 from .leagues import router as leagues_router
+from .movements import router as movements_router
 from .processing import router as processing_router
 from .alerts import router as alerts_router
 from .users import router as users_router
@@ -49,6 +50,12 @@ management_router.include_router(
     processing_router,
     prefix="/processing",
     tags=["Management API - Processing"]
+)
+
+management_router.include_router(
+    movements_router,
+    prefix="/movements",
+    tags=["Management API - Movements"]
 )
 
 management_router.include_router(

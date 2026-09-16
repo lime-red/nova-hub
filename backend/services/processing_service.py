@@ -161,11 +161,16 @@ class ProcessingService:
         self.db.refresh(run)
 
         results = {}
+        league_of_group = {}
         self._unconsumed_count = 0
 
         try:
             for (game_type_str, league_id_str), group_packets in groups.items():
                 key = f"{game_type_str}_{league_id_str}"
+                # Each group is one league, and the transcript for that group is
+                # the only place its movements are named. Remember which league
+                # it was before the outputs get concatenated together.
+                league_of_group[key] = group_packets[0].league_id
                 logger.info(
                     f"Processing {len(group_packets)} packet(s) for "
                     f"{game_type_str} league {league_id_str}"
@@ -202,6 +207,8 @@ class ProcessingService:
             # Combine dosemu output from all groups
             outputs = [r.get("output", "") for r in results.values() if r]
             run.dosemu_log = "\n\n".join(filter(None, outputs))
+
+            self._record_movements(run, results, league_of_group)
 
         except Exception as e:
             logger.error(f"Error: {e}")
@@ -296,6 +303,56 @@ class ProcessingService:
             if game_outbound_dir.exists() and any(game_outbound_dir.iterdir()):
                 logger.info(f"Checking outbound folder for league {league_id}{league.game_type}: {game_outbound_dir}")
                 await self.collect_outbound_packets(game_type_str, 0, game_outbound_dir)
+
+    def _record_movements(self, run, results, league_of_group):
+        """Store what the games said moved between nodes in this run.
+
+        Parsed here rather than on demand because retention drops the transcript
+        after 30 days, and a movement history that silently empties out after a
+        month is worse than none. The rows are small -- a busy run yields about
+        twenty -- and they are what the admin view reads.
+
+        Attribution is per group: one group is one league, and its own transcript
+        is the only place its items are named. Once the outputs are concatenated
+        into run.dosemu_log that association is gone, which is why this runs over
+        `results` instead of over the combined log.
+
+        Never fatal. A transcript the parser cannot make sense of costs the run
+        its movement records, not its packets.
+        """
+        from backend.models.database import ProcessingRunItem
+        from backend.services.transcript_service import parse
+
+        recorded = 0
+        for key, result in results.items():
+            output = (result or {}).get("output") or ""
+            if not output:
+                continue
+            try:
+                records, _ = parse(output.encode("utf-8", errors="replace"))
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.warning(f"Could not read the transcript for {key}: {exc}")
+                continue
+
+            for record in records:
+                if record.get("kind") != "item":
+                    continue
+                self.db.add(ProcessingRunItem(
+                    processing_run_id=run.id,
+                    league_id=league_of_group.get(key),
+                    occurred_at=run.started_at,
+                    direction=record["direction"],
+                    item_type=record["type"],
+                    src_node=record["src"],
+                    dst_node=record["dst"],
+                    size_before=record.get("size_before"),
+                    size_after=record.get("size_after"),
+                    phase=record.get("phase"),
+                ))
+                recorded += 1
+
+        if recorded:
+            logger.info(f"Run {run.id}: recorded {recorded} item movement(s)")
 
     async def process_game_batch(self, game_type: str, packets: list, run_id: int):
         """Process a batch of packets for one game"""

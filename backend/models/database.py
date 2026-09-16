@@ -14,6 +14,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     LargeBinary,
     String,
@@ -219,8 +220,51 @@ class ProcessingRun(Base):
 
     # Relationships
     league = relationship("League", back_populates="processing_runs")
+    items = relationship("ProcessingRunItem", back_populates="run",
+                         cascade="all, delete-orphan")
     packets = relationship("Packet", back_populates="processing_run")
     files = relationship("ProcessingRunFile", back_populates="processing_run")
+
+
+class ProcessingRunItem(Base):
+    """One data item the game moved between two nodes, read from the transcript.
+
+    With /DETAILED the game names every item it compresses or decompresses --
+    type, source node, destination node -- and that is the only record anywhere
+    of what actually crossed the wire. It is kept here rather than re-read from
+    ProcessingRun.dosemu_log on demand because retention drops transcripts after
+    30 days, and the whole value of this table is being able to look back
+    further than that. The rows are small: a busy run yields about twenty.
+
+    Node numbers are the game's own (1, 2, 3...), not BBS indices, because that
+    is what the transcript prints.
+    """
+
+    __tablename__ = "processing_run_items"
+
+    # The view's main query is "this league, lately", so league and time are one
+    # composite index rather than two separate ones.
+    __table_args__ = (
+        Index("ix_processing_run_items_league_occurred", "league_id", "occurred_at"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    processing_run_id = Column(Integer, ForeignKey("processing_runs.id"), nullable=False, index=True)
+    league_id = Column(Integer, ForeignKey("leagues.id"), nullable=True)
+
+    # When the run that carried this item started. Denormalised from the run so
+    # the common query needs no join.
+    occurred_at = Column(DateTime)
+
+    direction = Column(String(3), nullable=False)          # "in" or "out"
+    item_type = Column(String(40), nullable=False, index=True)
+    src_node = Column(Integer, nullable=True)
+    dst_node = Column(Integer, nullable=True)
+    size_before = Column(Integer, nullable=True)
+    size_after = Column(Integer, nullable=True)
+    phase = Column(String(60), nullable=True)
+
+    run = relationship("ProcessingRun", back_populates="items")
 
 
 class ProcessingRunFile(Base):

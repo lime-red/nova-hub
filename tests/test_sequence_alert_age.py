@@ -147,3 +147,42 @@ def test_the_default_is_short_enough_to_stay_actionable():
     is still 'on' while doing nothing useful.
     """
     assert 0 < DEFAULT_ALERT_MAX_AGE_DAYS <= 30
+
+
+class TestAlertingCanBeSwitchedOff:
+    """A lone missing number is the game's daily rollover as often as a loss.
+
+    The measurement behind the default: across eight months every busy
+    production route showed exactly one lone gap per active day, at that route's
+    own maintenance time. Alerting on that is noise, and noise is where a real
+    loss hides -- which is how the previous detector reached 705 unresolved false
+    alerts.
+    """
+
+    def test_a_real_looking_gap_raises_nothing_when_alerting_is_off(self):
+        db = RecordingDB(arrivals_ending(datetime.utcnow(), WITH_A_HOLE))
+
+        alerts = SequenceValidator(db, max_age_days=14, alerts_enabled=False).check_sequences()
+
+        assert alerts == []
+        assert db.added == [], "an alert was stored despite alerting being off"
+
+    def test_the_same_gap_is_still_found_by_the_detector(self):
+        """Switching off the bell must not switch off the detection.
+
+        The gap still has to be visible to anything that asks -- otherwise the
+        setting quietly destroys the data rather than just the interruption.
+        """
+        validator = SequenceValidator(None, alerts_enabled=False)
+
+        gaps = validator.find_gaps(WITH_A_HOLE)
+
+        assert [g["expected_sequence"] for g in gaps] == [4]
+
+    def test_turning_it_on_restores_the_alert(self):
+        """The control: same data, same everything, one flag different."""
+        db = RecordingDB(arrivals_ending(datetime.utcnow(), WITH_A_HOLE))
+
+        alerts = SequenceValidator(db, max_age_days=14, alerts_enabled=True).check_sequences()
+
+        assert len(alerts) == 1

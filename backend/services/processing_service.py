@@ -18,6 +18,7 @@ from backend.services.dosemu_runner import DosemuRunner
 from backend.services.packet_service import parse_packet_filename
 from backend.services.sequence_validator import (
     DEFAULT_ALERT_MAX_AGE_DAYS,
+    DEFAULT_ALERTS_ENABLED,
     SequenceValidator,
 )
 
@@ -229,6 +230,9 @@ class ProcessingService:
             hub_index=self.config["hub"]["bbs_index"],
             max_age_days=self.config.get("processing", {}).get(
                 "sequence_alert_max_age_days", DEFAULT_ALERT_MAX_AGE_DAYS
+            ),
+            alerts_enabled=self.config.get("processing", {}).get(
+                "sequence_alerts_enabled", DEFAULT_ALERTS_ENABLED
             ),
         )
         validator.auto_resolve_alerts()

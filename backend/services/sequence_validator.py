@@ -92,10 +92,33 @@ HUB_ROUTES_ARE_SLOTS_NOT_HISTORY = True
 # short of turning the alert list into an archive.
 DEFAULT_ALERT_MAX_AGE_DAYS = 14
 
+# Whether a missing sequence number should raise an alert at all, when the config
+# does not say. It should not, and the reason is measured rather than cautious.
+#
+# Both games burn a sequence number at each game-day rollover -- they consume one
+# and emit nothing. Across eight months of production data every busy route shows
+# exactly one lone missing number per active day: 232 days out of 239 on one
+# route, 237 of 241 on another, 109 of 111 on a third, each at that route's own
+# maintenance time. A lone daily gap is therefore the normal working of the game,
+# and it is indistinguishable from a packet that genuinely went missing.
+#
+# So an alert on a single missing number is not evidence of anything. Enabled, it
+# fires about three times a day on production and every one of them is the
+# rollover; the real loss it exists to catch then arrives as the fourth identical
+# line that day. That is how the previous detector accumulated 705 unresolved
+# false alerts and made a genuine loss unfindable.
+#
+# What replaced it is the movements view: the games' own account of what they
+# exchanged, shown to an admin who knows what their league should look like.
+# Set this true to get the alerts back; the gaps are detected and recorded either
+# way, so nothing is lost by leaving it off.
+DEFAULT_ALERTS_ENABLED = False
+
 
 class SequenceValidator:
     def __init__(self, db=None, hub_index: str | None = None,
-                 max_age_days: float | None = None):
+                 max_age_days: float | None = None,
+                 alerts_enabled: bool = True):
         """Initialize with database session.
 
         `hub_index` is the hub's own BBS index (e.g. "01"). Without it every
@@ -104,10 +127,16 @@ class SequenceValidator:
 
         `max_age_days` bounds how far back a gap may be and still be worth
         raising. None means no bound, which is the old behaviour.
+
+        `alerts_enabled` false finds and records gaps without raising alerts for
+        them -- see DEFAULT_ALERTS_ENABLED for why that is the sensible setting.
+        It defaults true here so that calling this class directly, as the tests
+        and tools do, asks it the question it was built to answer.
         """
         self.db = db
         self.hub_index = hub_index
         self.max_age_days = max_age_days
+        self.alerts_enabled = alerts_enabled
 
     def _routes(self):
         return self.db.execute(text("""
@@ -147,6 +176,15 @@ class SequenceValidator:
         Returns a list of newly created SequenceAlert objects so the caller
         can dispatch out-of-band notifications.
         """
+        if not self.alerts_enabled:
+            # Gaps are still found by find_gaps() and still visible to anyone who
+            # asks; what is switched off is ringing a bell about them.
+            logger.debug(
+                "sequence alerting is disabled: a lone missing number is the "
+                "game's daily rollover as often as it is a lost packet"
+            )
+            return []
+
         new_alerts = []
         skipped = 0
         aged_out = 0

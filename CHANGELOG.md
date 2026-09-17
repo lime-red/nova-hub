@@ -4,11 +4,62 @@ All notable changes to Nova Hub will be documented in this file.
 
 ## [Unreleased]
 
-Not yet released, and not yet deployed. Against production's real history the
-sequence work below reports 623 gaps where the previous model reported 16, and
-590 of the 593 runs are a single isolated number on an otherwise dense route --
-which is not the shape of packet loss. Whether those are losses or numbers the
-games consume without emitting a packet needs `ROUTEINFO` from the rig to settle.
+Nothing yet.
+
+## [0.4.0] - 2026-09-17
+
+Shows what the games actually exchanged, and stops guessing about what went
+missing.
+
+The question this release answers -- "a player says an attach went missing in
+transit, what does the hub know?" -- turned out not to be answerable by counting
+sequence numbers. Both games burn a number at every game-day rollover, so across
+eight months of production data every busy route shows exactly one lone missing
+number per active day (232 days of 239 on one route, 237 of 241 on another, 109
+of 111 on a third), each at that route's own maintenance time. A lone gap is the
+game working normally and cannot be told apart from a real loss. So the answer is
+no longer an alarm; it is the games' own account of what moved, shown to someone
+who knows what their league should look like.
+
+### Added
+- **Movements.** Every item the games exchange -- its type, and which node sent
+  it to which -- is read from each run's `/DETAILED` output and recorded in
+  `processing_run_items`. A new `/movements` page leads with the shape of the
+  traffic (by type, by node pair, by day) and a filterable table underneath;
+  each processing run gains a "What Moved" tab grouped by route. Stored rather
+  than parsed on demand because retention drops transcripts after 30 days, and a
+  history that silently empties after a month is worse than none.
+- `tools/backfill_movements.py` recovers movements from transcripts still held
+  on existing runs -- about 1,176 runs on production, the retention window.
+  Report-only by default, skips runs already recorded, inserts only.
+- `tests/live/serve.py` serves the rig's hub with a real uvicorn and the built
+  frontend, so the UI can be looked at with real rig data. `--build` plays an
+  actual round first. The scenarios drive the hub in-process, so until now
+  nothing listened and the rig's UI could not be seen at all.
+
+### Changed
+- **Sequence gap alerting is off by default** (`[processing]
+  sequence_alerts_enabled`). Enabled, it fires about three times a day on
+  production and every one of them is the daily rollover described above; the
+  real loss it exists to catch would arrive as the fourth identical line that
+  day. That is how the previous detector reached 705 unresolved false alerts and
+  made a genuine loss unfindable. Gaps are still detected and recorded either
+  way -- what is switched off is ringing a bell about them. Set it true to
+  restore the alerts.
+- Sequence alerts, when enabled, are bounded to recent gaps
+  (`sequence_alert_max_age_days`, default 14). A missing packet is actionable
+  only while it might still be chased. Against production's history: no bound
+  599 alerts, 30 days 90, 14 days 42, 7 days 21.
+
+### Fixed
+- The transcript parser invented item types. dosemu repaints the emulated
+  screen, and a painted line runs two records together with no separator, so a
+  loose type pattern ran past the end of the first record and reported types
+  like `Recon Request DeCompress: Old: 2 New: 2 %: 0.0% Type: Recon Request`.
+  Harmless in a command-line tool, a row in a table someone reads once it is a
+  product feature. It also existed in two copies, which is how the bug survived
+  in one after being understood in the other; both are now thin wrappers over
+  `backend/services/transcript_service.py`.
 
 ### Fixed
 - Sequence gap detection was blind on every route that had wrapped, which by now

@@ -21,7 +21,20 @@ poll_interval = 60
 # per-league attribution are kept. 0 disables the pass entirely.
 retention_days = 30
 retention_batch_size = 500
-# How recent a sequence gap must be to raise an alert. A missing packet is only
+# Whether a missing sequence number raises an alert at all.
+#
+# Off by default, and measured rather than cautious: both games burn a sequence
+# number at each game-day rollover, and across eight months of production data
+# every busy route showed exactly one lone missing number per active day -- 232
+# days of 239 on one route, 237 of 241 on another. A lone gap is the game working
+# normally, and it cannot be told apart from a packet that really went missing.
+# Enabled, this fires about three times a day and every one is the rollover.
+#
+# Gaps are still detected and recorded either way. What the movements view offers
+# instead is the games' own account of what they exchanged, for an admin who
+# knows what their league should look like. Set true to get the alerts back.
+sequence_alerts_enabled = false
+# How recent a sequence gap must be to raise an alert, when they are enabled. A missing packet is only
 # actionable while it might still be recovered -- someone reports an attach went
 # missing in transit and the hub can name the number that never arrived. Older
 # gaps are still detected and still counted; they just do not raise an alarm

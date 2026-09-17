@@ -162,6 +162,56 @@ export const processingApi = {
     api.post('/processing/trigger'),
 }
 
+// Movements API functions
+//
+// What the games said moved between nodes, read from each run's /DETAILED
+// transcript. Descriptive rather than diagnostic: the hub reports the traffic
+// and the sysop judges it.
+export interface Movement {
+  id: number
+  processing_run_id: number
+  league_id: number | null
+  league_name: string | null
+  occurred_at: string | null
+  direction: 'in' | 'out'
+  item_type: string
+  src_node: number | null
+  dst_node: number | null
+  size_before: number | null
+  size_after: number | null
+  phase: string | null
+}
+
+export interface MovementSummary {
+  since: string
+  total: number
+  runs: number
+  by_type: Array<{ direction: string; item_type: string; count: number }>
+  by_pair: Array<{ src_node: number | null; dst_node: number | null; count: number }>
+  by_day: Array<{ day: string; count: number }>
+  quiet_nodes: number[]
+}
+
+export interface MovementFilters {
+  days?: number
+  league_id?: number
+  direction?: 'in' | 'out'
+  item_type?: string
+  node?: number
+  limit?: number
+}
+
+export const movementsApi = {
+  list: (params: MovementFilters = {}) =>
+    api.get<Movement[]>('/movements/', { params }),
+
+  forRun: (runId: number) =>
+    api.get<Movement[]>('/movements/', { params: { run_id: runId } }),
+
+  summary: (params: { days?: number; league_id?: number } = {}) =>
+    api.get<MovementSummary>('/movements/summary', { params }),
+}
+
 // Alerts API functions
 export const alertsApi = {
   list: () =>

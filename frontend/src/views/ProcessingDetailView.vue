@@ -3,16 +3,39 @@ import { onMounted, ref, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useProcessingStore } from '@/stores/processing'
 import AppLayout from '@/components/AppLayout.vue'
+import { movementsApi, type Movement } from '@/services/api'
 
 const route = useRoute()
 const processingStore = useProcessingStore()
 
 const runId = computed(() => Number(route.params.id))
-const activeTab = ref<'overview' | 'logs' | 'scores' | 'files'>('overview')
+const activeTab = ref<'overview' | 'moved' | 'logs' | 'scores' | 'files'>('overview')
 const selectedFile = ref<number | null>(null)
+
+// What this run's games said they exchanged, read from the run's own detailed
+// output. Runs processed before movements were recorded simply have none, which
+// is why an empty list is a normal result rather than an error.
+const movements = ref<Movement[]>([])
 
 onMounted(async () => {
   await processingStore.loadRun(runId.value)
+  try {
+    const { data } = await movementsApi.forRun(runId.value)
+    movements.value = data
+  } catch {
+    // The run itself is the page; its movements are an extra.
+  }
+})
+
+/** Grouped the way you read them: everything one node sent another. */
+const movementsByPair = computed(() => {
+  const groups = new Map<string, { src: number | null; dst: number | null; items: Movement[] }>()
+  for (const m of movements.value) {
+    const key = `${m.src_node}-${m.dst_node}`
+    if (!groups.has(key)) groups.set(key, { src: m.src_node, dst: m.dst_node, items: [] })
+    groups.get(key)!.items.push(m)
+  }
+  return Array.from(groups.values()).sort((a, b) => b.items.length - a.items.length)
 })
 
 function statusClass(status: string): string {
@@ -90,6 +113,14 @@ function getSelectedFileContent() {
           </button>
           <button
             class="tab"
+            :class="{ active: activeTab === 'moved' }"
+            @click="activeTab = 'moved'"
+            v-if="movements.length > 0"
+          >
+            What Moved ({{ movements.length }})
+          </button>
+          <button
+            class="tab"
             :class="{ active: activeTab === 'logs' }"
             @click="activeTab = 'logs'"
           >
@@ -111,6 +142,48 @@ function getSelectedFileContent() {
           >
             Other Files
           </button>
+        </div>
+
+        <!-- What Moved Tab -->
+        <div v-if="activeTab === 'moved'" class="tab-content">
+          <p class="text-muted moved-intro">
+            Items this run's games exchanged, as their own detailed output reported
+            them. Grouped by route; the log tab has the raw text.
+          </p>
+          <div v-for="group in movementsByPair" :key="`${group.src}-${group.dst}`" class="card moved-group">
+            <div class="card-header">
+              <h3 class="font-mono">
+                Node {{ group.src }} &rarr; Node {{ group.dst }}
+                <span class="text-muted">({{ group.items.length }})</span>
+              </h3>
+            </div>
+            <div class="card-body" style="padding: 0;">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Direction</th>
+                    <th>Type</th>
+                    <th>Phase</th>
+                    <th class="text-right">Before</th>
+                    <th class="text-right">After</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="m in group.items" :key="m.id">
+                    <td>
+                      <span class="badge" :class="m.direction === 'in' ? 'badge-info' : 'badge-secondary'">
+                        {{ m.direction }}
+                      </span>
+                    </td>
+                    <td>{{ m.item_type }}</td>
+                    <td class="text-muted">{{ m.phase || '-' }}</td>
+                    <td class="font-mono text-right">{{ m.size_before ?? '-' }}</td>
+                    <td class="font-mono text-right">{{ m.size_after ?? '-' }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
 
         <!-- Overview Tab -->
@@ -290,6 +363,23 @@ function getSelectedFileContent() {
 </template>
 
 <style scoped>
+.moved-intro {
+  margin-bottom: 1rem;
+}
+
+.moved-group {
+  margin-bottom: 1rem;
+}
+
+.moved-group h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.text-right {
+  text-align: right;
+}
+
 .page {
   max-width: 1200px;
   margin: 0 auto;

@@ -39,8 +39,14 @@ def _window(days: int) -> datetime:
     return datetime.utcnow() - timedelta(days=days)
 
 
-def _filtered(db: Session, days, league_id, direction, item_type, node):
-    q = db.query(ProcessingRunItem).filter(ProcessingRunItem.occurred_at >= _window(days))
+def _filtered(db: Session, days, league_id, direction, item_type, node, run_id=None):
+    q = db.query(ProcessingRunItem)
+    if run_id is not None:
+        # One run is a closed set: it either has items or it does not, and the
+        # time window is meaningless against it.
+        q = q.filter(ProcessingRunItem.processing_run_id == run_id)
+    else:
+        q = q.filter(ProcessingRunItem.occurred_at >= _window(days))
     if league_id is not None:
         q = q.filter(ProcessingRunItem.league_id == league_id)
     if direction:
@@ -63,6 +69,7 @@ async def list_movements(
     direction: Optional[str] = Query(None, pattern="^(in|out)$"),
     item_type: Optional[str] = Query(None),
     node: Optional[int] = Query(None),
+    run_id: Optional[int] = Query(None, description="One run's items; ignores `days`"),
     limit: int = Query(200, ge=1, le=2000),
     current_user: SysopUser = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -73,9 +80,10 @@ async def list_movements(
     - `days`: how far back to look (default 7)
     - `league_id`, `direction` (`in`/`out`), `item_type`, `node`: filters
     - `node` matches either end of the transfer
+    - `run_id`: just this run's items, whatever their age
     """
     rows = (
-        _filtered(db, days, league_id, direction, item_type, node)
+        _filtered(db, days, league_id, direction, item_type, node, run_id)
         .order_by(ProcessingRunItem.occurred_at.desc(), ProcessingRunItem.id.desc())
         .limit(limit)
         .all()

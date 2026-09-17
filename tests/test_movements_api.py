@@ -212,3 +212,29 @@ def test_filtering_by_league_keeps_leagues_apart(api):
     rows = client.get(f"{BASE}/?league_id={league.id}").json()
 
     assert [r["item_type"] for r in rows] == ["Recon Update"]
+
+
+def test_one_runs_items_are_fetchable_whatever_their_age(api):
+    """The per-run panel on a processing run.
+
+    A run from six months ago still shows what it moved when you open it -- the
+    time window belongs to the browsable view, not to a run you asked for by id.
+    """
+    client, db = api
+    league, run = seed(db, [
+        ("in", "Recon Update", 2, 1, 200),
+        ("out", "Configupdate", 1, 2, 200),
+    ])
+
+    rows = client.get(f"{BASE}/?run_id={run.id}").json()
+
+    assert len(rows) == 2
+    assert all(r["processing_run_id"] == run.id for r in rows)
+
+
+def test_a_run_that_moved_nothing_returns_an_empty_list(api):
+    """Failed runs and quiet runs both land here; neither is an error."""
+    client, db = api
+    league, run = seed(db, [])
+
+    assert client.get(f"{BASE}/?run_id={run.id}").json() == []

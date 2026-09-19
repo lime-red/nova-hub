@@ -35,7 +35,7 @@ table is what actually holds.
 | Sequence numbers are dense, so any unseen number is a lost packet (the hub's gap detector) | **They are not.** Each new game day consumes *two* sequence numbers and writes one file at the second — `.002`, `.004`, `.006` on three consecutive days. Forced traffic (`REQUEST` + `OUTBOUND`) advances by one, so a route's stride depends on what is driving it. Production had **705 gap alerts, all unresolved**, gap=1 the largest bucket. Fixed 2026-09-12: the detector now learns each route's own stride. See `ROLLOUT_PLAN.md` card B-4. |
 | A healthy node emits a packet every game day | Only while it has something to say. An idle league produces on days one, two and three and then **nothing** — maintenance still runs and still prints its completion marker on days four to six. Silence is not a fault, and a "packet a day" health check would be the gap detector's mistake all over again. Generating longer runs of traffic needs player activity. |
 | — | Player activity is now available: `rig/player.py` drives `BRE.EXE FULL` through `dosdrive`, taking turns and sending interplanetary mail. `node.run()` still refuses `FULL` — that refusal is about *unattended* runs and remains correct. See §10. |
-| — | **A BBS user name must be unique across the league.** BRE scans for duplicate users on every interBBS start and refuses a name already playing on another board: `Duplicate User Found on BBS #2 ... you cannot join this game.` There is no prompt to get past; the session simply never reaches the main menu. `player.door_user()` derives the name from the node index. |
+| — | **Duplicate user checking is a league setting** — page 2 of the configuration editor during RESET, and changeable mid-league. While it is on, BRE refuses a BBS user name already playing on another board: `Duplicate User Found on BBS #2 ... you cannot join this game.` There is no prompt to get past; the session simply never reaches the main menu. The rig leaves the setting at its default and gives each node its own name via `player.door_user()`, which is correct either way. |
 | — | The status screen **omits a line rather than printing a zero**: a realm holding no cash has no `Gold:` line, and an empty account has no `Bank:`. Absent means zero for those two; for anything else a missing field means the parse failed. |
 | — | BRE **banks the day's gold automatically** at the end of a turn, so a realm that has just played reads `Gold: 0` with a full account. Any "is this realm broke?" logic has to read gold *plus* bank. |
 | — | `(7) Send Messages` on the main menu is **local to the planet** — it asks `(A-Y,Z=All) Send to:` and never leaves the board. Interplanetary mail, the kind that becomes a packet, is `(9) InterPlanetary Ops` → `(7) Send Message` → a scope, of which `(3) All Planets` needs no planet number. |
@@ -334,11 +334,32 @@ out and is what packs the day's mail into a packet; a killed session leaves
 `inuse.flg` behind, and every later run then exits 1 having printed nothing about
 why.
 
-### Known gap
+### Reading interplanetary mail
 
-`test_player_traffic.py` asserts that a **score** crosses: node 2 plays, the hub
-ingests the packet, and node 1's `Top Players by Score` lists `Node Two` with the
-score it earned. The **message** is only asserted as far as being sent and
-ingested — after one processing round it does not appear in node 1's
-`(6) Read Messages`, and where an All-Planets message surfaces for the receiving
-player has not been worked out.
+**Interplanetary messages are never shown under `(6) Read Messages`.** They
+appear at the **start of play** — press `(1)`, and after any local messages the
+game shows each one in a reader:
+
+```
+┌──────────────────────────────────────────────────09/19/2026  06:15:42─────
+│ Message From: Node Two on Test Node 02
+│ Message To  : ABCDEFGHIJKLMNOPQRSTUVWXY
+├─────═══════───────────────────────────
+│ RIG PLAYER MESSAGE ONE
+[R]  Reply, [D]  Delete, [I]  Ignore, or [Q]  Quit>
+```
+
+That prompt looks nothing like a menu, so a walk that only knows about `Choice>`
+hangs on it forever. `player` answers `Q`, which leaves the mail alone and closes
+the reader; `Player.turn_text` has already captured what was shown, so a scenario
+asserts on that.
+
+This is why `test_the_score_and_message_arrive_at_the_other_node` has node 1 play
+a turn rather than just read its menus: playing is the only way to see the mail.
+
+### If a walk does hang
+
+`player.visit()` clears `inuse.flg` and reports the tail of the transcript rather
+than letting the timeout propagate. Without that, one unanswered prompt fails
+every later test on that install — the game's mutex outlives the killed session,
+and the next run exits 1 having printed nothing about why.

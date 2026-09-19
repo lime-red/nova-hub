@@ -86,8 +86,8 @@ async def test_player_traffic_reaches_the_hub_game(pristine, hub):
     )
 
 
-async def test_the_score_change_arrives_at_the_other_node(pristine, hub):
-    """The whole point: node 2 plays, and node 1's game knows about it.
+async def test_the_score_and_message_arrive_at_the_other_node(pristine, hub):
+    """The whole point: node 2 plays and writes, and node 1 sees both.
 
     Asserted from inside the receiving game rather than from the packet, because
     a packet that arrives and is not ingested looks identical from outside -- the
@@ -104,9 +104,11 @@ async def test_the_score_change_arrives_at_the_other_node(pristine, hub):
     await hub.process()
     assert hub.last_run().packets_unconsumed == 0
 
-    # Now look at the hub's own game as a player would.
-    seen = player.visit(LEAGUE, HUB, realm="Node One", read_ip_scores=True,
-                        read_messages=True, tag="pt3_hub")
+    # Now look at the hub's own game as a player would. Playing a turn is not
+    # incidental: interplanetary mail is only readable at the start of play,
+    # after any local messages. It never appears under (6) Read Messages.
+    seen = player.visit(LEAGUE, HUB, realm="Node One", turns=1,
+                        read_ip_scores=True, tag="pt3_hub")
 
     assert "Node Two" in seen["ip_scores"], (
         "node 1's IPScores do not mention the realm that played;\n"
@@ -115,6 +117,10 @@ async def test_the_score_change_arrives_at_the_other_node(pristine, hub):
     assert str(played["status_after"]["score"]) in seen["ip_scores"].replace(",", ""), (
         f"node 2 scored {played['status_after']['score']} but node 1 does not show "
         f"it;\n{seen['ip_scores'][-2000:]}"
+    )
+    assert MESSAGE in seen["turn_text"], (
+        "node 2's interplanetary message was not shown to node 1 at the start of "
+        f"play;\n{seen['turn_text'][:3000]}"
     )
 
 

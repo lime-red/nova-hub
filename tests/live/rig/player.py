@@ -39,15 +39,17 @@ PAUSED = r">Paused<"
 # there. Seven lines, CRLF, as SETUP.SR documents.
 DOORFILE = "{name}\r\n1\r\n1\r\n0\r\n38400\r\n0\r\n-1\r\n{name}\r\n"
 
-# The BBS user name in that door file must be UNIQUE ACROSS THE LEAGUE. BRE scans
-# for duplicate users on every interBBS start, and a name already playing on
+# The BBS user name in that door file should be UNIQUE ACROSS THE LEAGUE. When
+# duplicate checking is on -- it is a league setting, page 2 of the configuration
+# editor during RESET, and changeable mid-league -- a name already playing on
 # another board is refused outright:
 #
 #     Duplicate User Found on BBS #2 (Test Node 02), Player A
 #     ... you cannot join this game.
 #
-# It is not a warning and there is no prompt to get past it -- the session simply
-# never reaches the main menu. So the name is derived from the node index.
+# It is not a warning and there is no prompt to get past it: the session simply
+# never reaches the main menu. The rig leaves the setting at its default and
+# derives a unique name per node instead, which is correct either way.
 
 
 def door_user(node_index: int) -> str:
@@ -83,6 +85,14 @@ def _prompts(realm: str, on_continue="N"):
         (r"Do you wish to visit the Bank", "\r"),
         # "How much will you give? (40; 40)" / "Buy how many Jets? (0; 120)"
         (r"\(\s*[\d,]+;\s*[\d,]+\s*\)\s*$", "\r"),
+        # Interplanetary mail is shown at the START OF PLAY, after any local
+        # messages -- never under (6) Read Messages -- and each one waits on its
+        # own reader prompt, which looks nothing like a menu:
+        #     [R]  Reply, [D]  Delete, [I]  Ignore, or [Q]  Quit>
+        # Q leaves the mail alone and closes the reader. The text has already
+        # been captured by then (see play_turns), so nothing is lost by not
+        # paging through the rest.
+        (r"\[R\]\s+Reply|\[Q\]\s+Quit>", "Q"),
         (PAUSED,                         "\r"),
         (r"Continue\?",                  "Y"),
         (r"\[Hit a key\]|any key",       "\r"),
@@ -100,6 +110,7 @@ class Player:
                  user: str = "TEST PILOT", transcript=None, conf=DOSEMU_CONF):
         self.install, self.realm, self.user = Path(install), realm, user
         self.events = []
+        self.turn_text = ""
 
         (self.install / "DOORFILE.SR").write_bytes(
             DOORFILE.format(name=user).encode("latin-1"))
@@ -285,6 +296,7 @@ class Player:
         change is the thing that has to survive the trip to another host.
         """
         remaining = {"turns": count}
+        start = len(self.session._buf)
 
         def on_continue():
             remaining["turns"] -= 1
@@ -299,6 +311,11 @@ class Player:
                 f"play did not end back at the main menu; last prompt was "
                 f"{self.prompt!r}\n--- screen ---\n{self.screen}"
             )
+        # Everything the turn printed, kept for callers who need to assert on
+        # what the game said rather than on what it stored. Interplanetary mail
+        # is only readable here -- BRE shows it at the start of play, after any
+        # local messages, and never under (6) Read Messages.
+        self.turn_text = _strip(bytes(self.session._buf[start:]))
         played = count - max(remaining["turns"], 0)
         if played < count:
             raise RuntimeError(
@@ -439,11 +456,14 @@ def main(argv=None):
         result["status_before"] = player.status()
         if plan.get("turns"):
             result["turns_played"] = player.play_turns(plan["turns"])
+            result["turn_text"] = player.turn_text
         for text in plan.get("ip_messages", []):
             player.send_ip_message(text)
         for _ in range(plan.get("agent_rounds", 0)):
             result.setdefault("decisions", []).append(
                 player.agent_round(plan.get("history"), plan.get("message")))
+            if player.turn_text:
+                result["turn_text"] = player.turn_text
         if plan.get("read_ip_scores"):
             result["ip_scores"] = player.ip_scores(plan["read_ip_scores"])
         if plan.get("read_messages"):
@@ -512,11 +532,26 @@ def visit(league: League, node: Node, realm: str = None, user: str = None,
         "read_messages": read_messages,
         "transcript": str(log),
     }
-    result = subprocess.run(
-        _sudo(node, str(VENV_PYTHON), "-m", "rig.player", json.dumps(plan)),
-        cwd=str(Path(__file__).resolve().parents[1]),
-        capture_output=True, text=True, timeout=timeout,
-    )
+    try:
+        result = subprocess.run(
+            _sudo(node, str(VENV_PYTHON), "-m", "rig.player", json.dumps(plan)),
+            cwd=str(Path(__file__).resolve().parents[1]),
+            capture_output=True, text=True, timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        # A killed session leaves the game's mutex behind, and then every later
+        # run on this install exits 1 having printed nothing about why -- so one
+        # hung walk would fail every test after it. Clear it, and say where the
+        # walk got stuck rather than leaving that in a log nobody reads.
+        subprocess.run(_sudo(node, "rm", "-f", str(install / "inuse.flg")),
+                       check=False)
+        tail = subprocess.run(_sudo(node, "tail", "-c", "1500", str(log)),
+                              capture_output=True, text=True, check=False)
+        raise RuntimeError(
+            f"player session on {league.league_id} node {node.index} did not "
+            f"finish within {timeout}s -- most likely an unanswered prompt.\n"
+            f"--- last of the transcript ---\n{tail.stdout}"
+        ) from None
     marker = "##PLAYER##"
     if marker not in result.stdout:
         raise RuntimeError(

@@ -40,6 +40,7 @@ table is what actually holds.
 | — | BRE **banks the day's gold automatically** at the end of a turn, so a realm that has just played reads `Gold: 0` with a full account. Any "is this realm broke?" logic has to read gold *plus* bank. |
 | — | `(7) Send Messages` on the main menu is **local to the planet** — it asks `(A-Y,Z=All) Send to:` and never leaves the board. Interplanetary mail, the kind that becomes a packet, is `(9) InterPlanetary Ops` → `(7) Send Message` → a scope, of which `(3) All Planets` needs no planet number. |
 | — | `(9)` → `(1) View IPScores` is a *menu of reports*, not a listing. Only the `Top Players by ...` reports name individual realms; the `Top Planets by ...` ones are per-board totals. |
+| The rig runs on the repo's pinned dependencies | The rig venv **has never matched `requirements.txt` and cannot.** It is python 3.13; the product pins `aiohttp==3.10.0`, which publishes no wheel for 3.13 and fails to build from source there (3.14.3 is what is installed and working). The rig imports the hub's own code, not a pinned dependency surface, so `tests/live/requirements.txt` adds only what the rig needs and leaves the base environment alone. See §11. |
 | — | Re-running while a packet is still pending in OUTBOUND **rewrites it in place and keeps its number** — 176 → 232 → 288 bytes under one filename. A packet sitting in a game outbound folder is not a finished artefact; its contents change until something collects it. |
 
 ---
@@ -363,3 +364,53 @@ a turn rather than just read its menus: playing is the only way to see the mail.
 than letting the timeout propagate. Without that, one unanswered prompt fails
 every later test on that install — the game's mutex outlives the killed session,
 and the next run exits 1 having printed nothing about why.
+
+---
+
+## 11. The rig interpreter
+
+`/srv/novatest/venv` on novatest-hl, python 3.13, **owned by `novahub-t`** (the
+rig owner, which is who `run.sh` runs as) and readable by every node user, who
+reach it through `sudo -u`. One venv per machine, not per checkout: the node
+users have to be able to execute it, and each one's game tree is private to
+itself.
+
+Two things it needs that are not in `requirements.txt`, because they belong to
+the rig rather than to the product:
+
+| | why |
+|---|---|
+| `pyte==0.8.2` | the terminal emulator `dosdrive.py` reconstructs the 80×25 screen with |
+| `bre-agent @ ...@v0.1.0` | the decision module `player.py` hands the wheel to for `agent_rounds` |
+
+```sh
+tests/live/run.sh --setup          # installs both, then runs as normal
+```
+
+`bre-agent` is pinned to a **tag, not a branch**: a scenario asserting on which
+action the agent chose is asserting on that version's goal weights and alignment
+table, so an unpinned dependency would make those tests change meaning without a
+commit. `claude/bre-agent` is public, so the rig and the nightly runner need no
+credentials — novatest-hl has no ssh access to gitea, but https works.
+
+Both were previously installed by hand and recorded nowhere. `run.sh` now checks
+for them before doing anything and says exactly how to fix it, because the
+alternative is a machine that looks healthy until a walk dies on an ImportError
+deep inside dosemu — which reads like a broken test rather than a half-built
+host.
+
+### Rebuilding the venv from scratch
+
+```sh
+python3 -m venv /srv/novatest/venv
+/srv/novatest/venv/bin/pip install -r <repo>/requirements.txt   # see the caveat below
+/srv/novatest/venv/bin/pip install -r <repo>/tests/live/requirements.txt
+sudo chown -R novahub-t:novahub-t /srv/novatest/venv
+sudo chmod -R a+rX /srv/novatest/venv
+```
+
+The caveat: on python 3.13 the product requirements do **not** install cleanly —
+`aiohttp==3.10.0` has no wheel for it and its source build fails. The working
+environment has 3.14.3. Installing the product requirements with that one pin
+relaxed is what the current venv effectively is; nothing in the rig depends on
+the exact versions, since it imports the hub's own modules directly.

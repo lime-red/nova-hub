@@ -414,3 +414,41 @@ The caveat: on python 3.13 the product requirements do **not** install cleanly �
 environment has 3.14.3. Installing the product requirements with that one pin
 relaxed is what the current venv effectively is; nothing in the rig depends on
 the exact versions, since it imports the hub's own modules directly.
+
+### The unit suite on the rig
+
+The rig tree carries its own `config.toml`, and it is **host state, not in git** —
+`/srv/novatest/nova-hub` is a deployed copy, not a checkout. The product's
+`get_config()` reads `config.toml` relative to the cwd, so running the unit suite
+from the rig tree picks that file up.
+
+It was copied from a dev box and still said `data_dir = "/home/lime/nova-data"` —
+a path that does not exist on novatest-hl and that `novahub-t` could not write to
+anyway. That cost exactly one test:
+`tests/test_integration.py::test_service_packet_upload_and_list` returned 500 with
+`PermissionError: [Errno 13]`. `data_dir` is now `/home/novahub-t/unit-data`, owned
+by the rig user, and the suite is **196 passed, 46 skipped**.
+
+Two things make that failure much harder to read than it should be, and both are
+worth knowing before chasing the next one:
+
+- The fixture builds its client with `TestClient(app, raise_server_exceptions=False)`,
+  so the body is a bare `Internal Server Error` and pytest prints no traceback.
+  To see the real exception, wrap
+  `starlette.middleware.errors.ServerErrorMiddleware.__call__` in a plugin that
+  prints it and pass `-p`. The rig tree is not writable by the session user, so
+  put the plugin in `/tmp` and run with `PYTHONPATH=/tmp`.
+- That test *intended* to isolate uploads to `tmp_path` by monkeypatching
+  `backend.core.config.get_config`, but the patch never reached the upload
+  handler: `packets.py` binds `get_config` at import time, so rebinding it on
+  the source module is not seen there. The packet landed in the ambient
+  `data_dir` instead, and the test quietly depended on that path being writable —
+  which is why it passed on a dev box and failed here. It now patches
+  `backend.api.service.packets.get_config` (the name that is actually used) and
+  asserts the packet is in `tmp_path`, so a patch that misses fails loudly rather
+  than passing by accident. Verified by running it against a deliberately
+  unwritable `data_dir`: green, and the ambient directory stays empty.
+
+None of the live rig tests are affected: they build their own data dirs
+(`rig/hub.py::make_data_dir`), and the viewer hub has its own config at
+`/srv/novatest/viewer/config.toml`.

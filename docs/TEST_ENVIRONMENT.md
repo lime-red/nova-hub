@@ -438,12 +438,16 @@ worth knowing before chasing the next one:
   `starlette.middleware.errors.ServerErrorMiddleware.__call__` in a plugin that
   prints it and pass `-p`. The rig tree is not writable by the session user, so
   put the plugin in `/tmp` and run with `PYTHONPATH=/tmp`.
-- That test *intends* to isolate uploads to `tmp_path` by monkeypatching
-  `backend.core.config.get_config`, but the patch does not reach the upload
-  handler's lookup — the packet still lands in the ambient `data_dir`
-  (`unit-data/packets/inbound/555B0201.001` after a run). The test therefore
-  depends on the ambient config being writable, which is why it passes on a dev
-  box and failed here. Fixing the patch would make it independent of both.
+- That test *intended* to isolate uploads to `tmp_path` by monkeypatching
+  `backend.core.config.get_config`, but the patch never reached the upload
+  handler: `packets.py` binds `get_config` at import time, so rebinding it on
+  the source module is not seen there. The packet landed in the ambient
+  `data_dir` instead, and the test quietly depended on that path being writable —
+  which is why it passed on a dev box and failed here. It now patches
+  `backend.api.service.packets.get_config` (the name that is actually used) and
+  asserts the packet is in `tmp_path`, so a patch that misses fails loudly rather
+  than passing by accident. Verified by running it against a deliberately
+  unwritable `data_dir`: green, and the ambient directory stays empty.
 
 None of the live rig tests are affected: they build their own data dirs
 (`rig/hub.py::make_data_dir`), and the viewer hub has its own config at

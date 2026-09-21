@@ -219,7 +219,7 @@ def test_service_packet_list_requires_auth(client):
     assert response.status_code == 401
 
 
-def test_service_packet_upload_and_list(client, tmp_path, oauth_client, league_with_member):
+def test_service_packet_upload_and_list(client, tmp_path, oauth_client, league_with_member, monkeypatch):
     # Get bearer token
     token_resp = client.post(
         "/service/api/v1/auth/token",
@@ -233,12 +233,14 @@ def test_service_packet_upload_and_list(client, tmp_path, oauth_client, league_w
     token = token_resp.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
 
-    # Patch data_dir to use tmp_path so uploads actually land somewhere.
-    # Use sys.modules directly because backend.core.__init__ shadows the 'config'
-    # submodule attribute with a None value (from `from .config import config`).
-    import sys
-    cfg_module = sys.modules["backend.core.config"]
-    original_get = cfg_module.get_config
+    # Point data_dir at tmp_path so the upload lands somewhere this test owns.
+    #
+    # Patch the name in the module that *uses* it. packets.py binds get_config
+    # at import time (`from backend.core.config import get_config`), so
+    # rebinding backend.core.config.get_config is never seen there: the upload
+    # would write into whatever the ambient config.toml says instead, and the
+    # test would quietly depend on that path being writable.
+    from backend.api.service import packets as packets_api
 
     class FakeConfig:
         class security:
@@ -249,23 +251,26 @@ def test_service_packet_upload_and_list(client, tmp_path, oauth_client, league_w
                 return {"data_dir": str(tmp_path)}
             return default
 
-    cfg_module.get_config = lambda: FakeConfig()
-    try:
-        # Upload packet from BBS 02 to BBS 01
-        packet_data = b"FAKE_BRE_PACKET_DATA_0001"
-        upload_resp = client.put(
-            "/service/api/v1/leagues/555B/packets/555B0201.001",
-            content=packet_data,
-            headers={**headers, "Content-Type": "application/octet-stream"},
-        )
-        assert upload_resp.status_code == 200, upload_resp.text
-        assert upload_resp.json()["status"] == "received"
+    monkeypatch.setattr(packets_api, "get_config", lambda: FakeConfig())
 
-        # List packets
-        list_resp = client.get("/service/api/v1/leagues/555B/packets", headers=headers)
-        assert list_resp.status_code == 200
-    finally:
-        cfg_module.get_config = original_get
+    # Upload packet from BBS 02 to BBS 01
+    packet_data = b"FAKE_BRE_PACKET_DATA_0001"
+    upload_resp = client.put(
+        "/service/api/v1/leagues/555B/packets/555B0201.001",
+        content=packet_data,
+        headers={**headers, "Content-Type": "application/octet-stream"},
+    )
+    assert upload_resp.status_code == 200, upload_resp.text
+    assert upload_resp.json()["status"] == "received"
+
+    # It landed in the test's own directory, which is what makes the patch
+    # worth having: assert it, or a patch that misses would look like a pass.
+    landed = tmp_path / "packets" / "inbound" / "555B0201.001"
+    assert landed.read_bytes() == packet_data
+
+    # List packets
+    list_resp = client.get("/service/api/v1/leagues/555B/packets", headers=headers)
+    assert list_resp.status_code == 200
 
 
 # ---------------------------------------------------------------------------

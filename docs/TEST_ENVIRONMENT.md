@@ -414,3 +414,37 @@ The caveat: on python 3.13 the product requirements do **not** install cleanly �
 environment has 3.14.3. Installing the product requirements with that one pin
 relaxed is what the current venv effectively is; nothing in the rig depends on
 the exact versions, since it imports the hub's own modules directly.
+
+### The unit suite on the rig
+
+The rig tree carries its own `config.toml`, and it is **host state, not in git** —
+`/srv/novatest/nova-hub` is a deployed copy, not a checkout. The product's
+`get_config()` reads `config.toml` relative to the cwd, so running the unit suite
+from the rig tree picks that file up.
+
+It was copied from a dev box and still said `data_dir = "/home/lime/nova-data"` —
+a path that does not exist on novatest-hl and that `novahub-t` could not write to
+anyway. That cost exactly one test:
+`tests/test_integration.py::test_service_packet_upload_and_list` returned 500 with
+`PermissionError: [Errno 13]`. `data_dir` is now `/home/novahub-t/unit-data`, owned
+by the rig user, and the suite is **196 passed, 46 skipped**.
+
+Two things make that failure much harder to read than it should be, and both are
+worth knowing before chasing the next one:
+
+- The fixture builds its client with `TestClient(app, raise_server_exceptions=False)`,
+  so the body is a bare `Internal Server Error` and pytest prints no traceback.
+  To see the real exception, wrap
+  `starlette.middleware.errors.ServerErrorMiddleware.__call__` in a plugin that
+  prints it and pass `-p`. The rig tree is not writable by the session user, so
+  put the plugin in `/tmp` and run with `PYTHONPATH=/tmp`.
+- That test *intends* to isolate uploads to `tmp_path` by monkeypatching
+  `backend.core.config.get_config`, but the patch does not reach the upload
+  handler's lookup — the packet still lands in the ambient `data_dir`
+  (`unit-data/packets/inbound/555B0201.001` after a run). The test therefore
+  depends on the ambient config being writable, which is why it passes on a dev
+  box and failed here. Fixing the patch would make it independent of both.
+
+None of the live rig tests are affected: they build their own data dirs
+(`rig/hub.py::make_data_dir`), and the viewer hub has its own config at
+`/srv/novatest/viewer/config.toml`.

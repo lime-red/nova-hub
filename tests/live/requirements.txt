@@ -1,0 +1,29 @@
+# What the live rig's interpreter needs *in addition to* nova-hub's own
+# requirements. Install into the rig venv:
+#
+#     tests/live/run.sh --setup
+#     # or: /srv/novatest/venv/bin/pip install -r tests/live/requirements.txt
+#
+# Both of these were previously installed by hand and recorded nowhere, which
+# meant a rebuilt rig host looked healthy until a walk failed deep inside dosemu
+# with an ImportError.
+#
+# This file deliberately does NOT `-r ../../requirements.txt`. The rig venv
+# (/srv/novatest/venv, python 3.13, owned by novahub-t and read by every node
+# user) has never matched the product pins and cannot: requirements.txt pins
+# aiohttp==3.10.0, which publishes no wheel for 3.13 and fails to build from
+# source on that host, where 3.14.3 is installed and working. Nothing in the rig
+# depends on those exact versions -- it imports the hub's own code, not a pinned
+# dependency surface -- so this file adds what the rig needs and leaves the base
+# environment alone rather than forcing a downgrade that cannot install.
+
+# The terminal emulator dosdrive.py reconstructs the 80x25 screen with. A test
+# dependency for now; it becomes a product one if dosdrive is ever promoted into
+# backend/services (ROLLOUT_PLAN F-5).
+pyte==0.8.2
+
+# The decision module rig/player.py hands the wheel to for agent_rounds. Pinned
+# to a tag, not a branch: a scenario that asserts on which action was chosen is
+# asserting on that version's goal weights and alignment table. The repo is
+# public, so the rig and the nightly runner need no credentials for it.
+bre-agent @ git+https://gitea-hl.taild204f.ts.net/claude/bre-agent.git@v0.1.0

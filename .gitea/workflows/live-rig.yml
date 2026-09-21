@@ -33,6 +33,17 @@ jobs:
           sudo find /srv/novatest/nova-hub -name '._*' -delete
           sudo chmod -R a+rX /srv/novatest/nova-hub
 
+      - name: Install what the rig interpreter needs
+        # pyte (the screen emulator dosdrive reconstructs with) and bre-agent
+        # (the decision module player.py asks) are rig dependencies, not product
+        # ones, so they are not in requirements.txt. bre-agent is pinned to a tag
+        # over https -- the repo is public, so the runner needs no credentials.
+        # Cheap when already satisfied, and the alternative is a machine that
+        # looks fine until a walk dies on an ImportError.
+        run: |
+          sudo -u novahub-t /srv/novatest/venv/bin/python -m pip install -q \
+            -r /srv/novatest/nova-hub/tests/live/requirements.txt
+
       - name: Run the rig
         # run.sh rebuilds stale fixtures by itself, then runs the suite as the
         # hub user. A non-zero exit is a real failure: the tree skips itself

@@ -34,6 +34,13 @@ table is what actually holds.
 | — | One `process_batch()` is **one `ProcessingRun`** even when it spans several leagues or games. The separation is in the `(game_type, league_id)` grouping and in per-file `league_id`, not in the run count. |
 | Sequence numbers are dense, so any unseen number is a lost packet (the hub's gap detector) | **They are not.** Each new game day consumes *two* sequence numbers and writes one file at the second — `.002`, `.004`, `.006` on three consecutive days. Forced traffic (`REQUEST` + `OUTBOUND`) advances by one, so a route's stride depends on what is driving it. Production had **705 gap alerts, all unresolved**, gap=1 the largest bucket. Fixed 2026-09-12: the detector now learns each route's own stride. See `ROLLOUT_PLAN.md` card B-4. |
 | A healthy node emits a packet every game day | Only while it has something to say. An idle league produces on days one, two and three and then **nothing** — maintenance still runs and still prints its completion marker on days four to six. Silence is not a fault, and a "packet a day" health check would be the gap detector's mistake all over again. Generating longer runs of traffic needs player activity. |
+| — | Player activity is now available: `rig/player.py` drives `BRE.EXE FULL` through `dosdrive`, taking turns and sending interplanetary mail. `node.run()` still refuses `FULL` — that refusal is about *unattended* runs and remains correct. See §10. |
+| — | **Duplicate user checking is a league setting** — page 2 of the configuration editor during RESET, and changeable mid-league. While it is on, BRE refuses a BBS user name already playing on another board: `Duplicate User Found on BBS #2 ... you cannot join this game.` There is no prompt to get past; the session simply never reaches the main menu. The rig leaves the setting at its default and gives each node its own name via `player.door_user()`, which is correct either way. |
+| — | The status screen **omits a line rather than printing a zero**: a realm holding no cash has no `Gold:` line, and an empty account has no `Bank:`. Absent means zero for those two; for anything else a missing field means the parse failed. |
+| — | BRE **banks the day's gold automatically** at the end of a turn, so a realm that has just played reads `Gold: 0` with a full account. Any "is this realm broke?" logic has to read gold *plus* bank. |
+| — | `(7) Send Messages` on the main menu is **local to the planet** — it asks `(A-Y,Z=All) Send to:` and never leaves the board. Interplanetary mail, the kind that becomes a packet, is `(9) InterPlanetary Ops` → `(7) Send Message` → a scope, of which `(3) All Planets` needs no planet number. |
+| — | `(9)` → `(1) View IPScores` is a *menu of reports*, not a listing. Only the `Top Players by ...` reports name individual realms; the `Top Planets by ...` ones are per-board totals. |
+| The rig runs on the repo's pinned dependencies | The rig venv **has never matched `requirements.txt` and cannot.** It is python 3.13; the product pins `aiohttp==3.10.0`, which publishes no wheel for 3.13 and fails to build from source there (3.14.3 is what is installed and working). The rig imports the hub's own code, not a pinned dependency surface, so `tests/live/requirements.txt` adds only what the rig needs and leaves the base environment alone. See §11. |
 | — | Re-running while a packet is still pending in OUTBOUND **rewrites it in place and keeps its number** — 176 → 232 → 288 bytes under one filename. A packet sitting in a game outbound folder is not a finished artefact; its contents change until something collects it. |
 
 ---
@@ -264,3 +271,146 @@ packages.** The completion-marker check added in this phase turns it from silent
 into a failed run, but only for leagues that declare a marker.
 
 `novahub-vtr` has deliberately not been inspected or touched.
+
+---
+
+## 10. Playing as a player
+
+`tests/live/rig/player.py`. Everything else in the rig drives the games the way
+the hub does — unattended maintenance — which cannot produce the two things a
+league actually carries once people are in it: a score that changed because
+somebody took a turn, and a message somebody wrote.
+
+```python
+from rig import player
+
+# do exactly this
+player.visit(LEAGUE, NODE02, realm="Node Two", turns=1,
+             ip_messages=["hello"])
+
+# or hand the wheel to the decision module
+player.visit(LEAGUE, NODE02, agent_rounds=3, activity_weight=1.0)
+```
+
+`visit()` returns the parsed status before and after, so a scenario can assert on
+a **score change** rather than merely on a packet appearing, plus the decisions
+taken and the path of the JSONL log they were written to.
+
+### Driving an interactive DOS game: what it actually takes
+
+`dosdrive.py` already had the pty and the pyte screen. Three things had to be
+added on top, each found the hard way:
+
+* **Match the live prompt, not the history.** `dosdrive.until()` matches its
+  answers against `screen_text() + raw_text()`, and `raw_text` is append-only. A
+  prompt seen once therefore matches forever, and its answer re-fires into
+  whatever is on screen later. On the provisioner's short `RESET` walk that never
+  shows; on a player walk it typed `Y` into the realm-name field and wandered off
+  into the buy menu. `player.Player.prompt` is the last non-empty screen line
+  (skipping the permanent `F2=Extra Information` status bar), and answers are
+  matched against that alone.
+* **Never press bare `<CR>` to "settle" a screen.** At BRE's `Choice>` an empty
+  line selects `(1) Play Game`, and the walk disappears into the daily turn
+  sequence.
+* **An answer may re-fire only once the whole screen has changed.** Keying that
+  on the prompt *line* instead stalls forever: every page of BRE's instructions
+  ends in the same `Continue? (Y/n)`.
+
+### The daily turn
+
+One press of `(1)` plays a turn and then asks `Do you wish to continue?`; `Y`
+runs straight into the next one, so a whole session is a single trip through Play
+Game with that one answer counting down. Everything in between has a default, and
+taking every default is the do-nothing turn: Diplomacy → Status → Payment/Food
+Market → Covert Ops → Bank → Spending → Attacks → Trading → IP Ops → Messages,
+quitting each submenu with `0` and taking `<CR>` at every `How much will you
+give? (x; y)`.
+
+A do-nothing turn still moves the score — production runs and taxes are
+collected — which is the point: a nominal score change is a real thing to send to
+another host.
+
+Quitting through `(0)` is not politeness. `FULL`'s outbound half runs on the way
+out and is what packs the day's mail into a packet; a killed session leaves
+`inuse.flg` behind, and every later run then exits 1 having printed nothing about
+why.
+
+### Reading interplanetary mail
+
+**Interplanetary messages are never shown under `(6) Read Messages`.** They
+appear at the **start of play** — press `(1)`, and after any local messages the
+game shows each one in a reader:
+
+```
+┌──────────────────────────────────────────────────09/19/2026  06:15:42─────
+│ Message From: Node Two on Test Node 02
+│ Message To  : ABCDEFGHIJKLMNOPQRSTUVWXY
+├─────═══════───────────────────────────
+│ RIG PLAYER MESSAGE ONE
+[R]  Reply, [D]  Delete, [I]  Ignore, or [Q]  Quit>
+```
+
+That prompt looks nothing like a menu, so a walk that only knows about `Choice>`
+hangs on it forever. `player` answers `Q`, which leaves the mail alone and closes
+the reader; `Player.turn_text` has already captured what was shown, so a scenario
+asserts on that.
+
+This is why `test_the_score_and_message_arrive_at_the_other_node` has node 1 play
+a turn rather than just read its menus: playing is the only way to see the mail.
+
+### If a walk does hang
+
+`player.visit()` clears `inuse.flg` and reports the tail of the transcript rather
+than letting the timeout propagate. Without that, one unanswered prompt fails
+every later test on that install — the game's mutex outlives the killed session,
+and the next run exits 1 having printed nothing about why.
+
+---
+
+## 11. The rig interpreter
+
+`/srv/novatest/venv` on novatest-hl, python 3.13, **owned by `novahub-t`** (the
+rig owner, which is who `run.sh` runs as) and readable by every node user, who
+reach it through `sudo -u`. One venv per machine, not per checkout: the node
+users have to be able to execute it, and each one's game tree is private to
+itself.
+
+Two things it needs that are not in `requirements.txt`, because they belong to
+the rig rather than to the product:
+
+| | why |
+|---|---|
+| `pyte==0.8.2` | the terminal emulator `dosdrive.py` reconstructs the 80×25 screen with |
+| `bre-agent @ ...@v0.1.0` | the decision module `player.py` hands the wheel to for `agent_rounds` |
+
+```sh
+tests/live/run.sh --setup          # installs both, then runs as normal
+```
+
+`bre-agent` is pinned to a **tag, not a branch**: a scenario asserting on which
+action the agent chose is asserting on that version's goal weights and alignment
+table, so an unpinned dependency would make those tests change meaning without a
+commit. `claude/bre-agent` is public, so the rig and the nightly runner need no
+credentials — novatest-hl has no ssh access to gitea, but https works.
+
+Both were previously installed by hand and recorded nowhere. `run.sh` now checks
+for them before doing anything and says exactly how to fix it, because the
+alternative is a machine that looks healthy until a walk dies on an ImportError
+deep inside dosemu — which reads like a broken test rather than a half-built
+host.
+
+### Rebuilding the venv from scratch
+
+```sh
+python3 -m venv /srv/novatest/venv
+/srv/novatest/venv/bin/pip install -r <repo>/requirements.txt   # see the caveat below
+/srv/novatest/venv/bin/pip install -r <repo>/tests/live/requirements.txt
+sudo chown -R novahub-t:novahub-t /srv/novatest/venv
+sudo chmod -R a+rX /srv/novatest/venv
+```
+
+The caveat: on python 3.13 the product requirements do **not** install cleanly —
+`aiohttp==3.10.0` has no wheel for it and its source build fails. The working
+environment has 3.14.3. Installing the product requirements with that one pin
+relaxed is what the current venv effectively is; nothing in the rig depends on
+the exact versions, since it imports the hub's own modules directly.

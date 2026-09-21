@@ -3,9 +3,15 @@
 #
 #   ssh novatest-hl 'sudo -u novahub-t /srv/novatest/nova-hub/tests/live/run.sh'
 #   ssh novatest-hl 'sudo -u novahub-t /srv/novatest/nova-hub/tests/live/run.sh --build'
+#   ssh novatest-hl 'sudo -u novahub-t /srv/novatest/nova-hub/tests/live/run.sh --setup'
 #
 # --build provisions all six installs and captures pristine fixtures. It is a
 # once-per-machine step; every run after that restores from those fixtures.
+#
+# --setup installs what the rig interpreter needs (tests/live/requirements.txt).
+# Without it a missing dependency surfaces as an ImportError from inside a walk,
+# which reads like a broken test rather than a half-built machine, so every run
+# checks for them first and says plainly what to do.
 #
 # Everything here is leagues 900B and 901B on novatest-hl. Nothing in this tree
 # touches a production host or a production league number.
@@ -21,13 +27,38 @@ if [[ ! -x "$PYTHON" ]]; then
 fi
 
 build=0
+setup=0
 args=()
 for arg in "$@"; do
     case "$arg" in
         --build) build=1 ;;
+        --setup) setup=1 ;;
         *) args+=("$arg") ;;
     esac
 done
+
+if (( setup )); then
+    # Only the rig's own additions. The base environment is deliberately left
+    # alone -- see the note in tests/live/requirements.txt about the aiohttp pin.
+    "$PYTHON" -m pip install -r "$LIVE_DIR/requirements.txt"
+fi
+
+# pyte is what dosdrive reconstructs the screen with, and bre_agent is what
+# player.py asks for decisions. Neither is in nova-hub's own requirements: they
+# belong to the rig, and the rig venv is built once per machine, so a rebuilt or
+# fresh host is exactly where they go missing.
+missing=$("$PYTHON" - <<'EOF'
+import importlib.util
+print(" ".join(m for m in ("pyte", "bre_agent")
+                if importlib.util.find_spec(m) is None))
+EOF
+)
+if [[ -n "$missing" ]]; then
+    echo "rig interpreter $PYTHON is missing: $missing" >&2
+    echo "install what the rig needs with: $0 --setup" >&2
+    echo "  (or: $PYTHON -m pip install -r $LIVE_DIR/requirements.txt)" >&2
+    exit 1
+fi
 
 # A pristine fixture is only pristine on the day it was captured: the games
 # number packets by game day, so yesterday's fixture restores to a game whose

@@ -30,8 +30,8 @@ pydantic-settings==2.6.0
 # File watching
 watchdog==6.0.0
 
-# HTTP client (for testing)
-aiohttp==3.10.0
+# HTTP client (alert webhooks, backend/services/alert_service.py)
+aiohttp==3.14.3
 
 # ANSI to HTML conversion for logs
 ansi2html==1.9.1

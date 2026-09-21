@@ -32,20 +32,18 @@
       nova_hub_branch: main
       first_run: false
 
-      # dosemu2 packages - from Ubuntu PPA, installed manually on Debian
-      dosemu2_debs:
-          - url: https://code.launchpad.net/~dosemu2/+archive/ubuntu/ppa/+files/comcom64_0.4-0~202602051302+202602051803~ubuntu24.04.1_amd64.deb
-            name: comcom64
-          - url: https://code.launchpad.net/~dosemu2/+archive/ubuntu/ppa/+files/dj64_0.4-0~202602082211+202602090319~ubuntu24.04.1_amd64.deb
-            name: dj64
-          - url: https://code.launchpad.net/~dosemu2/+archive/ubuntu/ppa/+files/djdev64_0.4-0~202602082211+202602090319~ubuntu24.04.1_amd64.deb
-            name: djdev64
-          - url: https://code.launchpad.net/~dosemu2/+archive/ubuntu/ppa/+files/dosemu2_2.0~pre9-10031-632b269d2+202602131817~ubuntu24.04.1_amd64.deb
-            name: dosemu2
-          - url: https://code.launchpad.net/~dosemu2/+archive/ubuntu/ppa/+files/fdpp_1.10-10002-1657-7686237+202602072007~ubuntu24.04.1_amd64.deb
-            name: fdpp
-          - url: https://code.launchpad.net/~dosemu2/+archive/ubuntu/ppa/+files/install-freedos_0.4-3~202512050100+202512050646~ubuntu24.04.1_all.deb
-            name: install-freedos
+      # dosemu2 comes from the maintainers' Ubuntu PPA. There is no Debian
+      # build, and the noble packages run fine on trixie -- which is what the
+      # test rig has been running all along.
+      dosemu2_ppa_suite: noble
+      dosemu2_ppa_key_fingerprint: 6D9CD73B401A130336ED0A56EBE1B5DED2AD45D6
+      dosemu2_packages:
+          - dosemu2
+          - fdpp
+          - comcom32
+          - comcom64
+          - dj64
+          - install-freedos
 
   tasks:
       # ── System user ─────────────────────────────────────────────
@@ -154,35 +152,40 @@
             creates: /usr/bin/pnpm
 
       # ── dosemu2 ─────────────────────────────────────────────────
-      - name: Create temp directory for dosemu2 debs
-        ansible.builtin.tempfile:
-            state: directory
-            prefix: dosemu2_
-        register: dosemu2_tmpdir
-
-      - name: Download dosemu2 deb packages
-        ansible.builtin.get_url:
-            url: "{{ item.url }}"
-            dest: "{{ dosemu2_tmpdir.path }}/{{ item.name }}.deb"
-            mode: "0644"
-        loop: "{{ dosemu2_debs }}"
-
-      - name: Install dosemu2 packages (with dependencies)
-        ansible.builtin.apt:
-            deb: "{{ dosemu2_tmpdir.path }}/{{ item.name }}.deb"
-            state: present
-        loop: "{{ dosemu2_debs }}"
-        register: dosemu2_install
-
-      - name: Fix broken dependencies after dosemu2 install
-        ansible.builtin.command:
-            cmd: apt-get install -f -y
-        when: dosemu2_install is changed
-
-      - name: Clean up dosemu2 temp directory
+      # Was six hand-picked .deb URLs, which froze this host on whatever
+      # versions happened to be current the day they were written and drifted
+      # away from the rig. The PPA is the same source those debs came from;
+      # apt just picks up the current build and keeps it updated.
+      - name: Ensure the apt keyring directory exists
         ansible.builtin.file:
-            path: "{{ dosemu2_tmpdir.path }}"
-            state: absent
+            path: /etc/apt/keyrings
+            state: directory
+            mode: "0755"
+            owner: root
+            group: root
+
+      - name: Fetch the dosemu2 PPA signing key
+        ansible.builtin.get_url:
+            url: "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x{{ dosemu2_ppa_key_fingerprint }}"
+            dest: /etc/apt/keyrings/dosemu2-ppa.asc
+            mode: "0644"
+            owner: root
+            group: root
+
+      - name: Add the dosemu2 PPA
+        ansible.builtin.apt_repository:
+            repo: >-
+                deb [signed-by=/etc/apt/keyrings/dosemu2-ppa.asc]
+                https://ppa.launchpadcontent.net/dosemu2/ppa/ubuntu
+                {{ dosemu2_ppa_suite }} main
+            filename: dosemu2-ppa
+            state: present
+            update_cache: true
+
+      - name: Install dosemu2
+        ansible.builtin.apt:
+            name: "{{ dosemu2_packages }}"
+            state: latest
 
       # ── Application ─────────────────────────────────────────────
       - name: Create data directory

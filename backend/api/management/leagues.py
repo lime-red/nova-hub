@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from backend.core.database import get_db
 from backend.core.security import get_current_user, require_admin
 from backend.logging_config import get_logger
+from backend.services.games import game_for_letter
 from backend.models.database import (
     Client,
     League,
@@ -369,8 +370,14 @@ async def delete_league(
     if not league:
         raise HTTPException(status_code=404, detail="League not found")
 
-    # Validate confirmation name (e.g., "BRE_014" or "FE_555")
-    game_name = "BRE" if league.game_type == "B" else "FE"
+    # Validate confirmation name (e.g., "BRE_014" or "FE_555"). A row from
+    # before game_type was validated can hold an unknown letter; it must still
+    # be deletable, so fall back to the letter itself.
+    try:
+        game = game_for_letter(league.game_type)
+    except KeyError:
+        game = None
+    game_name = game.code if game else league.game_type
     expected_name = f"{game_name}_{league.league_id}"
     if request.confirmation_name != expected_name:
         raise HTTPException(
@@ -380,7 +387,6 @@ async def delete_league(
 
     league_name = league.full_id
     league_id_str = league.league_id
-    game_type = league.game_type
 
     # Collect packet filenames for disk cleanup using raw SQL (no ORM tracking)
     result = db.execute(
@@ -414,12 +420,13 @@ async def delete_league(
                 filepath.unlink()
                 logger.info(f"Deleted packet file {filepath}")
 
-    # Delete nodelist directory
-    game_type_str = "bre" if game_type == "B" else "fe"
-    nodelist_dir = data_dir / "nodelists" / game_type_str / league_id_str
-    if nodelist_dir.exists():
-        shutil.rmtree(nodelist_dir)
-        logger.info(f"Deleted nodelist directory {nodelist_dir}")
+    # Delete nodelist directory. Skip it for an unknown game: older code filed
+    # those under fe/, where the directory may belong to a real FE league.
+    if game:
+        nodelist_dir = data_dir / "nodelists" / game.key / league_id_str
+        if nodelist_dir.exists():
+            shutil.rmtree(nodelist_dir)
+            logger.info(f"Deleted nodelist directory {nodelist_dir}")
 
     logger.info(f"Deleted league {league_name} and all associated data by {current_user.username}")
 
@@ -575,6 +582,14 @@ async def generate_nodelist(
     league = db.query(League).filter(League.id == league_id).first()
     if not league:
         raise HTTPException(status_code=404, detail="League not found")
+
+    try:
+        game_for_letter(league.game_type)
+    except KeyError:
+        raise HTTPException(
+            status_code=422,
+            detail=f"League has unknown game type '{league.game_type}' — nodelist not generated",
+        )
 
     config = get_config()
     data_dir = config.get("server", {}).get("data_dir", "./data")

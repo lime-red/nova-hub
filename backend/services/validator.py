@@ -17,6 +17,7 @@ import toml
 from sqlalchemy.orm import Session
 
 from backend.models.database import League, LeagueMembership, Client
+from backend.services.games import game_for_code
 from backend.services.nodes_parser import NodesFileParser
 
 
@@ -139,6 +140,14 @@ class HubValidator:
         """Validate nodes.dat file matches database configuration"""
         league_key = f"{game_type}.{league_id}"
 
+        try:
+            game = game_for_code(game_type)
+        except KeyError:
+            self.errors.append(
+                ValidationError("Config", f"{league_key}: unknown game '{game_type}'")
+            )
+            return
+
         # Get league from database
         if not self.db:
             self.warnings.append(
@@ -152,7 +161,7 @@ class HubValidator:
 
         league = (
             self.db.query(League)
-            .filter(League.league_id == league_id, League.game_type == game_type[0].upper())
+            .filter(League.league_id == league_id, League.game_type == game.letter)
             .first()
         )
 
@@ -184,7 +193,7 @@ class HubValidator:
             return
 
         # Determine expected nodes file name
-        nodes_filename = "brnodes.dat" if game_type.lower() == "bre" else "fenodes.dat"
+        nodes_filename = game.nodes_file
 
         # Find file case-insensitively
         nodes_file = self.find_file_case_insensitive(game_folder_path, nodes_filename)

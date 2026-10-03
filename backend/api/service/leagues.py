@@ -12,6 +12,7 @@ from backend.core.database import get_db
 from backend.core.security import get_current_client
 from backend.logging_config import get_logger
 from backend.models.database import Client, League, LeagueMembership, Packet
+from backend.services.games import LEAGUE_ID_REGEX, game_for_letter
 from backend.services.league_utils import parse_league_id
 from backend.services.processing_service import find_file_case_insensitive
 
@@ -22,7 +23,7 @@ router = APIRouter()
 
 @router.get("/{league_id}/nodelist", summary="Download Nodelist")
 async def download_nodelist(
-    league_id: str = PathParam(..., pattern=r'^\d{3}[BF]$'),
+    league_id: str = PathParam(..., pattern=LEAGUE_ID_REGEX),
     request: Request = None,
     client: Client = Depends(get_current_client),
     db: Session = Depends(get_db),
@@ -81,15 +82,12 @@ async def download_nodelist(
             detail=f"Client {client.client_id} is not a member of league {league_id}",
         )
 
-    # Determine game type
-    game_type = "BRE" if league.game_type == "B" else "FE"
-
-    # Construct nodelist filename
-    nodelist_filename = f"{'BR' if game_type == 'BRE' else 'FE'}NODES.{league_number}"
+    game = game_for_letter(league.game_type)
+    nodelist_filename = game.nodelist_filename(league_number)
 
     # Find nodelist file
     data_dir = get_config().get("server", {}).get("data_dir", "./data")
-    nodelists_dir = Path(data_dir) / "nodelists" / game_type.lower() / league_number
+    nodelists_dir = Path(data_dir) / "nodelists" / game.key / league_number
 
     nodelist_path = find_file_case_insensitive(nodelists_dir, nodelist_filename)
 

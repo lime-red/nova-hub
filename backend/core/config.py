@@ -120,12 +120,6 @@ class Config(BaseModel):
     class Config:
         arbitrary_types_allowed = True
 
-    def get_league_dosemu_config(self, league_number: str, game_type: str) -> Optional[Dict[str, Any]]:
-        """Get per-league dosemu configuration"""
-        game_key = "bre" if game_type.upper() == "B" else "fe"
-        key = f"dosemu.{league_number}.{game_key}"
-        return self._raw.get("dosemu", {}).get(f"{league_number}", {}).get(game_key)
-
     def get(self, key: str, default: Any = None) -> Any:
         """Dictionary-style access for backwards compatibility"""
         parts = key.split(".")

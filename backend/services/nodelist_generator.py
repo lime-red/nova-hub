@@ -41,6 +41,7 @@ from sqlalchemy.orm import Session
 
 from backend.logging_config import get_logger
 from backend.models.database import League, LeagueMembership, Client
+from backend.services.games import game_for_letter
 
 logger = get_logger(context="nodelist_generator")
 
@@ -71,13 +72,19 @@ class NodelistGenerator:
         Generate a nodelist file for the given league.
 
         Returns the path of the written file, or None if the nodelist could not
-        be built completely -- no active members with a BBS index, or no
-        hub_fidonet_address for the league. Returning None leaves any existing
-        file untouched.
+        be built completely -- an unknown game type, no active members with a
+        BBS index, or no hub_fidonet_address for the league. Returning None
+        leaves any existing file untouched.
         """
         league = self.db.query(League).filter(League.id == league_db_id).first()
         if not league:
             logger.warning(f"generate: league {league_db_id} not found")
+            return None
+
+        try:
+            game = game_for_letter(league.game_type)
+        except KeyError:
+            logger.warning(f"generate: league {league.full_id} has unknown game type '{league.game_type}'")
             return None
 
         hub_index = self._hub_index()
@@ -157,12 +164,10 @@ class NodelistGenerator:
         content = "\r\n".join(lines) + "\r\n"
 
         # Write to nodelists directory
-        game_type_str = "bre" if league.game_type == "B" else "fe"
-        nodelist_dir = self.data_dir / "nodelists" / game_type_str / league.league_id
+        nodelist_dir = self.data_dir / "nodelists" / game.key / league.league_id
         nodelist_dir.mkdir(parents=True, exist_ok=True)
 
-        prefix = "BRNODES" if league.game_type == "B" else "FENODES"
-        filename = f"{prefix}.{league.league_id}"
+        filename = game.nodelist_filename(league.league_id)
         dest = nodelist_dir / filename
 
         self._write_atomic(dest, content)

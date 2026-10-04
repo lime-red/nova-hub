@@ -139,6 +139,9 @@ class TestRunStatus:
         result = await runner.run_game_process("BRE", "900")
         assert result["status"] == "error"
         assert result["returncode"] == 1
+        # Never let a caller fall back to "Unknown error" (#83).
+        assert "dosemu exited 1" in result["error"]
+        assert result["log_file"] in result["error"]
 
     @pytest.mark.asyncio
     async def test_zero_exit_without_marker_configured_is_success(

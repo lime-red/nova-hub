@@ -28,7 +28,13 @@ def configure_logging(log_level: str = "INFO"):
     # Remove default logger
     logger.remove()
 
-    # Add colorized stdout handler with custom format
+    # Colour only when stdout is a terminal (colorize=None lets loguru decide).
+    #
+    # Forcing colour sent ANSI escapes into journald under systemd. journald
+    # stores any MESSAGE containing control bytes as an array of byte values
+    # rather than a string, so every hub line reached OpenObserve as
+    # ["27","91","51",...] and could not be searched as text. uvicorn's own
+    # access lines, uncoloured, arrived as strings. NO_COLOR is honoured too.
     logger.add(
         sys.stdout,
         format=(
@@ -39,7 +45,7 @@ def configure_logging(log_level: str = "INFO"):
             "<level>{message}</level>"
         ),
         level=log_level,
-        colorize=True,
+        colorize=None,
     )
 
     # Configure patcher to add default context/user

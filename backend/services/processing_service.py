@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import shutil
 import threading
+import time
 import toml
 from datetime import datetime
 from pathlib import Path
@@ -497,6 +498,40 @@ class ProcessingService:
             logger.error(f"Error processing {game_type}: {e}")
             return {"status": "error", "error": str(e)}
 
+    @staticmethod
+    def _report_listing_command(
+        label: str, result: dict, game_dir: Path | None, filename: str, started: float
+    ):
+        """Log the outcome of a command whose real product is a listing file.
+
+        A run counts as good when the file was written during it, whatever the
+        exit code. Only a run that left the file untouched is a failure, and
+        then the warning says so - the stale copy is still ingested below.
+        """
+        listing = find_file_case_insensitive(game_dir, filename) if game_dir else None
+        # 2 s of slack: DOS file times have 2-second resolution.
+        fresh = listing is not None and listing.stat().st_mtime >= started - 2
+
+        if result["status"] == "success" and (fresh or game_dir is None):
+            return
+        if fresh:
+            logger.debug(
+                f"{label} command exited {result.get('returncode')} "
+                f"but wrote {listing.name}; treating as success"
+            )
+            return
+
+        cause = result.get("error") or f"status {result['status']}"
+        if game_dir is None:
+            logger.warning(f"{label} command failed: {cause}")
+        elif listing is None:
+            logger.warning(f"{label} command failed, no {filename} in {game_dir}: {cause}")
+        else:
+            logger.warning(
+                f"{label} command did not refresh {listing.name}; "
+                f"the previous copy will be ingested: {cause}"
+            )
+
     async def ingest_processing_files(
         self, game_type: str, league_id: str, league_db_id: int, run_id: int, league_config: dict
     ):
@@ -511,17 +546,24 @@ class ProcessingService:
         if scores_result["status"] != "success":
             logger.warning(f"Scores command failed: {scores_result.get('error', 'Unknown error')}")
 
-        # Run routes command
-        logger.info("Running routes command...")
-        routes_result = await self.dosemu_runner.run_routes_command(game_type, league_id)
-        if routes_result["status"] != "success":
-            logger.warning(f"Routes command failed: {routes_result.get('error', 'Unknown error')}")
+        # Run routes and bbsinfo commands.
+        #
+        # These are judged by the file they write, not by exit code: BRE and FE
+        # end ROUTEINFO and BBSINFO with DOS errorlevel 1 even when they succeed
+        # (every production transcript does), so since `script -e` began passing
+        # the real exit code through, a working run logged two "failed" warnings.
+        game_folder = league_config.get("game_folder")
+        game_dir = Path(game_folder) if game_folder else None
 
-        # Run bbsinfo command
+        logger.info("Running routes command...")
+        started = time.time()
+        routes_result = await self.dosemu_runner.run_routes_command(game_type, league_id)
+        self._report_listing_command("Routes", routes_result, game_dir, "routes.lst", started)
+
         logger.info("Running bbsinfo command...")
+        started = time.time()
         bbsinfo_result = await self.dosemu_runner.run_bbsinfo_command(game_type, league_id)
-        if bbsinfo_result["status"] != "success":
-            logger.warning(f"BBS info command failed: {bbsinfo_result.get('error', 'Unknown error')}")
+        self._report_listing_command("BBS info", bbsinfo_result, game_dir, "bbsinfo.lst", started)
 
         # Now ingest the files
         logger.info("Ingesting output files...")

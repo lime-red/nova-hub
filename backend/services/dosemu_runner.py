@@ -142,6 +142,10 @@ class DosemuRunner:
                 return {
                     "status": "error",
                     "returncode": result.returncode,
+                    "error": (
+                        f"dosemu exited {result.returncode} "
+                        f"(transcript: {output_log})"
+                    ),
                     "output": output_text,
                     "log_file": str(output_log),
                 }

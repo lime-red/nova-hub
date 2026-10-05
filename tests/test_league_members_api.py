@@ -371,3 +371,76 @@ def test_hub_cannot_take_a_bbss_address(api, world):
 
     assert r.status_code == 400
     assert "belongs to Beta" in r.json()["detail"]
+
+
+# -- nodelist download ------------------------------------------------------
+
+@pytest.fixture
+def data_dir(tmp_path, monkeypatch):
+    import importlib
+
+    # backend.core.config the attribute is the Config object, not the module
+    config_mod = importlib.import_module("backend.core.config")
+
+    monkeypatch.setattr(config_mod, "get_config",
+                        lambda: {"server": {"data_dir": str(tmp_path)}})
+    return tmp_path
+
+
+def _write_nodelist(data_dir, name="BRNODES.900", body=b"1 HOST 2 5\r\n"):
+    directory = data_dir / "nodelists" / "bre" / "900"
+    directory.mkdir(parents=True)
+    (directory / name).write_bytes(body)
+
+
+def test_no_nodelist_yet(api, world, data_dir):
+    client, _ = api
+
+    assert client.get(f"{LEAGUES}/{world['league']}").json()["nodelist"] is None
+    memberships = client.get(f"{CLIENTS}/{world['alpha']}").json()["league_memberships"]
+    assert memberships[0]["nodelist_filename"] is None
+    response = client.get(f"{LEAGUES}/{world['league']}/nodelist")
+    assert response.status_code == 404
+    assert "900B" in response.json()["detail"]
+
+
+def test_league_and_client_pages_link_the_current_nodelist(api, world, data_dir):
+    client, _ = api
+    _write_nodelist(data_dir)
+
+    info = client.get(f"{LEAGUES}/{world['league']}").json()["nodelist"]
+    assert info["filename"] == "BRNODES.900"
+    assert info["size"] == len(b"1 HOST 2 5\r\n")
+    memberships = client.get(f"{CLIENTS}/{world['alpha']}").json()["league_memberships"]
+    assert memberships[0]["nodelist_filename"] == "BRNODES.900"
+
+
+def test_download_is_the_file_byte_for_byte(api, world, data_dir):
+    client, _ = api
+    _write_nodelist(data_dir, name="brnodes.900")  # hand-placed, lower case
+
+    response = client.get(f"{LEAGUES}/{world['league']}/nodelist")
+
+    assert response.status_code == 200
+    assert response.content == b"1 HOST 2 5\r\n"  # CRLF untouched
+    assert 'filename="brnodes.900"' in response.headers["content-disposition"]
+
+
+def test_sysops_can_download_the_nodelist(api, world, data_dir):
+    client, _ = api
+    _write_nodelist(data_dir)
+    _as_sysop()
+
+    assert client.get(f"{LEAGUES}/{world['league']}/nodelist").status_code == 200
+
+
+def test_generated_nodelist_is_the_one_served(api, world, data_dir):
+    client, db = api
+    league = db.get(League, world["league"])
+    league.hub_fidonet_address = "135:135/1"
+    db.commit()
+
+    assert client.post(f"{LEAGUES}/{world['league']}/generate-nodelist").status_code == 200
+    body = client.get(f"{LEAGUES}/{world['league']}/nodelist").content
+
+    assert b"135:135/20" in body and b"135:135/21" in body

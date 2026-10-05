@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -32,6 +33,7 @@ from backend.schemas.leagues import (
     LeagueStats,
     LeagueUpdate,
     MemberResponse,
+    NodelistInfo,
     UpdateMemberRequest,
 )
 
@@ -173,6 +175,7 @@ async def get_league(
         members=members,
         available_clients=available_list,
         stats=stats,
+        nodelist=_nodelist_info(league),
     )
 
 
@@ -565,6 +568,59 @@ async def add_member(
     logger.info(f"Added {client.bbs_name} to league {league.full_id} by {current_user.username}")
 
     return _member_response(membership)
+
+
+def _data_dir() -> str:
+    from backend.core.config import get_config
+
+    return get_config().get("server", {}).get("data_dir", "./data")
+
+
+def _nodelist_info(league: League) -> Optional[NodelistInfo]:
+    from datetime import datetime
+
+    from backend.services.nodelist_generator import find_nodelist
+
+    path = find_nodelist(_data_dir(), league)
+    if path is None:
+        return None
+    stat = path.stat()
+    return NodelistInfo(
+        filename=path.name,
+        size=stat.st_size,
+        modified_at=datetime.fromtimestamp(stat.st_mtime),
+    )
+
+
+@router.get("/{league_id}/nodelist", summary="Download Nodelist")
+async def download_nodelist(
+    league_id: int,
+    current_user: SysopUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Download the league's current BRNODES/FENODES nodelist.
+
+    The same file nova_client fetches through the service API: the one the last
+    processing run (or Generate Nodelist) wrote. Fetching it here does not mark
+    it downloaded for any BBS.
+
+    **Path Parameters:**
+    - `league_id`: Database ID of the league
+
+    **Returns:** the nodelist file; 404 if none has been generated yet
+    """
+    from backend.services.nodelist_generator import find_nodelist
+
+    league = db.query(League).filter(League.id == league_id).first()
+    if not league:
+        raise HTTPException(status_code=404, detail="League not found")
+
+    path = find_nodelist(_data_dir(), league)
+    if path is None:
+        raise HTTPException(status_code=404, detail=f"No nodelist has been generated for {league.full_id} yet")
+
+    return FileResponse(path, filename=path.name, media_type="application/octet-stream")
 
 
 @router.post("/{league_id}/generate-nodelist", summary="Generate Nodelist")

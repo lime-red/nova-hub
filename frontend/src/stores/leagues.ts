@@ -61,6 +61,13 @@ export interface LeagueDetail {
   members: LeagueMember[]
   available_clients: AvailableClient[]
   stats: LeagueStats
+  nodelist?: NodelistInfo | null  // null until one has been generated
+}
+
+export interface NodelistInfo {
+  filename: string
+  size: number
+  modified_at: string
 }
 
 export const useLeaguesStore = defineStore('leagues', () => {

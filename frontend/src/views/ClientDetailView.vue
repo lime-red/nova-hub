@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useClientsStore, type FtnAddressInfo } from '@/stores/clients'
 import { useAuthStore } from '@/stores/auth'
 import AppLayout from '@/components/AppLayout.vue'
+import { leaguesApi } from '@/services/api'
 
 const route = useRoute()
 const router = useRouter()
@@ -328,11 +329,12 @@ async function copySecret() {
                   <th>League</th>
                   <th>BBS Index</th>
                   <th>Fidonet Address</th>
+                  <th>Nodelist</th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-if="!clientsStore.currentClient.league_memberships?.length">
-                  <td colspan="3" class="text-center text-muted" style="padding: 2rem;">
+                  <td colspan="4" class="text-center text-muted" style="padding: 2rem;">
                     Not a member of any leagues
                   </td>
                 </tr>
@@ -344,6 +346,15 @@ async function copySecret() {
                   </td>
                   <td class="font-mono">{{ String(membership.bbs_index).padStart(2, '0') }}</td>
                   <td class="font-mono">{{ membership.fidonet_address || '-' }}</td>
+                  <td>
+                    <a
+                      v-if="membership.nodelist_filename"
+                      class="font-mono"
+                      :href="leaguesApi.nodelistUrl(membership.league_id)"
+                      download
+                    >{{ membership.nodelist_filename }}</a>
+                    <span v-else class="text-muted">Not generated yet</span>
+                  </td>
                 </tr>
               </tbody>
             </table>

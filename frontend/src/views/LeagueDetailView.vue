@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useLeaguesStore, type LeagueMember } from '@/stores/leagues'
 import { useAuthStore } from '@/stores/auth'
 import AppLayout from '@/components/AppLayout.vue'
+import { leaguesApi } from '@/services/api'
 
 const route = useRoute()
 const router = useRouter()
@@ -260,6 +261,22 @@ async function handleDelete() {
                 <div class="info-item">
                   <dt>Hub Routes Mail</dt>
                   <dd class="font-mono">{{ hubEntryLine }}</dd>
+                </div>
+                <div class="info-item">
+                  <dt>Nodelist</dt>
+                  <dd>
+                    <template v-if="leaguesStore.currentLeague.nodelist">
+                      <a
+                        class="font-mono"
+                        :href="leaguesApi.nodelistUrl(leaguesStore.currentLeague.id)"
+                        download
+                      >{{ leaguesStore.currentLeague.nodelist.filename }}</a>
+                      <span class="text-muted nodelist-age">
+                        written {{ new Date(leaguesStore.currentLeague.nodelist.modified_at).toLocaleString() }}
+                      </span>
+                    </template>
+                    <span v-else class="badge badge-warning">Not generated yet</span>
+                  </dd>
                 </div>
               </dl>
               <p v-if="!leaguesStore.currentLeague.hub_fidonet_address" class="form-hint mt-2">
@@ -631,6 +648,11 @@ async function handleDelete() {
 </template>
 
 <style scoped>
+.nodelist-age {
+  margin-left: 0.5rem;
+  font-size: 0.85em;
+}
+
 .page {
   max-width: 1200px;
   margin: 0 auto;

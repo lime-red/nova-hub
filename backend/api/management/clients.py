@@ -181,6 +181,7 @@ async def get_client(
                     full_id=f"{league.league_id}{league.game_type}",
                     bbs_index=membership.bbs_index,
                     fidonet_address=membership.fidonet_address,
+                    nodelist_filename=_nodelist_filename(league),
                 )
             )
 
@@ -404,6 +405,14 @@ async def regenerate_secret(
 # FTN addresses. A property of the BBS, unique across the hub; memberships
 # point at one of them (see FtnAddress). Admin only: a sysop renumbering
 # their own address would break every league that routes to it.
+
+def _nodelist_filename(league: League) -> Optional[str]:
+    from backend.core.config import get_config
+    from backend.services.nodelist_generator import find_nodelist
+
+    path = find_nodelist(get_config().get("server", {}).get("data_dir", "./data"), league)
+    return path.name if path else None
+
 
 FIDONET_RE = re.compile(r"^\d+:\d+/\d+$")
 

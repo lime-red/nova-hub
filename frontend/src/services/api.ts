@@ -152,6 +152,11 @@ export const leaguesApi = {
   removeMember: (leagueId: number, memberId: number) =>
     api.delete(`/leagues/${leagueId}/members/${memberId}`),
 
+  // A plain link, not an axios call: the session cookie rides along and the
+  // browser saves the file under the name the hub gives it.
+  nodelistUrl: (leagueId: number) =>
+    `${api.defaults.baseURL}/leagues/${leagueId}/nodelist`,
+
   updateMember: (leagueId: number, membershipId: number, data: {
     bbs_index?: number
     ftn_address_id?: number

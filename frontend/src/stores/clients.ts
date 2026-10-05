@@ -61,6 +61,7 @@ export interface LeagueMembershipInfo {
   full_id: string
   bbs_index: number
   fidonet_address?: string
+  nodelist_filename?: string | null  // null until the league has a nodelist
 }
 
 export interface ClientCreated {

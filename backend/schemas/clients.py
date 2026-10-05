@@ -136,6 +136,7 @@ class LeagueMembershipInfo(BaseModel):
     full_id: str  # e.g., "013B"
     bbs_index: int
     fidonet_address: Optional[str] = None
+    nodelist_filename: Optional[str] = None  # None until the league has a nodelist
 
 
 class FtnAddressInfo(BaseModel):

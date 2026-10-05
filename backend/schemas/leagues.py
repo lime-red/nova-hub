@@ -56,6 +56,13 @@ class FtnAddressRef(BaseModel):
     address: str
 
 
+class NodelistInfo(BaseModel):
+    """The league's current nodelist file, as served for download"""
+    filename: str
+    size: int
+    modified_at: datetime
+
+
 class MemberResponse(BaseModel):
     """League member response"""
     membership_id: int
@@ -96,6 +103,7 @@ class LeagueDetailResponse(BaseModel):
     members: List[MemberResponse] = []
     available_clients: List[Dict[str, Any]] = []
     stats: LeagueStats
+    nodelist: Optional[NodelistInfo] = None  # None until one has been generated
 
     class Config:
         from_attributes = True

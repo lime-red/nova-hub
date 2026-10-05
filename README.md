@@ -230,7 +230,7 @@ Check the Alerts page in the web UI for details.
 
 ## License
 
-MIT License - See LICENSE file
+MIT -- see [LICENSE](LICENSE).
 
 ## Credits
 

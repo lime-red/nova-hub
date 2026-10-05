@@ -96,7 +96,16 @@ export const clientsApi = {
     api.delete(`/clients/${id}`),
 
   regenerateSecret: (id: number) =>
-    api.post(`/clients/${id}/regenerate-secret`)
+    api.post(`/clients/${id}/regenerate-secret`),
+
+  addFtnAddress: (id: number, address: string) =>
+    api.post(`/clients/${id}/ftn-addresses`, { address }),
+
+  updateFtnAddress: (id: number, addressId: number, address: string) =>
+    api.put(`/clients/${id}/ftn-addresses/${addressId}`, { address }),
+
+  deleteFtnAddress: (id: number, addressId: number) =>
+    api.delete(`/clients/${id}/ftn-addresses/${addressId}`)
 }
 
 // Leagues API functions
@@ -136,18 +145,18 @@ export const leaguesApi = {
   addMember: (leagueId: number, data: {
     client_id: number
     bbs_index: number
-    fidonet_address: string
+    ftn_address_id: number
   }) =>
     api.post(`/leagues/${leagueId}/members`, data),
 
   removeMember: (leagueId: number, memberId: number) =>
     api.delete(`/leagues/${leagueId}/members/${memberId}`),
 
-  updateBbsIndex: (leagueId: number, membershipId: number, bbsIndex: number) =>
-    api.put(`/leagues/${leagueId}/members/${membershipId}/bbs-index`, { bbs_index: bbsIndex }),
-
-  updateFidonet: (leagueId: number, membershipId: number, fidonetAddress: string) =>
-    api.put(`/leagues/${leagueId}/members/${membershipId}/fidonet`, { fidonet_address: fidonetAddress })
+  updateMember: (leagueId: number, membershipId: number, data: {
+    bbs_index?: number
+    ftn_address_id?: number
+  }) =>
+    api.patch(`/leagues/${leagueId}/members/${membershipId}`, data)
 }
 
 // Processing API functions

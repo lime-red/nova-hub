@@ -14,7 +14,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from backend.models.database import Client, League, LeagueMembership
+from backend.models.database import Client, FtnAddress, League, LeagueMembership
 from backend.services.nodes_parser import NodesFileParser
 from backend.services.nodelist_generator import NodelistGenerator
 
@@ -56,7 +56,7 @@ def _member(db, league, index: int, name: str, fidonet: str, **location) -> Clie
             client_id=client.id,
             league_id=league.id,
             bbs_index=index,
-            fidonet_address=fidonet,
+            ftn_address=FtnAddress(client_id=client.id, address=fidonet),
             is_active=True,
         )
     )

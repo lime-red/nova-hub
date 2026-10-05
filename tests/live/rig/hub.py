@@ -132,7 +132,7 @@ class TestHub:
         Returns {bbs_index: (client_id, client_secret)} for the non-hub nodes, so
         a scenario can authenticate as a real BBS.
         """
-        from backend.models.database import Client, League as LeagueRow, LeagueMembership
+        from backend.models.database import Client, FtnAddress, League as LeagueRow, LeagueMembership
 
         creds = {}
         for league_id in (league_ids or LEAGUES):
@@ -172,7 +172,7 @@ class TestHub:
                     client_id=client.id,
                     league_id=row.id,
                     bbs_index=index,
-                    fidonet_address=league.fido_for(index),
+                    ftn_address=FtnAddress.get_or_create(self.db, client.id, league.fido_for(index)),
                     is_active=True,
                 ))
             self.db.commit()

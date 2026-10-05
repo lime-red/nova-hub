@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { onMounted, ref, computed } from 'vue'
+import { onMounted, ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useLeaguesStore } from '@/stores/leagues'
+import { useLeaguesStore, type LeagueMember } from '@/stores/leagues'
 import { useAuthStore } from '@/stores/auth'
 import AppLayout from '@/components/AppLayout.vue'
 
@@ -22,7 +22,34 @@ const editHubRoutesMail = ref(true)
 const deleteConfirmInput = ref('')
 const selectedClientId = ref<number | null>(null)
 const newBbsIndex = ref('')
-const newFidonet = ref('')
+// FTN addresses belong to the BBS and are assigned on its client page; a
+// membership picks one of them, so two BBSes can never share an address.
+const newFtnAddressId = ref<number | null>(null)
+const editingMember = ref<LeagueMember | null>(null)
+const editMemberIndex = ref('')
+const editMemberFtnAddressId = ref<number | null>(null)
+
+const selectedClientAddresses = computed(() => {
+  const client = leaguesStore.currentLeague?.available_clients.find(
+    (c) => c.id === selectedClientId.value
+  )
+  return client?.ftn_addresses ?? []
+})
+
+// One address is the usual case; pick it rather than make the admin do so.
+watch(selectedClientAddresses, (addresses) => {
+  newFtnAddressId.value = addresses.length === 1 ? addresses[0].id : null
+})
+
+// What the rest of the league already holds, so an index or address can be
+// picked without remembering it. Excludes the member being edited.
+const inUse = computed(() => {
+  const league = leaguesStore.currentLeague
+  if (!league) return []
+  return league.members
+    .filter((m) => m.is_active && m.membership_id !== editingMember.value?.membership_id)
+    .sort((a, b) => a.bbs_index - b.bbs_index)
+})
 
 const confirmationName = computed(() => {
   if (!leaguesStore.currentLeague) return ''
@@ -78,7 +105,7 @@ function formatBbsIndex(index: number): string {
 function openAddMemberModal() {
   selectedClientId.value = null
   newBbsIndex.value = ''
-  newFidonet.value = ''
+  newFtnAddressId.value = null
   leaguesStore.clearError()
   showAddMemberModal.value = true
 }
@@ -90,15 +117,38 @@ function openDeleteModal() {
 }
 
 async function handleAddMember() {
-  if (!selectedClientId.value || !newBbsIndex.value || !newFidonet.value) return
+  if (!selectedClientId.value || !newBbsIndex.value || !newFtnAddressId.value) return
 
   const success = await leaguesStore.addMember(leagueId.value, {
     client_id: selectedClientId.value,
     bbs_index: parseInt(newBbsIndex.value),
-    fidonet_address: newFidonet.value
+    ftn_address_id: newFtnAddressId.value
   })
   if (success) {
     showAddMemberModal.value = false
+  }
+}
+
+function openEditMemberModal(member: LeagueMember) {
+  editingMember.value = member
+  editMemberIndex.value = String(member.bbs_index)
+  editMemberFtnAddressId.value = member.ftn_address_id ?? null
+  leaguesStore.clearError()
+}
+
+function closeEditMemberModal() {
+  editingMember.value = null
+}
+
+async function handleEditMember() {
+  if (!editingMember.value || !editMemberIndex.value || !editMemberFtnAddressId.value) return
+
+  const success = await leaguesStore.updateMember(leagueId.value, editingMember.value.membership_id, {
+    bbs_index: parseInt(editMemberIndex.value),
+    ftn_address_id: editMemberFtnAddressId.value
+  })
+  if (success) {
+    closeEditMemberModal()
   }
 }
 
@@ -291,6 +341,12 @@ async function handleDelete() {
                   <td class="text-muted">{{ member.joined_at || '-' }}</td>
                   <td v-if="authStore.isAdmin" class="actions">
                     <button
+                      class="btn btn-sm btn-secondary"
+                      @click="openEditMemberModal(member)"
+                    >
+                      Edit
+                    </button>
+                    <button
                       class="btn btn-sm btn-danger"
                       @click="handleRemoveMember(member.client_id)"
                     >
@@ -397,17 +453,35 @@ async function handleDelete() {
                 />
                 <small class="text-muted">Unique identifier for this BBS in the league (1-255)</small>
               </div>
-              <div class="form-group">
-                <label for="fidonet">Fidonet Address</label>
-                <input
-                  id="fidonet"
-                  v-model="newFidonet"
-                  type="text"
-                  placeholder="e.g., 13:10/100"
-                  pattern="\d+:\d+/\d+"
+              <div v-if="selectedClientId" class="form-group">
+                <label for="ftnAddress">FTN Address</label>
+                <select
+                  v-if="selectedClientAddresses.length"
+                  id="ftnAddress"
+                  v-model="newFtnAddressId"
+                  class="font-mono"
                   required
-                />
-                <small class="text-muted">Format: zone:net/node (e.g., 13:10/100)</small>
+                >
+                  <option :value="null" disabled>Choose an address...</option>
+                  <option v-for="a in selectedClientAddresses" :key="a.id" :value="a.id">
+                    {{ a.address }}
+                  </option>
+                </select>
+                <p v-else class="form-hint">
+                  This BBS has no FTN address yet.
+                  <router-link :to="`/clients/${selectedClientId}`">Assign one on its page</router-link>,
+                  then add it here.
+                </p>
+              </div>
+              <div v-if="inUse.length" class="in-use">
+                <div class="in-use-title">Already in use in this league</div>
+                <table class="in-use-table font-mono">
+                  <tr v-for="m in inUse" :key="m.membership_id">
+                    <td>{{ formatBbsIndex(m.bbs_index) }}</td>
+                    <td>{{ m.fidonet_address || '-' }}</td>
+                    <td class="in-use-name">{{ m.bbs_name }}</td>
+                  </tr>
+                </table>
               </div>
               </template>
               <p v-else class="text-muted">All active clients are already members of this league.</p>
@@ -420,9 +494,82 @@ async function handleDelete() {
                 v-if="leaguesStore.currentLeague?.available_clients?.length"
                 type="submit"
                 class="btn btn-primary"
-                :disabled="leaguesStore.loading || !selectedClientId || !newBbsIndex || !newFidonet"
+                :disabled="leaguesStore.loading || !selectedClientId || !newBbsIndex || !newFtnAddressId"
               >
                 Add Member
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Edit Member Modal -->
+      <div v-if="editingMember" class="modal-overlay" @click.self="closeEditMemberModal">
+        <div class="modal">
+          <div class="modal-header">
+            <h3>Edit {{ editingMember.bbs_name }}</h3>
+            <button class="modal-close" @click="closeEditMemberModal">&times;</button>
+          </div>
+          <form @submit.prevent="handleEditMember">
+            <div class="modal-body">
+              <div v-if="leaguesStore.error" class="alert alert-error mb-4">
+                {{ leaguesStore.error }}
+              </div>
+              <div class="form-group">
+                <label for="editMemberIndex">BBS Index</label>
+                <input
+                  id="editMemberIndex"
+                  v-model="editMemberIndex"
+                  type="number"
+                  min="1"
+                  max="255"
+                  required
+                />
+              </div>
+              <div class="form-group">
+                <label for="editMemberFtnAddress">FTN Address</label>
+                <select
+                  id="editMemberFtnAddress"
+                  v-model="editMemberFtnAddressId"
+                  class="font-mono"
+                  required
+                >
+                  <option :value="null" disabled>Choose an address...</option>
+                  <option v-for="a in editingMember.client_ftn_addresses" :key="a.id" :value="a.id">
+                    {{ a.address }}
+                  </option>
+                </select>
+                <small class="form-hint">
+                  Only this BBS's own addresses.
+                  <router-link :to="`/clients/${editingMember.client_id}`">Assign or renumber them on its page</router-link>.
+                </small>
+              </div>
+              <div v-if="inUse.length" class="in-use">
+                <div class="in-use-title">Already in use in this league</div>
+                <table class="in-use-table font-mono">
+                  <tr v-for="m in inUse" :key="m.membership_id">
+                    <td>{{ formatBbsIndex(m.bbs_index) }}</td>
+                    <td>{{ m.fidonet_address || '-' }}</td>
+                    <td class="in-use-name">{{ m.bbs_name }}</td>
+                  </tr>
+                </table>
+              </div>
+              <small class="form-hint">
+                The league's nodelist picks this up when it is next regenerated,
+                at the next processing run. The node's own game files are not
+                changed by the hub.
+              </small>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" @click="closeEditMemberModal">
+                Cancel
+              </button>
+              <button
+                type="submit"
+                class="btn btn-primary"
+                :disabled="leaguesStore.loading || !editMemberIndex || !editMemberFtnAddressId"
+              >
+                Save Changes
               </button>
             </div>
           </form>
@@ -635,6 +782,34 @@ async function handleDelete() {
 
 table .actions {
   justify-content: flex-end;
+}
+
+.in-use {
+  margin-top: 0.5rem;
+  padding: 0.75rem;
+  background: var(--color-bg);
+  border-radius: var(--radius-md);
+}
+
+.in-use-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  margin-bottom: 0.375rem;
+}
+
+.in-use-table {
+  font-size: 0.8125rem;
+  border-collapse: collapse;
+}
+
+.in-use-table td {
+  padding: 0.125rem 1rem 0.125rem 0;
+}
+
+.in-use-name {
+  font-family: inherit;
+  color: var(--color-text-muted);
 }
 
 /* Danger modal */

@@ -12,7 +12,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from backend.models.database import Client, League, LeagueMembership
+from backend.models.database import Client, FtnAddress, League, LeagueMembership
 from backend.services.validator import HubValidator
 
 NODES = "\r\n".join([
@@ -59,7 +59,7 @@ def seeded_db(db_session):
             client_id=client.id,
             league_id=league.id,
             bbs_index=2,
-            fidonet_address="135:135/8",
+            ftn_address=FtnAddress(client_id=client.id, address="135:135/8"),
             is_active=True,
         )
     )

@@ -175,3 +175,114 @@ class TestMigrationsAreIdempotent:
         finally:
             engine.dispose()
         assert before == after
+
+
+class TestFtnAddressesMoveOntoTheBbs:
+    """a7d3e9f15b20 moves free-text membership addresses onto the BBS.
+
+    Run against data, because the empty-database checks above cannot see the
+    part that matters: the copy, the link-up, and the refusal on a clash.
+    """
+
+    BEFORE = "c5f2a8d61e04"
+
+    def _db_at_before(self, tmp_path, monkeypatch, memberships):
+        import sqlite3
+
+        db_path = tmp_path / "ftn.db"
+        monkeypatch.setenv("NOVA_HUB_DB_URL", f"sqlite:///{db_path}")
+        cfg = _alembic_config(db_path)
+        command.upgrade(cfg, self.BEFORE)
+        con = sqlite3.connect(db_path)
+        con.executemany(
+            "INSERT INTO clients (id, client_id, client_secret, bbs_name) VALUES (?, ?, 'x', ?)",
+            [(1, "sj", "Starship Junkyard"), (2, "ecl", "The Eclipse")],
+        )
+        con.executemany(
+            "INSERT INTO leagues (id, league_id, game_type, name) VALUES (?, ?, ?, ?)",
+            [(1, "014", "B", "014B"), (2, "015", "B", "015B"), (3, "015", "F", "015F")],
+        )
+        con.executemany(
+            "INSERT INTO league_memberships (client_id, league_id, bbs_index, fidonet_address)"
+            " VALUES (?, ?, ?, ?)",
+            memberships,
+        )
+        con.commit()
+        con.close()
+        return db_path, cfg
+
+    def test_addresses_are_copied_once_per_bbs_and_linked(self, tmp_path, monkeypatch):
+        import sqlite3
+
+        db_path, cfg = self._db_at_before(tmp_path, monkeypatch, [
+            (1, 1, 2, "135:135/20"),
+            (1, 2, 2, " 135:135/8 "),   # stray whitespace is trimmed
+            (2, 2, 4, "135:135/21"),
+            (2, 3, 4, "135:135/21"),   # same BBS, same address, two leagues: one row
+        ])
+
+        command.upgrade(cfg, "head")
+
+        con = sqlite3.connect(db_path)
+        try:
+            addresses = con.execute(
+                "SELECT client_id, address FROM ftn_addresses ORDER BY client_id, address"
+            ).fetchall()
+            links = con.execute(
+                "SELECT m.client_id, m.league_id, f.address FROM league_memberships m"
+                " JOIN ftn_addresses f ON f.id = m.ftn_address_id"
+                " WHERE f.client_id = m.client_id ORDER BY m.client_id, m.league_id"
+            ).fetchall()
+            columns = [r[1] for r in con.execute("PRAGMA table_info(league_memberships)")]
+        finally:
+            con.close()
+        assert addresses == [(1, "135:135/20"), (1, "135:135/8"), (2, "135:135/21")]
+        assert links == [(1, 1, "135:135/20"), (1, 2, "135:135/8"),
+                         (2, 2, "135:135/21"), (2, 3, "135:135/21")]
+        assert "fidonet_address" not in columns
+
+    def test_an_address_held_by_two_bbses_refuses_and_changes_nothing(self, tmp_path, monkeypatch):
+        """Production's real clash: /20 was Starship Junkyard in 014 and The Eclipse in 015."""
+        import sqlite3
+
+        db_path, cfg = self._db_at_before(tmp_path, monkeypatch, [
+            (1, 1, 2, "135:135/20"),
+            (2, 2, 4, "135:135/20"),
+        ])
+
+        with pytest.raises(RuntimeError) as excinfo:
+            command.upgrade(cfg, "head")
+
+        message = str(excinfo.value)
+        assert "135:135/20 by Starship Junkyard in 014B" in message
+        assert "135:135/20 by The Eclipse in 015B" in message
+        con = sqlite3.connect(db_path)
+        try:
+            version = con.execute("SELECT version_num FROM alembic_version").fetchone()[0]
+            tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            kept = con.execute("SELECT COUNT(*) FROM league_memberships"
+                               " WHERE fidonet_address = '135:135/20'").fetchone()[0]
+        finally:
+            con.close()
+        assert version == self.BEFORE
+        assert "ftn_addresses" not in tables
+        assert kept == 2
+
+    def test_downgrade_puts_the_text_back(self, tmp_path, monkeypatch):
+        import sqlite3
+
+        db_path, cfg = self._db_at_before(tmp_path, monkeypatch, [
+            (1, 1, 2, "135:135/20"),
+            (2, 2, 4, "135:135/21"),
+        ])
+        command.upgrade(cfg, "head")
+
+        command.downgrade(cfg, self.BEFORE)
+
+        con = sqlite3.connect(db_path)
+        try:
+            rows = con.execute("SELECT client_id, fidonet_address FROM league_memberships"
+                               " ORDER BY client_id").fetchall()
+        finally:
+            con.close()
+        assert rows == [(1, "135:135/20"), (2, "135:135/21")]

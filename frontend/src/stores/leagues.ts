@@ -15,12 +15,19 @@ export interface League {
   member_count: number
 }
 
+export interface FtnAddressRef {
+  id: number
+  address: string
+}
+
 export interface LeagueMember {
   membership_id: number
   client_id: number
   bbs_name: string
   bbs_index: number
+  ftn_address_id?: number
   fidonet_address?: string
+  client_ftn_addresses: FtnAddressRef[]
   client_oauth_id: string
   joined_at?: string
   is_active: boolean
@@ -36,6 +43,7 @@ export interface AvailableClient {
   id: number
   bbs_name: string
   client_id: string
+  ftn_addresses: FtnAddressRef[]
 }
 
 export interface LeagueDetail {
@@ -161,7 +169,7 @@ export const useLeaguesStore = defineStore('leagues', () => {
   async function addMember(leagueId: number, data: {
     client_id: number
     bbs_index: number
-    fidonet_address: string
+    ftn_address_id: number
   }): Promise<boolean> {
     loading.value = true
     error.value = null
@@ -196,34 +204,20 @@ export const useLeaguesStore = defineStore('leagues', () => {
     }
   }
 
-  async function updateBbsIndex(leagueId: number, membershipId: number, bbsIndex: number): Promise<boolean> {
+  async function updateMember(leagueId: number, membershipId: number, data: {
+    bbs_index?: number
+    ftn_address_id?: number
+  }): Promise<boolean> {
     loading.value = true
     error.value = null
 
     try {
-      await leaguesApi.updateBbsIndex(leagueId, membershipId, bbsIndex)
+      await leaguesApi.updateMember(leagueId, membershipId, data)
       await loadLeague(leagueId)
       return true
     } catch (err: unknown) {
       const axiosError = err as { response?: { data?: { detail?: string } } }
-      error.value = axiosError.response?.data?.detail || 'Failed to update BBS index'
-      return false
-    } finally {
-      loading.value = false
-    }
-  }
-
-  async function updateFidonet(leagueId: number, membershipId: number, address: string): Promise<boolean> {
-    loading.value = true
-    error.value = null
-
-    try {
-      await leaguesApi.updateFidonet(leagueId, membershipId, address)
-      await loadLeague(leagueId)
-      return true
-    } catch (err: unknown) {
-      const axiosError = err as { response?: { data?: { detail?: string } } }
-      error.value = axiosError.response?.data?.detail || 'Failed to update Fidonet address'
+      error.value = axiosError.response?.data?.detail || 'Failed to update member'
       return false
     } finally {
       loading.value = false
@@ -252,8 +246,7 @@ export const useLeaguesStore = defineStore('leagues', () => {
     deleteLeague,
     addMember,
     removeMember,
-    updateBbsIndex,
-    updateFidonet,
+    updateMember,
     clearError,
     clearCurrentLeague
   }

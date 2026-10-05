@@ -13,6 +13,7 @@ from fastapi import APIRouter
 from .attacks import router as attacks_router
 from .traffic import router as traffic_router
 from .auth import router as auth_router
+from .claim import router as claim_router
 from .dashboard import router as dashboard_router
 from .clients import router as clients_router
 from .leagues import router as leagues_router
@@ -28,6 +29,13 @@ management_router.include_router(
     auth_router,
     prefix="/auth",
     tags=["Management API - Authentication"]
+)
+
+# Public: a claim link is its own credential. See claim.py.
+management_router.include_router(
+    claim_router,
+    prefix="/claim",
+    tags=["Management API - Claim Links"]
 )
 
 management_router.include_router(

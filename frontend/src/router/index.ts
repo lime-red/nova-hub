@@ -11,6 +11,13 @@ const router = createRouter({
       meta: { requiresAuth: false }
     },
     {
+      // A sysop collecting their credentials: no login, the link is the credential.
+      path: '/claim/:token',
+      name: 'claim',
+      component: () => import('@/views/ClaimView.vue'),
+      meta: { requiresAuth: false }
+    },
+    {
       path: '/',
       redirect: '/dashboard'
     },

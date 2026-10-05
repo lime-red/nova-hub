@@ -18,6 +18,11 @@ class ServerConfig(BaseModel):
     port: int = 8000
     data_dir: str = "./data"
     environment: str = "production"
+    # The address sysops reach the hub at, e.g. "https://hub.example.com". It
+    # goes into claim links and the config files they hand out. Unset, it is
+    # taken from the request, which is wrong behind a proxy that does not pass
+    # X-Forwarded-Proto.
+    public_url: Optional[str] = None
 
 
 class HubConfig(BaseModel):

@@ -128,6 +128,34 @@ class FtnAddress(Base):
         return row
 
 
+class ClaimLink(Base):
+    """A single-use link that hands a BBS its client credentials.
+
+    Replaces sending a client secret over chat. Only the token's SHA-256 is
+    stored, and the secret does not exist until the link is claimed: claiming
+    generates it, shows it on that one page, and stores only its hash. A link
+    that someone else got to first says so -- when, and from what IP -- which
+    is the signal for the admin to issue another.
+
+    Issuing a link supersedes any outstanding one for the same BBS. See
+    backend/services/claim_links.py.
+    """
+
+    __tablename__ = "claim_links"
+
+    id = Column(Integer, primary_key=True, index=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False, index=True)
+    token_hash = Column(String(64), nullable=False, unique=True, index=True)
+    issued_by = Column(String(50), nullable=True)  # the admin's username
+    issued_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=False)
+    used_at = Column(DateTime, nullable=True)
+    used_ip = Column(String(45), nullable=True)
+    superseded_at = Column(DateTime, nullable=True)
+
+    client = relationship("Client")
+
+
 class League(Base):
     """Game leagues (BRE or FE)"""
 

@@ -5,6 +5,16 @@ All notable changes to Nova Hub will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Claim links** replace sending a client secret over chat. An admin issues
+  one from the BBS's page; the sysop opens it and presses Claim, and the hub
+  generates the secret then and shows it once, with a ready-made client config
+  (`config.psd1` for Windows, `config.toml` for Linux) listing their leagues
+  and BBS numbers. A link works once, expires after 72 hours, and a newer one
+  supersedes it; a used link says when and from what IP. Only the token's hash
+  is stored. Opening the link changes nothing -- claiming is a button -- so a
+  chat app's link preview cannot use it up.
+- `[server] public_url`: the address sysops reach the hub at, used in claim
+  links and the configs they hand out.
 - **FTN addresses belong to the BBS.** An address is held by one BBS, unique
   across the hub, and a BBS may hold several; each league membership links to
   one of its own BBS's addresses. Before this an address was free text on each

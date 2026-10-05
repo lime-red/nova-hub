@@ -2,6 +2,9 @@
 host = "0.0.0.0"
 port = 8000
 data_dir = "./data"
+# The address sysops reach the hub at. Used in claim links and in the config
+# files they hand out; without it the hub guesses from each request.
+# public_url = "https://hub.example.com"
 
 [hub]
 bbs_name = "Nova Hub"

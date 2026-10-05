@@ -3,14 +3,16 @@
 import re
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
+from backend.api.management.claim import public_url, utc
 from backend.core.database import get_db
 from backend.core.security import get_current_user, get_password_hash, require_admin
 from backend.logging_config import get_logger
 from backend.models.database import (
+    ClaimLink,
     Client,
     FtnAddress,
     League,
@@ -31,6 +33,8 @@ from backend.schemas.clients import (
     LeagueMembershipInfo,
     PacketHistoryItem,
 )
+from backend.schemas.claim import ClaimLinkIssued, ClaimLinkStatus
+from backend.services import claim_links
 from backend.services.stats_service import StatsService
 
 logger = get_logger(context="management_clients")
@@ -357,12 +361,73 @@ async def delete_client(
     # Its addresses go with it, so they can be assigned to another BBS.
     for address in client.ftn_addresses:
         db.delete(address)
+    db.query(ClaimLink).filter(ClaimLink.client_id == client.id).delete()
     db.delete(client)
     db.commit()
 
     logger.info(f"Deleted client {client_name} by {current_user.username}")
 
     return {"message": f"Client {client_name} deleted successfully"}
+
+
+@router.post("/{client_id}/claim-link", response_model=ClaimLinkIssued, summary="Issue Claim Link")
+async def issue_claim_link(
+    client_id: int,
+    request: Request,
+    current_user: SysopUser = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    Issue a single-use link that gives this BBS's sysop its credentials (admin only).
+
+    Send the link instead of a secret. It expires after 72 hours and supersedes
+    any outstanding link for this BBS. Nothing changes for the BBS until the
+    link is claimed; claiming generates a new secret, which replaces the
+    current one.
+
+    **Returns:** the link (shown only here) and its expiry
+    """
+    client = db.query(Client).filter(Client.id == client_id).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+
+    token, link, superseded = claim_links.issue(db, client, current_user.username)
+    logger.info(
+        f"Claim link {link.id} issued for client {client.client_id} by {current_user.username}"
+        + (f" (superseding {superseded})" if superseded else "")
+    )
+    return ClaimLinkIssued(
+        url=f"{public_url(request)}/claim/{token}",
+        expires_at=utc(link.expires_at),
+        superseded=superseded,
+    )
+
+
+@router.get("/{client_id}/claim-link", response_model=Optional[ClaimLinkStatus], summary="Claim Link Status")
+async def get_claim_link(
+    client_id: int,
+    current_user: SysopUser = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    The latest claim link issued for this BBS, or null (admin only).
+
+    Never includes the link itself, which exists only in the response that
+    issued it.
+    """
+    if not db.query(Client).filter(Client.id == client_id).first():
+        raise HTTPException(status_code=404, detail="Client not found")
+    link = claim_links.latest(db, client_id)
+    if link is None:
+        return None
+    return ClaimLinkStatus(
+        state=claim_links.state(link),
+        issued_by=link.issued_by,
+        issued_at=utc(link.issued_at),
+        expires_at=utc(link.expires_at),
+        used_at=utc(link.used_at),
+        used_ip=link.used_ip,
+    )
 
 
 @router.post("/{client_id}/regenerate-secret", response_model=ClientSecretResponse, summary="Regenerate Secret")

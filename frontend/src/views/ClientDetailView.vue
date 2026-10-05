@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useClientsStore, type FtnAddressInfo } from '@/stores/clients'
 import { useAuthStore } from '@/stores/auth'
 import AppLayout from '@/components/AppLayout.vue'
-import { leaguesApi } from '@/services/api'
+import { clientsApi, leaguesApi } from '@/services/api'
 
 const route = useRoute()
 const router = useRouter()
@@ -38,8 +38,64 @@ const editingAddressId = ref<number | null>(null)
 const editAddressText = ref('')
 const addressError = ref<string | null>(null)
 
+// Claim links: how a sysop gets credentials without a secret going over chat.
+// The link itself is shown once, here, right after it is issued.
+interface ClaimLinkStatus {
+  state: 'ready' | 'used' | 'superseded' | 'expired'
+  issued_by?: string | null
+  issued_at: string
+  expires_at: string
+  used_at?: string | null
+  used_ip?: string | null
+}
+const claimStatus = ref<ClaimLinkStatus | null>(null)
+const issuedLink = ref<{ url: string; expires_at: string; superseded: number } | null>(null)
+const claimError = ref<string | null>(null)
+const linkCopied = ref(false)
+
+async function loadClaimStatus() {
+  if (!authStore.isAdmin) return
+  try {
+    claimStatus.value = (await clientsApi.getClaimLink(clientId.value)).data
+  } catch {
+    claimStatus.value = null
+  }
+}
+
+async function handleIssueClaimLink() {
+  claimError.value = null
+  linkCopied.value = false
+  try {
+    issuedLink.value = (await clientsApi.issueClaimLink(clientId.value)).data
+    await loadClaimStatus()
+  } catch (e: any) {
+    claimError.value = e.response?.data?.detail || 'Could not issue a claim link'
+  }
+}
+
+async function copyLink() {
+  if (!issuedLink.value) return
+  await navigator.clipboard.writeText(issuedLink.value.url)
+  linkCopied.value = true
+}
+
+function claimStatusText(s: ClaimLinkStatus): string {
+  const at = (iso?: string | null) => (iso ? new Date(iso).toLocaleString() : '')
+  switch (s.state) {
+    case 'ready':
+      return `Waiting to be claimed; expires ${at(s.expires_at)}`
+    case 'used':
+      return `Claimed ${at(s.used_at)} from ${s.used_ip}`
+    case 'superseded':
+      return 'Replaced by a newer link'
+    default:
+      return `Expired ${at(s.expires_at)} without being claimed`
+  }
+}
+
 onMounted(async () => {
   await clientsStore.loadClient(clientId.value)
+  await loadClaimStatus()
 })
 
 function openEditModal() {
@@ -200,13 +256,21 @@ async function copySecret() {
                 </div>
               </dl>
 
-              <button
-                v-if="authStore.isAdmin"
-                class="btn btn-secondary btn-sm mt-4"
-                @click="handleRegenerateSecret"
-              >
-                Regenerate Secret
-              </button>
+              <div v-if="authStore.isAdmin" class="credential-actions mt-4">
+                <button class="btn btn-primary btn-sm" @click="handleIssueClaimLink">
+                  Issue Claim Link
+                </button>
+                <button class="btn btn-secondary btn-sm" @click="handleRegenerateSecret">
+                  Regenerate Secret
+                </button>
+              </div>
+              <p v-if="authStore.isAdmin" class="form-hint mt-2">
+                <template v-if="claimStatus">Last claim link: {{ claimStatusText(claimStatus) }}.</template>
+                <template v-else>
+                  Send the sysop a claim link rather than a secret: it works once and expires in 72 hours.
+                </template>
+              </p>
+              <div v-if="claimError" class="alert alert-danger mt-2">{{ claimError }}</div>
             </div>
           </div>
 
@@ -480,6 +544,38 @@ async function copySecret() {
         </div>
       </div>
 
+      <!-- Claim Link Modal -->
+      <div v-if="issuedLink" class="modal-overlay">
+        <div class="modal">
+          <div class="modal-header">
+            <h3>Claim Link</h3>
+          </div>
+          <div class="modal-body">
+            <p class="mb-4">
+              Send this to the sysop of {{ clientsStore.currentClient?.bbs_name }}. Opening it shows their
+              credentials and a ready-made config file, once. It expires
+              {{ new Date(issuedLink.expires_at).toLocaleString() }}.
+            </p>
+            <div v-if="issuedLink.superseded" class="alert alert-warning mb-4">
+              The previous unclaimed link for this BBS no longer works.
+            </div>
+            <p class="form-hint mb-4">
+              Nothing changes for the BBS until the link is claimed. Claiming creates a new secret, which
+              replaces the current one.
+            </p>
+            <div class="secret-display">
+              <input type="text" :value="issuedLink.url" readonly class="font-mono" />
+              <button type="button" class="btn btn-secondary" @click="copyLink">
+                {{ linkCopied ? 'Copied' : 'Copy' }}
+              </button>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-primary" @click="issuedLink = null">Done</button>
+          </div>
+        </div>
+      </div>
+
       <!-- Secret Modal -->
       <div v-if="showSecretModal" class="modal-overlay">
         <div class="modal">
@@ -510,6 +606,12 @@ async function copySecret() {
 </template>
 
 <style scoped>
+.credential-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
 .address-form {
   display: flex;
   align-items: center;

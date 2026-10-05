@@ -15,8 +15,9 @@ api.interceptors.response.use(
   (error) => {
     // Redirect to login on 401 (not authenticated)
     if (error.response?.status === 401) {
-      // Only redirect if not already on login page
-      if (!window.location.pathname.includes('/login')) {
+      // Only redirect if not already on a page that needs no login
+      const publicPage = ['/login', '/claim/'].some((p) => window.location.pathname.startsWith(p))
+      if (!publicPage) {
         window.location.href = '/login'
       }
     }
@@ -105,7 +106,23 @@ export const clientsApi = {
     api.put(`/clients/${id}/ftn-addresses/${addressId}`, { address }),
 
   deleteFtnAddress: (id: number, addressId: number) =>
-    api.delete(`/clients/${id}/ftn-addresses/${addressId}`)
+    api.delete(`/clients/${id}/ftn-addresses/${addressId}`),
+
+  issueClaimLink: (id: number) =>
+    api.post(`/clients/${id}/claim-link`),
+
+  getClaimLink: (id: number) =>
+    api.get(`/clients/${id}/claim-link`)
+}
+
+// Claim links, the sysop's side. Public: the link is the credential.
+// GET only looks; POST is the claim, and hands back the secret once.
+export const claimApi = {
+  status: (token: string) =>
+    api.get(`/claim/${token}`),
+
+  claim: (token: string) =>
+    api.post(`/claim/${token}`)
 }
 
 // Leagues API functions

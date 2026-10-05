@@ -80,11 +80,52 @@ class Client(Base):
         "Packet", foreign_keys="Packet.dest_client_id", back_populates="dest_client"
     )
     league_memberships = relationship("LeagueMembership", back_populates="client")
+    ftn_addresses = relationship(
+        "FtnAddress", back_populates="client", order_by="FtnAddress.address"
+    )
 
     @staticmethod
     def generate_client_secret() -> str:
         """Generate a secure client secret"""
         return secrets.token_urlsafe(32)
+
+
+class FtnAddress(Base):
+    """A FidoNet-style address owned by one BBS.
+
+    An address is a property of the BBS, not of a league membership: it is
+    unique across the whole hub, so two BBSes can never be handed the same
+    one, and a membership points at one of its own BBS's addresses rather
+    than carrying a free-text copy. A BBS may hold several (one per network,
+    or old and new). Only admins assign them -- a sysop changing their own
+    address would break every league that routes to it.
+    """
+
+    __tablename__ = "ftn_addresses"
+
+    id = Column(Integer, primary_key=True, index=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False, index=True)
+    address = Column(String(50), nullable=False, unique=True, index=True)  # zone:net/node
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    client = relationship("Client", back_populates="ftn_addresses")
+    memberships = relationship("LeagueMembership", back_populates="ftn_address")
+
+    @staticmethod
+    def get_or_create(db: Session, client_id: int, address: str) -> "FtnAddress":
+        """The client's existing row for this address, or a new (unflushed) one.
+
+        Raises ValueError if another BBS already holds the address.
+        """
+        address = address.strip()
+        existing = db.query(FtnAddress).filter(FtnAddress.address == address).first()
+        if existing:
+            if existing.client_id != client_id:
+                raise ValueError(f"{address} already belongs to client {existing.client_id}")
+            return existing
+        row = FtnAddress(client_id=client_id, address=address)
+        db.add(row)
+        return row
 
 
 class League(Base):
@@ -136,11 +177,18 @@ class LeagueMembership(Base):
     joined_at = Column(DateTime, default=datetime.utcnow)
     is_active = Column(Boolean, default=True)
     bbs_index = Column(Integer, nullable=True, index=True)  # BBS ID (1-255)
-    fidonet_address = Column(String(50), nullable=True, index=True)  # Fidonet-style address
+    # One of this client's own addresses; see FtnAddress.
+    ftn_address_id = Column(Integer, ForeignKey("ftn_addresses.id"), nullable=True, index=True)
 
     # Relationships
     client = relationship("Client", back_populates="league_memberships")
     league = relationship("League", back_populates="memberships")
+    ftn_address = relationship("FtnAddress", back_populates="memberships")
+
+    @property
+    def fidonet_address(self) -> Optional[str]:
+        """The address this BBS uses in this league, as text (read-only)."""
+        return self.ftn_address.address if self.ftn_address else None
 
 
 class Packet(Base):

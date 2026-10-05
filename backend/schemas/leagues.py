@@ -50,13 +50,28 @@ class LeagueResponse(BaseModel):
         from_attributes = True
 
 
+class FtnAddressRef(BaseModel):
+    """One of a BBS's FTN addresses"""
+    id: int
+    address: str
+
+
+class NodelistInfo(BaseModel):
+    """The league's current nodelist file, as served for download"""
+    filename: str
+    size: int
+    modified_at: datetime
+
+
 class MemberResponse(BaseModel):
     """League member response"""
     membership_id: int
     client_id: int
     bbs_name: str
     bbs_index: int
-    fidonet_address: Optional[str] = None
+    ftn_address_id: Optional[int] = None
+    fidonet_address: Optional[str] = None  # the address's text, for display
+    client_ftn_addresses: List[FtnAddressRef] = []  # what an edit may choose from
     client_oauth_id: str  # The client's OAuth client_id
     joined_at: Optional[str] = None
     is_active: bool
@@ -88,6 +103,7 @@ class LeagueDetailResponse(BaseModel):
     members: List[MemberResponse] = []
     available_clients: List[Dict[str, Any]] = []
     stats: LeagueStats
+    nodelist: Optional[NodelistInfo] = None  # None until one has been generated
 
     class Config:
         from_attributes = True
@@ -97,17 +113,13 @@ class AddMemberRequest(BaseModel):
     """Add member to league"""
     client_id: int
     bbs_index: int
-    fidonet_address: str
+    ftn_address_id: int  # one of the client's own addresses
 
 
-class UpdateBbsIndexRequest(BaseModel):
-    """Update BBS index for a member"""
-    bbs_index: int
-
-
-class UpdateFidonetRequest(BaseModel):
-    """Update Fidonet address for a member"""
-    fidonet_address: str
+class UpdateMemberRequest(BaseModel):
+    """Edit a membership; a field left out is left as it is"""
+    bbs_index: Optional[int] = None
+    ftn_address_id: Optional[int] = None
 
 
 class LeagueDeleteRequest(BaseModel):

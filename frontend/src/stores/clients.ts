@@ -33,6 +33,14 @@ export interface ClientDetail {
   }
   packets: PacketHistoryItem[]
   league_memberships: LeagueMembershipInfo[]
+  ftn_addresses: FtnAddressInfo[]
+}
+
+// An FTN address this BBS holds, and the leagues whose membership uses it.
+export interface FtnAddressInfo {
+  id: number
+  address: string
+  leagues: string[]
 }
 
 export interface PacketHistoryItem {
@@ -53,6 +61,7 @@ export interface LeagueMembershipInfo {
   full_id: string
   bbs_index: number
   fidonet_address?: string
+  nodelist_filename?: string | null  // null until the league has a nodelist
 }
 
 export interface ClientCreated {
@@ -176,6 +185,39 @@ export const useClientsStore = defineStore('clients', () => {
     }
   }
 
+  // FTN addresses (admin only). Each reloads the client so the list and its
+  // league usage stay as the server sees them.
+  async function changeFtnAddress(
+    id: number,
+    call: () => Promise<unknown>,
+    failure: string
+  ): Promise<boolean> {
+    error.value = null
+    try {
+      await call()
+      await loadClient(id)
+      return true
+    } catch (err: unknown) {
+      const axiosError = err as { response?: { data?: { detail?: string } } }
+      error.value = axiosError.response?.data?.detail || failure
+      return false
+    }
+  }
+
+  function addFtnAddress(id: number, address: string): Promise<boolean> {
+    return changeFtnAddress(id, () => clientsApi.addFtnAddress(id, address), 'Failed to assign address')
+  }
+
+  function updateFtnAddress(id: number, addressId: number, address: string): Promise<boolean> {
+    return changeFtnAddress(
+      id, () => clientsApi.updateFtnAddress(id, addressId, address), 'Failed to change address'
+    )
+  }
+
+  function deleteFtnAddress(id: number, addressId: number): Promise<boolean> {
+    return changeFtnAddress(id, () => clientsApi.deleteFtnAddress(id, addressId), 'Failed to remove address')
+  }
+
   function clearError(): void {
     error.value = null
   }
@@ -197,6 +239,9 @@ export const useClientsStore = defineStore('clients', () => {
     updateClient,
     deleteClient,
     regenerateSecret,
+    addFtnAddress,
+    updateFtnAddress,
+    deleteFtnAddress,
     clearError,
     clearCurrentClient
   }

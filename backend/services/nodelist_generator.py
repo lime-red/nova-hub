@@ -45,6 +45,27 @@ from backend.models.database import League, LeagueMembership, Client
 logger = get_logger(context="nodelist_generator")
 
 
+def nodelist_dir(data_dir, league: League) -> Path:
+    """Where a league's nodelist lives: <data_dir>/nodelists/<bre|fe>/<league>/"""
+    return Path(data_dir) / "nodelists" / ("bre" if league.game_type == "B" else "fe") / league.league_id
+
+
+def nodelist_filename(league: League) -> str:
+    return f"{'BRNODES' if league.game_type == 'B' else 'FENODES'}.{league.league_id}"
+
+
+def find_nodelist(data_dir, league: League) -> Path | None:
+    """The league's current nodelist file, or None if none has been written.
+
+    Case-insensitive, like the service API's lookup: a file put there by hand
+    is not necessarily upper case.
+    """
+    from backend.services.processing_service import find_file_case_insensitive
+
+    path = find_file_case_insensitive(nodelist_dir(data_dir, league), nodelist_filename(league))
+    return path if path and path.is_file() else None
+
+
 def _sanitize_nodelist_field(value: str | None) -> str:
     """Return a line-safe representation for nodes.dat fields."""
     if not value:
@@ -157,13 +178,11 @@ class NodelistGenerator:
         content = "\r\n".join(lines) + "\r\n"
 
         # Write to nodelists directory
-        game_type_str = "bre" if league.game_type == "B" else "fe"
-        nodelist_dir = self.data_dir / "nodelists" / game_type_str / league.league_id
-        nodelist_dir.mkdir(parents=True, exist_ok=True)
+        directory = nodelist_dir(self.data_dir, league)
+        directory.mkdir(parents=True, exist_ok=True)
 
-        prefix = "BRNODES" if league.game_type == "B" else "FENODES"
-        filename = f"{prefix}.{league.league_id}"
-        dest = nodelist_dir / filename
+        filename = nodelist_filename(league)
+        dest = directory / filename
 
         self._write_atomic(dest, content)
         logger.info(

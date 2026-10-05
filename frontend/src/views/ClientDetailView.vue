@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { onMounted, ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useClientsStore } from '@/stores/clients'
+import { useClientsStore, type FtnAddressInfo } from '@/stores/clients'
 import { useAuthStore } from '@/stores/auth'
 import AppLayout from '@/components/AppLayout.vue'
+import { leaguesApi } from '@/services/api'
 
 const route = useRoute()
 const router = useRouter()
@@ -29,6 +30,13 @@ const editCity = ref('')
 const editState = ref('')
 const editCountry = ref('')
 const newSecret = ref('')
+
+// FTN addresses belong to the BBS; a league membership picks one of them.
+// Admin only: renumbering one moves every league that uses it.
+const newAddress = ref('')
+const editingAddressId = ref<number | null>(null)
+const editAddressText = ref('')
+const addressError = ref<string | null>(null)
 
 onMounted(async () => {
   await clientsStore.loadClient(clientId.value)
@@ -77,6 +85,40 @@ async function handleDelete() {
   const success = await clientsStore.deleteClient(clientId.value)
   if (success) {
     router.push('/clients')
+  }
+}
+
+async function handleAddAddress() {
+  if (!newAddress.value.trim()) return
+  addressError.value = null
+  if (await clientsStore.addFtnAddress(clientId.value, newAddress.value)) {
+    newAddress.value = ''
+  } else {
+    addressError.value = clientsStore.error
+  }
+}
+
+function startEditAddress(address: FtnAddressInfo) {
+  addressError.value = null
+  editingAddressId.value = address.id
+  editAddressText.value = address.address
+}
+
+async function handleSaveAddress() {
+  if (editingAddressId.value === null) return
+  addressError.value = null
+  if (await clientsStore.updateFtnAddress(clientId.value, editingAddressId.value, editAddressText.value)) {
+    editingAddressId.value = null
+  } else {
+    addressError.value = clientsStore.error
+  }
+}
+
+async function handleRemoveAddress(address: FtnAddressInfo) {
+  if (!confirm(`Remove ${address.address} from this BBS?`)) return
+  addressError.value = null
+  if (!(await clientsStore.deleteFtnAddress(clientId.value, address.id))) {
+    addressError.value = clientsStore.error
   }
 }
 
@@ -196,6 +238,85 @@ async function copySecret() {
           </div>
         </div>
 
+        <!-- FTN Addresses -->
+        <div class="card mt-4">
+          <div class="card-header">
+            <h3>FTN Addresses</h3>
+          </div>
+          <div class="card-body" style="padding: 0;">
+            <div v-if="addressError" class="alert alert-error address-alert">{{ addressError }}</div>
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Address</th>
+                  <th>Used In</th>
+                  <th v-if="authStore.isAdmin"></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-if="!clientsStore.currentClient.ftn_addresses?.length">
+                  <td :colspan="authStore.isAdmin ? 3 : 2" class="text-center text-muted" style="padding: 2rem;">
+                    No FTN addresses assigned
+                  </td>
+                </tr>
+                <tr v-for="address in clientsStore.currentClient.ftn_addresses" :key="address.id">
+                  <td class="font-mono">
+                    <form
+                      v-if="editingAddressId === address.id"
+                      class="address-form"
+                      @submit.prevent="handleSaveAddress"
+                    >
+                      <input v-model="editAddressText" type="text" class="font-mono" required />
+                      <button type="submit" class="btn btn-sm btn-primary">Save</button>
+                      <button type="button" class="btn btn-sm btn-secondary" @click="editingAddressId = null">
+                        Cancel
+                      </button>
+                    </form>
+                    <template v-else>{{ address.address }}</template>
+                  </td>
+                  <td>
+                    <span v-if="!address.leagues.length" class="text-muted">Not used</span>
+                    <span v-else class="font-mono">{{ address.leagues.join(', ') }}</span>
+                  </td>
+                  <td v-if="authStore.isAdmin" class="actions">
+                    <button
+                      class="btn btn-sm btn-secondary"
+                      :disabled="editingAddressId !== null"
+                      @click="startEditAddress(address)"
+                    >
+                      Renumber
+                    </button>
+                    <button
+                      class="btn btn-sm btn-danger"
+                      :disabled="address.leagues.length > 0"
+                      :title="address.leagues.length ? 'In use; move those memberships first' : ''"
+                      @click="handleRemoveAddress(address)"
+                    >
+                      Remove
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <form v-if="authStore.isAdmin" class="address-form address-add" @submit.prevent="handleAddAddress">
+              <input
+                v-model="newAddress"
+                type="text"
+                class="font-mono"
+                placeholder="zone:net/node, e.g. 135:135/21"
+                pattern="\d+:\d+/\d+"
+              />
+              <button type="submit" class="btn btn-sm btn-primary" :disabled="!newAddress.trim()">
+                Assign Address
+              </button>
+            </form>
+            <p class="form-hint address-hint">
+              An address belongs to one BBS across the whole hub. Renumbering one
+              changes it in every league listed, from each league's next nodelist.
+            </p>
+          </div>
+        </div>
+
         <!-- League Memberships -->
         <div class="card mt-4">
           <div class="card-header">
@@ -208,11 +329,12 @@ async function copySecret() {
                   <th>League</th>
                   <th>BBS Index</th>
                   <th>Fidonet Address</th>
+                  <th>Nodelist</th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-if="!clientsStore.currentClient.league_memberships?.length">
-                  <td colspan="3" class="text-center text-muted" style="padding: 2rem;">
+                  <td colspan="4" class="text-center text-muted" style="padding: 2rem;">
                     Not a member of any leagues
                   </td>
                 </tr>
@@ -224,6 +346,15 @@ async function copySecret() {
                   </td>
                   <td class="font-mono">{{ String(membership.bbs_index).padStart(2, '0') }}</td>
                   <td class="font-mono">{{ membership.fidonet_address || '-' }}</td>
+                  <td>
+                    <a
+                      v-if="membership.nodelist_filename"
+                      class="font-mono"
+                      :href="leaguesApi.nodelistUrl(membership.league_id)"
+                      download
+                    >{{ membership.nodelist_filename }}</a>
+                    <span v-else class="text-muted">Not generated yet</span>
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -379,6 +510,33 @@ async function copySecret() {
 </template>
 
 <style scoped>
+.address-form {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.address-form input {
+  max-width: 14rem;
+}
+
+.address-add {
+  padding: 1rem 1.5rem 0;
+}
+
+.address-hint {
+  padding: 0.5rem 1.5rem 1rem;
+  margin: 0;
+}
+
+.address-alert {
+  margin: 1rem 1.5rem 0;
+}
+
+table .actions {
+  justify-content: flex-end;
+}
+
 .page {
   max-width: 1200px;
   margin: 0 auto;

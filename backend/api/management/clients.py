@@ -1,5 +1,6 @@
 """Management API client management endpoints"""
 
+import re
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -9,7 +10,14 @@ from sqlalchemy.orm import Session
 from backend.core.database import get_db
 from backend.core.security import get_current_user, get_password_hash, require_admin
 from backend.logging_config import get_logger
-from backend.models.database import Client, League, LeagueMembership, Packet, SysopUser
+from backend.models.database import (
+    Client,
+    FtnAddress,
+    League,
+    LeagueMembership,
+    Packet,
+    SysopUser,
+)
 from backend.schemas.clients import (
     ClientCreate,
     ClientCreatedResponse,
@@ -18,6 +26,8 @@ from backend.schemas.clients import (
     ClientSecretResponse,
     ClientStats,
     ClientUpdate,
+    FtnAddressInfo,
+    FtnAddressRequest,
     LeagueMembershipInfo,
     PacketHistoryItem,
 )
@@ -171,6 +181,7 @@ async def get_client(
                     full_id=f"{league.league_id}{league.game_type}",
                     bbs_index=membership.bbs_index,
                     fidonet_address=membership.fidonet_address,
+                    nodelist_filename=_nodelist_filename(league),
                 )
             )
 
@@ -192,6 +203,7 @@ async def get_client(
         ),
         packets=packets,
         league_memberships=league_memberships,
+        ftn_addresses=[_address_info(a) for a in client.ftn_addresses],
     )
 
 
@@ -342,6 +354,9 @@ async def delete_client(
         raise HTTPException(status_code=404, detail="Client not found")
 
     client_name = client.client_id
+    # Its addresses go with it, so they can be assigned to another BBS.
+    for address in client.ftn_addresses:
+        db.delete(address)
     db.delete(client)
     db.commit()
 
@@ -385,3 +400,154 @@ async def regenerate_secret(
         client_id=client.client_id,
         client_secret=new_secret,  # Plain text, shown only once
     )
+
+
+# FTN addresses. A property of the BBS, unique across the hub; memberships
+# point at one of them (see FtnAddress). Admin only: a sysop renumbering
+# their own address would break every league that routes to it.
+
+def _nodelist_filename(league: League) -> Optional[str]:
+    from backend.core.config import get_config
+    from backend.services.nodelist_generator import find_nodelist
+
+    path = find_nodelist(get_config().get("server", {}).get("data_dir", "./data"), league)
+    return path.name if path else None
+
+
+FIDONET_RE = re.compile(r"^\d+:\d+/\d+$")
+
+
+def _address_info(address: FtnAddress) -> FtnAddressInfo:
+    return FtnAddressInfo(
+        id=address.id,
+        address=address.address,
+        leagues=sorted(m.league.full_id for m in address.memberships if m.league),
+    )
+
+
+def _check_address(db: Session, text: str, exclude_id: Optional[int] = None) -> str:
+    """The normalised address, if well-formed and held by no other row; 400 otherwise."""
+    address = text.strip()
+    if not FIDONET_RE.match(address):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid FTN address format. Use zone:net/node (e.g., 135:135/21)",
+        )
+    query = db.query(FtnAddress).filter(FtnAddress.address == address)
+    if exclude_id is not None:
+        query = query.filter(FtnAddress.id != exclude_id)
+    holder = query.first()
+    if holder:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{address} already belongs to {holder.client.bbs_name}",
+        )
+    hub_in = sorted(
+        l.full_id for l in db.query(League).filter(League.hub_fidonet_address == address)
+    )
+    if hub_in:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{address} is the hub's own address in {', '.join(hub_in)}",
+        )
+    return address
+
+
+def _client_address(db: Session, client_id: int, address_id: int) -> FtnAddress:
+    address = (
+        db.query(FtnAddress)
+        .filter(FtnAddress.id == address_id, FtnAddress.client_id == client_id)
+        .first()
+    )
+    if not address:
+        raise HTTPException(status_code=404, detail="FTN address not found for this client")
+    return address
+
+
+@router.post("/{client_id}/ftn-addresses", response_model=FtnAddressInfo, summary="Assign FTN Address")
+async def add_ftn_address(
+    client_id: int,
+    request: FtnAddressRequest,
+    current_user: SysopUser = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    Assign an FTN address to a BBS (admin only)
+
+    The address must not belong to any other BBS. Use it in a league by
+    choosing it on that league's membership.
+
+    **Example:**
+    ```bash
+    curl -X POST "https://hub.example.com/management/api/v1/clients/1/ftn-addresses" \\
+      -H "Content-Type: application/json" \\
+      -d '{"address": "135:135/21"}' \\
+      -b cookies.txt
+    ```
+    """
+    client = db.query(Client).filter(Client.id == client_id).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+
+    address = FtnAddress(client_id=client.id, address=_check_address(db, request.address))
+    db.add(address)
+    db.commit()
+    db.refresh(address)
+
+    logger.info(f"Assigned {address.address} to {client.bbs_name} by {current_user.username}")
+    return _address_info(address)
+
+
+@router.put("/{client_id}/ftn-addresses/{address_id}", response_model=FtnAddressInfo, summary="Renumber FTN Address")
+async def update_ftn_address(
+    client_id: int,
+    address_id: int,
+    request: FtnAddressRequest,
+    current_user: SysopUser = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    Change an FTN address (admin only)
+
+    Every league membership using it follows, and each of those leagues'
+    nodelists picks the change up at its next regeneration.
+    """
+    address = _client_address(db, client_id, address_id)
+    old = address.address
+    address.address = _check_address(db, request.address, exclude_id=address.id)
+    db.commit()
+    db.refresh(address)
+
+    logger.info(
+        f"Renumbered {address.client.bbs_name} {old} -> {address.address} "
+        f"(used in {[m.league.full_id for m in address.memberships]}) by {current_user.username}"
+    )
+    return _address_info(address)
+
+
+@router.delete("/{client_id}/ftn-addresses/{address_id}", summary="Remove FTN Address")
+async def delete_ftn_address(
+    client_id: int,
+    address_id: int,
+    current_user: SysopUser = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    Remove an FTN address from a BBS (admin only)
+
+    Refused while any league membership still uses it.
+    """
+    address = _client_address(db, client_id, address_id)
+    in_use = sorted(m.league.full_id for m in address.memberships if m.league)
+    if in_use:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{address.address} is still used in {', '.join(in_use)}; "
+            "move those memberships to another address first",
+        )
+    text = address.address
+    db.delete(address)
+    db.commit()
+
+    logger.info(f"Removed {text} from client {client_id} by {current_user.username}")
+    return {"message": f"{text} removed"}

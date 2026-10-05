@@ -1,11 +1,11 @@
 """Management API league management endpoints"""
 
-import re
 import shutil
 from pathlib import Path
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -14,6 +14,7 @@ from backend.core.security import get_current_user, require_admin
 from backend.logging_config import get_logger
 from backend.models.database import (
     Client,
+    FtnAddress,
     League,
     LeagueMembership,
     Packet,
@@ -24,6 +25,7 @@ from backend.models.database import (
 )
 from backend.schemas.leagues import (
     AddMemberRequest,
+    FtnAddressRef,
     LeagueCreate,
     LeagueDeleteRequest,
     LeagueDetailResponse,
@@ -31,8 +33,8 @@ from backend.schemas.leagues import (
     LeagueStats,
     LeagueUpdate,
     MemberResponse,
-    UpdateBbsIndexRequest,
-    UpdateFidonetRequest,
+    NodelistInfo,
+    UpdateMemberRequest,
 )
 
 logger = get_logger(context="management_leagues")
@@ -118,22 +120,7 @@ async def get_league(
         .all()
     )
 
-    members = []
-    for membership in memberships:
-        client = db.query(Client).filter(Client.id == membership.client_id).first()
-        if client:
-            members.append(
-                MemberResponse(
-                    membership_id=membership.id,
-                    client_id=client.id,
-                    bbs_name=client.bbs_name,
-                    bbs_index=membership.bbs_index,
-                    fidonet_address=membership.fidonet_address,
-                    client_oauth_id=client.client_id,
-                    joined_at=membership.joined_at.strftime("%Y-%m-%d %H:%M") if membership.joined_at else None,
-                    is_active=membership.is_active,
-                )
-            )
+    members = [_member_response(m) for m in memberships if m.client]
 
     # Get available clients (not already in this league)
     member_client_ids = [m.client_id for m in memberships]
@@ -150,7 +137,12 @@ async def get_league(
         available_clients = db.query(Client).filter(Client.is_active == True).all()
 
     available_list = [
-        {"id": c.id, "bbs_name": c.bbs_name, "client_id": c.client_id}
+        {
+            "id": c.id,
+            "bbs_name": c.bbs_name,
+            "client_id": c.client_id,
+            "ftn_addresses": [r.model_dump() for r in _address_refs(c)],
+        }
         for c in available_clients
     ]
 
@@ -183,6 +175,7 @@ async def get_league(
         members=members,
         available_clients=available_list,
         stats=stats,
+        nodelist=_nodelist_info(league),
     )
 
 
@@ -228,6 +221,8 @@ async def create_league(
             status_code=400,
             detail="League with this ID and game type already exists",
         )
+
+    _check_hub_address_is_free(db, request.hub_fidonet_address)
 
     league = League(
         league_id=request.league_id,
@@ -309,6 +304,7 @@ async def update_league(
     if request.game_executable is not None:
         league.game_executable = request.game_executable if request.game_executable else None
     if request.hub_fidonet_address is not None:
+        _check_hub_address_is_free(db, request.hub_fidonet_address)
         league.hub_fidonet_address = request.hub_fidonet_address or None
     if request.hub_routes_mail is not None:
         league.hub_routes_mail = request.hub_routes_mail
@@ -426,7 +422,78 @@ async def delete_league(
     return {"message": f"League {league_name} deleted successfully"}
 
 
+def _check_hub_address_is_free(db: Session, address: Optional[str]) -> None:
+    """400 if a BBS holds this address. The hub is not a client, so its
+    per-league address lives on the league -- and the same address may serve
+    several leagues -- but it must never be one a BBS also answers to."""
+    if not address or not address.strip():
+        return
+    holder = db.query(FtnAddress).filter(FtnAddress.address == address.strip()).first()
+    if holder:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{address.strip()} belongs to {holder.client.bbs_name}; the hub needs its own address",
+        )
+
+
 # Member management endpoints
+
+def _check_bbs_index(db: Session, league_id: int, bbs_index: int,
+                     exclude_membership_id: Optional[int] = None) -> None:
+    """Raise 400 unless bbs_index is in range and free in this league."""
+    if not (1 <= bbs_index <= 255):
+        raise HTTPException(status_code=400, detail="BBS ID must be between 1 and 255")
+    query = db.query(LeagueMembership).filter(
+        LeagueMembership.league_id == league_id,
+        LeagueMembership.bbs_index == bbs_index,
+        LeagueMembership.is_active == True,
+    )
+    if exclude_membership_id is not None:
+        query = query.filter(LeagueMembership.id != exclude_membership_id)
+    holder = query.first()
+    if holder:
+        raise HTTPException(
+            status_code=400,
+            detail=f"BBS ID {bbs_index} is already assigned to {holder.client.bbs_name} in this league",
+        )
+
+
+def _check_ftn_address(db: Session, client: Client, ftn_address_id: int) -> FtnAddress:
+    """The address, if it is one of this client's own; 400 otherwise.
+
+    Addresses are unique across the hub and owned by a BBS, so a membership
+    can only use one its BBS already holds -- which is what stops two BBSes
+    sharing an address. Assigning a new one happens on the client.
+    """
+    address = db.query(FtnAddress).filter(FtnAddress.id == ftn_address_id).first()
+    if not address:
+        raise HTTPException(status_code=400, detail="FTN address not found")
+    if address.client_id != client.id:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{address.address} belongs to {address.client.bbs_name}, not {client.bbs_name}",
+        )
+    return address
+
+
+def _address_refs(client: Client) -> List[FtnAddressRef]:
+    return [FtnAddressRef(id=a.id, address=a.address) for a in client.ftn_addresses]
+
+
+def _member_response(membership: LeagueMembership) -> MemberResponse:
+    client = membership.client
+    return MemberResponse(
+        membership_id=membership.id,
+        client_id=client.id,
+        bbs_name=client.bbs_name,
+        bbs_index=membership.bbs_index,
+        ftn_address_id=membership.ftn_address_id,
+        fidonet_address=membership.fidonet_address,
+        client_ftn_addresses=_address_refs(client),
+        client_oauth_id=client.client_id,
+        joined_at=membership.joined_at.strftime("%Y-%m-%d %H:%M") if membership.joined_at else None,
+        is_active=membership.is_active,
+    )
 
 
 @router.post("/{league_id}/members", response_model=MemberResponse, summary="Add Member")
@@ -445,7 +512,7 @@ async def add_member(
     **Request Body:**
     - `client_id`: Database ID of the client to add
     - `bbs_index`: BBS index (1-255)
-    - `fidonet_address`: Fidonet address (zone:net/node format)
+    - `ftn_address_id`: One of the client's own FTN addresses (assigned on the client)
 
     **Returns:** Created membership
 
@@ -453,7 +520,7 @@ async def add_member(
     ```bash
     curl -X POST "https://hub.example.com/management/api/v1/leagues/1/members" \\
       -H "Content-Type: application/json" \\
-      -d '{"client_id": 1, "bbs_index": 2, "fidonet_address": "13:10/100"}' \\
+      -d '{"client_id": 1, "bbs_index": 2, "ftn_address_id": 7}' \\
       -b cookies.txt
     ```
     """
@@ -465,48 +532,8 @@ async def add_member(
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
 
-    # Validate BBS index range
-    if not (1 <= request.bbs_index <= 255):
-        raise HTTPException(status_code=400, detail="BBS ID must be between 1 and 255")
-
-    # Check BBS index uniqueness within league
-    existing_bbs = (
-        db.query(LeagueMembership)
-        .filter(
-            LeagueMembership.league_id == league_id,
-            LeagueMembership.bbs_index == request.bbs_index,
-            LeagueMembership.is_active == True,
-        )
-        .first()
-    )
-    if existing_bbs:
-        raise HTTPException(
-            status_code=400,
-            detail=f"BBS ID {request.bbs_index} is already assigned in this league",
-        )
-
-    # Validate Fidonet address format
-    if not re.match(r"^\d+:\d+/\d+$", request.fidonet_address):
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid Fidonet address format. Use zone:net/node (e.g., 13:10/100)",
-        )
-
-    # Check Fidonet address uniqueness within league
-    existing_fidonet = (
-        db.query(LeagueMembership)
-        .filter(
-            LeagueMembership.league_id == league_id,
-            LeagueMembership.fidonet_address == request.fidonet_address,
-            LeagueMembership.is_active == True,
-        )
-        .first()
-    )
-    if existing_fidonet:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Fidonet address {request.fidonet_address} is already assigned in this league",
-        )
+    _check_bbs_index(db, league_id, request.bbs_index)
+    address = _check_ftn_address(db, client, request.ftn_address_id)
 
     # Check if already a member
     existing = (
@@ -522,7 +549,7 @@ async def add_member(
         # Reactivate if inactive and update values
         existing.is_active = True
         existing.bbs_index = request.bbs_index
-        existing.fidonet_address = request.fidonet_address
+        existing.ftn_address = address
         db.commit()
         membership = existing
     else:
@@ -531,7 +558,7 @@ async def add_member(
             league_id=league_id,
             client_id=request.client_id,
             bbs_index=request.bbs_index,
-            fidonet_address=request.fidonet_address,
+            ftn_address=address,
             is_active=True,
         )
         db.add(membership)
@@ -540,16 +567,60 @@ async def add_member(
 
     logger.info(f"Added {client.bbs_name} to league {league.full_id} by {current_user.username}")
 
-    return MemberResponse(
-        membership_id=membership.id,
-        client_id=client.id,
-        bbs_name=client.bbs_name,
-        bbs_index=membership.bbs_index,
-        fidonet_address=membership.fidonet_address,
-        client_oauth_id=client.client_id,
-        joined_at=membership.joined_at.strftime("%Y-%m-%d %H:%M") if membership.joined_at else None,
-        is_active=membership.is_active,
+    return _member_response(membership)
+
+
+def _data_dir() -> str:
+    from backend.core.config import get_config
+
+    return get_config().get("server", {}).get("data_dir", "./data")
+
+
+def _nodelist_info(league: League) -> Optional[NodelistInfo]:
+    from datetime import datetime
+
+    from backend.services.nodelist_generator import find_nodelist
+
+    path = find_nodelist(_data_dir(), league)
+    if path is None:
+        return None
+    stat = path.stat()
+    return NodelistInfo(
+        filename=path.name,
+        size=stat.st_size,
+        modified_at=datetime.fromtimestamp(stat.st_mtime),
     )
+
+
+@router.get("/{league_id}/nodelist", summary="Download Nodelist")
+async def download_nodelist(
+    league_id: int,
+    current_user: SysopUser = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Download the league's current BRNODES/FENODES nodelist.
+
+    The same file nova_client fetches through the service API: the one the last
+    processing run (or Generate Nodelist) wrote. Fetching it here does not mark
+    it downloaded for any BBS.
+
+    **Path Parameters:**
+    - `league_id`: Database ID of the league
+
+    **Returns:** the nodelist file; 404 if none has been generated yet
+    """
+    from backend.services.nodelist_generator import find_nodelist
+
+    league = db.query(League).filter(League.id == league_id).first()
+    if not league:
+        raise HTTPException(status_code=404, detail="League not found")
+
+    path = find_nodelist(_data_dir(), league)
+    if path is None:
+        raise HTTPException(status_code=404, detail=f"No nodelist has been generated for {league.full_id} yet")
+
+    return FileResponse(path, filename=path.name, media_type="application/octet-stream")
 
 
 @router.post("/{league_id}/generate-nodelist", summary="Generate Nodelist")
@@ -653,31 +724,36 @@ async def remove_member(
     return {"message": "Member removed successfully"}
 
 
-@router.put("/{league_id}/members/{membership_id}/bbs-index", summary="Update BBS Index")
-async def update_bbs_index(
+@router.patch("/{league_id}/members/{membership_id}", response_model=MemberResponse, summary="Edit Member")
+async def update_member(
     league_id: int,
     membership_id: int,
-    request: UpdateBbsIndexRequest,
+    request: UpdateMemberRequest,
     current_user: SysopUser = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     """
-    Update BBS index for a league membership (admin only)
+    Edit a league membership's BBS index and/or FTN address (admin only)
+
+    Both fields are validated before either is written, so a rejected edit
+    leaves the membership exactly as it was. The league's nodelist picks the
+    change up at its next regeneration.
 
     **Path Parameters:**
     - `league_id`: Database ID of the league
     - `membership_id`: Database ID of the membership
 
-    **Request Body:**
+    **Request Body** (at least one):
     - `bbs_index`: New BBS index (1-255)
+    - `ftn_address_id`: One of the client's own FTN addresses
 
-    **Returns:** Success message
+    **Returns:** The updated membership
 
     **Example:**
     ```bash
-    curl -X PUT "https://hub.example.com/management/api/v1/leagues/1/members/1/bbs-index" \\
+    curl -X PATCH "https://hub.example.com/management/api/v1/leagues/1/members/1" \\
       -H "Content-Type: application/json" \\
-      -d '{"bbs_index": 5}' \\
+      -d '{"bbs_index": 5, "ftn_address_id": 7}' \\
       -b cookies.txt
     ```
     """
@@ -689,108 +765,30 @@ async def update_bbs_index(
         )
         .first()
     )
-
     if not membership:
         raise HTTPException(status_code=404, detail="Membership not found")
 
-    # Validate range
-    if not (1 <= request.bbs_index <= 255):
-        raise HTTPException(status_code=400, detail="BBS ID must be between 1 and 255")
+    if request.bbs_index is None and request.ftn_address_id is None:
+        raise HTTPException(status_code=400, detail="Nothing to change: give bbs_index and/or ftn_address_id")
 
-    # Check uniqueness within league (excluding current membership)
-    existing = (
-        db.query(LeagueMembership)
-        .filter(
-            LeagueMembership.league_id == league_id,
-            LeagueMembership.bbs_index == request.bbs_index,
-            LeagueMembership.id != membership_id,
-            LeagueMembership.is_active == True,
-        )
-        .first()
-    )
+    address = None
+    if request.bbs_index is not None:
+        _check_bbs_index(db, league_id, request.bbs_index, exclude_membership_id=membership_id)
+    if request.ftn_address_id is not None:
+        address = _check_ftn_address(db, membership.client, request.ftn_address_id)
 
-    if existing:
-        raise HTTPException(
-            status_code=400,
-            detail=f"BBS ID {request.bbs_index} is already assigned to another member in this league",
-        )
-
-    membership.bbs_index = request.bbs_index
+    before = (membership.bbs_index, membership.fidonet_address)
+    if request.bbs_index is not None:
+        membership.bbs_index = request.bbs_index
+    if address is not None:
+        membership.ftn_address = address
     db.commit()
+    db.refresh(membership)
 
-    logger.info(f"Updated BBS index for membership {membership_id} to {request.bbs_index} by {current_user.username}")
-
-    return {"message": f"BBS index updated to {request.bbs_index}"}
-
-
-@router.put("/{league_id}/members/{membership_id}/fidonet", summary="Update Fidonet Address")
-async def update_fidonet(
-    league_id: int,
-    membership_id: int,
-    request: UpdateFidonetRequest,
-    current_user: SysopUser = Depends(require_admin),
-    db: Session = Depends(get_db),
-):
-    """
-    Update Fidonet address for a league membership (admin only)
-
-    **Path Parameters:**
-    - `league_id`: Database ID of the league
-    - `membership_id`: Database ID of the membership
-
-    **Request Body:**
-    - `fidonet_address`: New Fidonet address (zone:net/node format)
-
-    **Returns:** Success message
-
-    **Example:**
-    ```bash
-    curl -X PUT "https://hub.example.com/management/api/v1/leagues/1/members/1/fidonet" \\
-      -H "Content-Type: application/json" \\
-      -d '{"fidonet_address": "13:10/200"}' \\
-      -b cookies.txt
-    ```
-    """
-    membership = (
-        db.query(LeagueMembership)
-        .filter(
-            LeagueMembership.id == membership_id,
-            LeagueMembership.league_id == league_id,
-        )
-        .first()
+    logger.info(
+        f"Edited {membership.client.bbs_name} in league {membership.league.full_id}: "
+        f"index {before[0]} -> {membership.bbs_index}, "
+        f"address {before[1]} -> {membership.fidonet_address} by {current_user.username}"
     )
 
-    if not membership:
-        raise HTTPException(status_code=404, detail="Membership not found")
-
-    # Validate format
-    if not re.match(r"^\d+:\d+/\d+$", request.fidonet_address):
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid Fidonet address format. Use zone:net/node (e.g., 13:10/100)",
-        )
-
-    # Check uniqueness within league (excluding current membership)
-    existing = (
-        db.query(LeagueMembership)
-        .filter(
-            LeagueMembership.league_id == league_id,
-            LeagueMembership.fidonet_address == request.fidonet_address,
-            LeagueMembership.id != membership_id,
-            LeagueMembership.is_active == True,
-        )
-        .first()
-    )
-
-    if existing:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Fidonet address {request.fidonet_address} is already assigned to another member in this league",
-        )
-
-    membership.fidonet_address = request.fidonet_address
-    db.commit()
-
-    logger.info(f"Updated Fidonet address for membership {membership_id} to {request.fidonet_address} by {current_user.username}")
-
-    return {"message": f"Fidonet address updated to {request.fidonet_address}"}
+    return _member_response(membership)

@@ -136,6 +136,19 @@ class LeagueMembershipInfo(BaseModel):
     full_id: str  # e.g., "013B"
     bbs_index: int
     fidonet_address: Optional[str] = None
+    nodelist_filename: Optional[str] = None  # None until the league has a nodelist
+
+
+class FtnAddressInfo(BaseModel):
+    """An FTN address the BBS holds, and the leagues using it"""
+    id: int
+    address: str
+    leagues: List[str] = []  # full ids, e.g. ["014B", "015F"]
+
+
+class FtnAddressRequest(BaseModel):
+    """Assign or renumber an FTN address (admin only)"""
+    address: str
 
 
 class ClientDetailResponse(BaseModel):
@@ -151,6 +164,7 @@ class ClientDetailResponse(BaseModel):
     stats: ClientStats
     packets: List[PacketHistoryItem] = []
     league_memberships: List[LeagueMembershipInfo] = []
+    ftn_addresses: List[FtnAddressInfo] = []
 
     class Config:
         from_attributes = True

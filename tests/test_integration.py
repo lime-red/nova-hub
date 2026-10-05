@@ -12,7 +12,7 @@ from sqlalchemy.pool import StaticPool
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from main import app, management_app, service_app
-from backend.models.database import Base, Client, League, LeagueMembership, SysopUser
+from backend.models.database import Base, Client, FtnAddress, League, LeagueMembership, SysopUser
 from backend.core.database import get_db
 
 
@@ -108,7 +108,7 @@ def league_with_member(db, oauth_client):
         client_id=oauth_client.id,
         league_id=league.id,
         bbs_index=2,
-        fidonet_address="13:10/102",
+        ftn_address=FtnAddress(client_id=oauth_client.id, address="13:10/102"),
         is_active=True,
     )
     db.add(membership)
@@ -312,7 +312,7 @@ def test_delete_league_full_cleanup(client, db, admin_user, oauth_client):
         client_id=oauth_client.id,
         league_id=league.id,
         bbs_index=3,
-        fidonet_address="13:10/103",
+        ftn_address=FtnAddress(client_id=oauth_client.id, address="13:10/103"),
         is_active=True,
     )
     db.add(membership)

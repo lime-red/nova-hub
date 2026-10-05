@@ -9,7 +9,7 @@ from sqlalchemy.orm import sessionmaker
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from backend.models.database import Base, Client, League, LeagueMembership, SysopUser
+from backend.models.database import Base, Client, FtnAddress, League, LeagueMembership, SysopUser
 
 
 @pytest.fixture(scope="function")
@@ -65,7 +65,7 @@ def sample_membership(db_session, sample_league, sample_client):
         client_id=sample_client.id,
         league_id=sample_league.id,
         bbs_index=2,
-        fidonet_address="13:10/102",
+        ftn_address=FtnAddress(client_id=sample_client.id, address="13:10/102"),
         is_active=True,
     )
     db_session.add(membership)

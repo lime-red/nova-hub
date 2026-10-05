@@ -4,7 +4,35 @@ All notable changes to Nova Hub will be documented in this file.
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+- **FTN addresses belong to the BBS.** An address is held by one BBS, unique
+  across the hub, and a BBS may hold several; each league membership links to
+  one of its own BBS's addresses. Before this an address was free text on each
+  membership, and production had `135:135/20` assigned to two BBSes in two
+  leagues. Admins assign, renumber and remove addresses on the client page; an
+  address still used by a league cannot be removed.
+- **Edit a league membership** in place -- its BBS index and address -- rather
+  than deleting and re-adding it. `PATCH /leagues/{id}/members/{membership_id}`.
+- **Download a league's current nodelist** from the league page, and from each
+  membership on the client page (`GET /leagues/{id}/nodelist`).
+- `tools/release.sh <tag>` publishes a version's section of this file as the
+  release notes on GitHub and gitea.
+- MIT licence.
+
+### Changed
+- Each game's names (letter, code, nodelist and nodes-file names) live in one
+  table, `backend/services/games.py`, mirrored in `frontend/src/games.ts`. An
+  unknown game letter is now an error instead of being treated as Falcon's Eye.
+  Contributed by Andy Alt (GitHub PR #1).
+
+### Removed
+- `PUT /leagues/{id}/members/{membership_id}/bbs-index` and `.../fidonet`,
+  replaced by the `PATCH` above.
+
+### Upgrading
+- Migration `a7d3e9f15b20` copies each membership's address onto its BBS. It
+  refuses, naming them, if one address is held by more than one BBS; give one of
+  them a different address and re-run. Nothing is changed until it succeeds.
 
 ## [0.4.0] - 2026-09-17
 
@@ -166,6 +194,11 @@ Thirty-five commits; the ones that change behaviour:
 ### Removed
 - The WebSocket endpoints, which nothing in either the hub or the client used.
 
+
+## [0.1.1] - 2026-07-24
+
+### Fixed
+- dosemu failing to start when the hub has no controlling terminal.
 
 ## [0.1.0] - 2026-01-08
 

@@ -10,6 +10,7 @@ This API is used by the Vue.js frontend to:
 
 from fastapi import APIRouter
 
+from .address_book import router as address_book_router
 from .attacks import router as attacks_router
 from .traffic import router as traffic_router
 from .auth import router as auth_router
@@ -54,6 +55,12 @@ management_router.include_router(
     leagues_router,
     prefix="/leagues",
     tags=["Management API - Leagues"]
+)
+
+management_router.include_router(
+    address_book_router,
+    prefix="/address-book",
+    tags=["Management API - Address Book"]
 )
 
 management_router.include_router(

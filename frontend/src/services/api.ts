@@ -115,6 +115,11 @@ export const clientsApi = {
     api.get(`/clients/${id}/claim-link`)
 }
 
+// Every BBS against every league: index and address in each
+export const addressBookApi = {
+  get: () => api.get('/address-book')
+}
+
 // Claim links, the sysop's side. Public: the link is the credential.
 // GET only looks; POST is the claim, and hands back the secret once.
 export const claimApi = {

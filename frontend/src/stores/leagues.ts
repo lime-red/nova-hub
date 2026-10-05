@@ -44,6 +44,8 @@ export interface AvailableClient {
   bbs_name: string
   client_id: string
   ftn_addresses: FtnAddressRef[]
+  // Its active memberships elsewhere, for pre-filling the index
+  other_leagues: { full_id: string; bbs_index: number }[]
 }
 
 export interface LeagueDetail {

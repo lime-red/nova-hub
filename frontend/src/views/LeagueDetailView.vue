@@ -43,6 +43,19 @@ watch(selectedClientAddresses, (addresses) => {
   newFtnAddressId.value = addresses.length === 1 ? addresses[0].id : null
 })
 
+// A BBS keeps the same index in every league. When its other leagues agree,
+// start from that; the admin can still change it.
+const selectedClientOtherLeagues = computed(() => {
+  const client = leaguesStore.currentLeague?.available_clients.find(
+    (c) => c.id === selectedClientId.value
+  )
+  return client?.other_leagues ?? []
+})
+const otherIndexes = computed(() => [...new Set(selectedClientOtherLeagues.value.map((l) => l.bbs_index))])
+watch(selectedClientId, () => {
+  newBbsIndex.value = otherIndexes.value.length === 1 ? String(otherIndexes.value[0]) : ''
+})
+
 // What the rest of the league already holds, so an index or address can be
 // picked without remembering it. Excludes the member being edited.
 const inUse = computed(() => {
@@ -465,7 +478,15 @@ async function handleDelete() {
                   placeholder="1-255"
                   required
                 />
-                <small class="text-muted">Unique identifier for this BBS in the league (1-255)</small>
+                <small v-if="otherIndexes.length > 1" class="index-hint index-hint-warn">
+                  This BBS's index differs between its leagues:
+                  {{ selectedClientOtherLeagues.map((l) => `#${l.bbs_index} in ${l.full_id}`).join(', ') }}
+                </small>
+                <small v-else-if="otherIndexes.length === 1" class="index-hint">
+                  #{{ otherIndexes[0] }}, as in
+                  {{ selectedClientOtherLeagues.map((l) => l.full_id).join(', ') }}
+                </small>
+                <small v-else class="text-muted">Unique identifier for this BBS in the league (1-255)</small>
               </div>
               <div v-if="selectedClientId" class="form-group">
                 <label for="ftnAddress">FTN Address</label>
@@ -801,6 +822,16 @@ async function handleDelete() {
 
 table .actions {
   justify-content: flex-end;
+}
+
+.index-hint {
+  display: block;
+  font-size: 0.85em;
+  color: var(--color-text-muted, #64748b);
+}
+
+.index-hint-warn {
+  color: var(--color-warning, #b45309);
 }
 
 .in-use {

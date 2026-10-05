@@ -40,6 +40,12 @@ const router = createRouter({
       meta: { requiresAuth: true }
     },
     {
+      path: '/address-book',
+      name: 'address-book',
+      component: () => import('@/views/AddressBookView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
       path: '/leagues',
       name: 'leagues',
       component: () => import('@/views/LeaguesView.vue'),

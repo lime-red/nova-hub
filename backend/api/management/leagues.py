@@ -143,6 +143,15 @@ async def get_league(
             "bbs_name": c.bbs_name,
             "client_id": c.client_id,
             "ftn_addresses": [r.model_dump() for r in _address_refs(c)],
+            # A BBS keeps one index across leagues; the form starts from it.
+            "other_leagues": sorted(
+                (
+                    {"full_id": m.league.full_id, "bbs_index": m.bbs_index}
+                    for m in c.league_memberships
+                    if m.is_active and m.league
+                ),
+                key=lambda o: o["full_id"],
+            ),
         }
         for c in available_clients
     ]

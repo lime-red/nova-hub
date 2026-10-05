@@ -444,3 +444,84 @@ def test_generated_nodelist_is_the_one_served(api, world, data_dir):
     body = client.get(f"{LEAGUES}/{world['league']}/nodelist").content
 
     assert b"135:135/20" in body and b"135:135/21" in body
+
+
+# -- index pre-fill and the address book -------------------------------------
+
+ADDRESS_BOOK = "/management/api/v1/address-book"
+
+
+def _second_league(db, world, alpha_index):
+    """901B, with Alpha at alpha_index and a new BBS Gamma (#7) not in 900B."""
+    league = League(league_id="901", game_type="B", name="Test 901B", is_active=True)
+    gamma = Client(client_id="gamma", client_secret="x", bbs_name="Gamma", is_active=True)
+    db.add_all([league, gamma])
+    db.commit()
+    g = FtnAddress(client_id=gamma.id, address="135:135/7")
+    db.add(g)
+    db.commit()
+    db.add_all([
+        LeagueMembership(league_id=league.id, client_id=world["alpha"], bbs_index=alpha_index,
+                         ftn_address_id=world["a8"], is_active=True),
+        LeagueMembership(league_id=league.id, client_id=gamma.id, bbs_index=7,
+                         ftn_address_id=g.id, is_active=True),
+    ])
+    db.commit()
+    return league.id, gamma.id
+
+
+def test_add_member_offers_the_index_a_bbs_holds_elsewhere(api, world):
+    client, db = api
+    _, gamma = _second_league(db, world, alpha_index=2)
+
+    available = client.get(f"{LEAGUES}/{world['league']}").json()["available_clients"]
+
+    offered = {c["id"]: c["other_leagues"] for c in available}
+    assert offered[gamma] == [{"full_id": "901B", "bbs_index": 7}]
+
+
+def test_address_book_lists_every_bbs_in_every_league(api, world):
+    client, db = api
+    league2, gamma = _second_league(db, world, alpha_index=2)
+
+    book = client.get(ADDRESS_BOOK).json()
+
+    assert [l["full_id"] for l in book["leagues"]] == ["900B", "901B"]
+    rows = {b["bbs_name"]: b for b in book["bbses"]}
+    assert set(rows) == {"Alpha", "Beta", "Gamma"}
+    alpha = rows["Alpha"]
+    assert alpha["addresses"] == ["135:135/20", "135:135/8"]
+    assert {(m["league_id"], m["bbs_index"], m["fidonet_address"]) for m in alpha["memberships"]} == {
+        (world["league"], 2, "135:135/20"),
+        (league2, 2, "135:135/8"),
+    }
+    assert not any(b["index_differs"] for b in book["bbses"])
+
+
+def test_address_book_flags_a_bbs_whose_index_differs(api, world):
+    client, db = api
+    _second_league(db, world, alpha_index=4)
+
+    rows = {b["bbs_name"]: b for b in client.get(ADDRESS_BOOK).json()["bbses"]}
+
+    assert rows["Alpha"]["index_differs"]
+    assert not rows["Beta"]["index_differs"]
+
+
+def test_address_book_ignores_inactive_memberships(api, world):
+    client, db = api
+    _second_league(db, world, alpha_index=4)
+    db.query(LeagueMembership).filter(LeagueMembership.bbs_index == 4).update({"is_active": False})
+    db.commit()
+
+    rows = {b["bbs_name"]: b for b in client.get(ADDRESS_BOOK).json()["bbses"]}
+
+    assert not rows["Alpha"]["index_differs"]
+    assert len(rows["Alpha"]["memberships"]) == 1
+
+
+def test_sysops_can_read_the_address_book(api, world):
+    client, _ = api
+    _as_sysop()
+
+    assert client.get(ADDRESS_BOOK).status_code == 200

@@ -15,6 +15,11 @@ All notable changes to Nova Hub will be documented in this file.
   chat app's link preview cannot use it up.
 - `[server] public_url`: the address sysops reach the hub at, used in claim
   links and the configs they hand out.
+- **Address book** (`/address-book`): every BBS against every active league,
+  with its index and FTN address in each. A BBS whose index differs between
+  leagues is flagged.
+- Adding a BBS to a league pre-fills its index from its other leagues when
+  they agree, and says so when they do not.
 - **FTN addresses belong to the BBS.** An address is held by one BBS, unique
   across the hub, and a BBS may hold several; each league membership links to
   one of its own BBS's addresses. Before this an address was free text on each

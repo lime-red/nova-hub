@@ -41,17 +41,22 @@ from sqlalchemy.orm import Session
 
 from backend.logging_config import get_logger
 from backend.models.database import League, LeagueMembership, Client
+from backend.services.games import game_for_letter
 
 logger = get_logger(context="nodelist_generator")
 
 
 def nodelist_dir(data_dir, league: League) -> Path:
-    """Where a league's nodelist lives: <data_dir>/nodelists/<bre|fe>/<league>/"""
-    return Path(data_dir) / "nodelists" / ("bre" if league.game_type == "B" else "fe") / league.league_id
+    """Where a league's nodelist lives: <data_dir>/nodelists/<bre|fe>/<league>/
+
+    Raises KeyError for a league whose game is unknown.
+    """
+    return Path(data_dir) / "nodelists" / game_for_letter(league.game_type).key / league.league_id
 
 
 def nodelist_filename(league: League) -> str:
-    return f"{'BRNODES' if league.game_type == 'B' else 'FENODES'}.{league.league_id}"
+    """BRNODES.<league> or FENODES.<league>. Raises KeyError for an unknown game."""
+    return game_for_letter(league.game_type).nodelist_filename(league.league_id)
 
 
 def find_nodelist(data_dir, league: League) -> Path | None:
@@ -62,7 +67,11 @@ def find_nodelist(data_dir, league: League) -> Path | None:
     """
     from backend.services.processing_service import find_file_case_insensitive
 
-    path = find_file_case_insensitive(nodelist_dir(data_dir, league), nodelist_filename(league))
+    try:
+        directory, filename = nodelist_dir(data_dir, league), nodelist_filename(league)
+    except KeyError:
+        return None  # an unknown game has no nodelist to find
+    path = find_file_case_insensitive(directory, filename)
     return path if path and path.is_file() else None
 
 
@@ -92,13 +101,19 @@ class NodelistGenerator:
         Generate a nodelist file for the given league.
 
         Returns the path of the written file, or None if the nodelist could not
-        be built completely -- no active members with a BBS index, or no
-        hub_fidonet_address for the league. Returning None leaves any existing
-        file untouched.
+        be built completely -- an unknown game type, no active members with a
+        BBS index, or no hub_fidonet_address for the league. Returning None
+        leaves any existing file untouched.
         """
         league = self.db.query(League).filter(League.id == league_db_id).first()
         if not league:
             logger.warning(f"generate: league {league_db_id} not found")
+            return None
+
+        try:
+            game = game_for_letter(league.game_type)
+        except KeyError:
+            logger.warning(f"generate: league {league.full_id} has unknown game type '{league.game_type}'")
             return None
 
         hub_index = self._hub_index()

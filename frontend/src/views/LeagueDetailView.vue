@@ -5,6 +5,7 @@ import { useLeaguesStore, type LeagueMember } from '@/stores/leagues'
 import { useAuthStore } from '@/stores/auth'
 import AppLayout from '@/components/AppLayout.vue'
 import { leaguesApi } from '@/services/api'
+import { gameForLetter, gameTypeName } from '@/games'
 
 const route = useRoute()
 const router = useRouter()
@@ -54,7 +55,7 @@ const inUse = computed(() => {
 
 const confirmationName = computed(() => {
   if (!leaguesStore.currentLeague) return ''
-  const gameName = leaguesStore.currentLeague.game_type === 'B' ? 'BRE' : 'FE'
+  const gameName = gameForLetter(leaguesStore.currentLeague.game_type)?.code ?? leaguesStore.currentLeague.game_type
   return `${gameName}_${leaguesStore.currentLeague.league_id}`
 })
 
@@ -93,10 +94,6 @@ async function handleEdit() {
   if (success) {
     showEditModal.value = false
   }
-}
-
-function gameTypeName(type: string): string {
-  return type === 'B' ? 'BRE' : type === 'F' ? "Falcon's Eye" : type
 }
 
 function formatBbsIndex(index: number): string {

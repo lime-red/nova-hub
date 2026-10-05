@@ -2,13 +2,15 @@
 
 from datetime import datetime
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
+
+from backend.services.games import GAME_LETTERS
 
 
 class LeagueCreate(BaseModel):
     """Create a new league"""
     league_id: str  # 3-digit number, e.g., "555"
-    game_type: str  # "B" or "F"
+    game_type: str  # one letter from backend.services.games, e.g. "B"
     name: str
     description: Optional[str] = None
     dosemu_path: Optional[str] = None
@@ -20,6 +22,14 @@ class LeagueCreate(BaseModel):
     # directive. True for every live league.
     hub_routes_mail: Optional[bool] = True
     is_active: Optional[bool] = True
+
+    @field_validator("game_type")
+    @classmethod
+    def known_game(cls, v: str) -> str:
+        v = v.upper()
+        if len(v) != 1 or v not in GAME_LETTERS:
+            raise ValueError(f"game_type must be one of: {', '.join(GAME_LETTERS)}")
+        return v
 
 
 class LeagueUpdate(BaseModel):

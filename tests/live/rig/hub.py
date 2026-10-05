@@ -28,6 +28,8 @@ def hub_config(data_dir: Path, term: str = "linux", leagues=None,
     run must be recorded as failed. `inbound_override` breaks one league's inbound
     path the way production's fe_015 is broken, for the R-3 scenario.
     """
+    from backend.services.games import game_for_letter
+
     hub = NODES[HUB_INDEX]
     dosemu = {
         "dosemu_path": "/usr/bin/dosemu",
@@ -43,9 +45,7 @@ def hub_config(data_dir: Path, term: str = "linux", leagues=None,
         inbound = install / "INBOUND"
         if inbound_override and league_id in inbound_override:
             inbound = Path(inbound_override[league_id])
-        dosemu.setdefault(league.number, {})[
-            "bre" if league.game == "B" else "fe"
-        ] = {
+        dosemu.setdefault(league.number, {})[game_for_letter(league.game).key] = {
             "game_folder": str(install),
             "game_dos_path": league.dos_path(hub),
             "inbound_folder": str(inbound),

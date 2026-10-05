@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue'
 import { useLeaguesStore } from '@/stores/leagues'
 import { useAuthStore } from '@/stores/auth'
 import AppLayout from '@/components/AppLayout.vue'
+import { GAMES, gameTypeName } from '@/games'
 
 const leaguesStore = useLeaguesStore()
 const authStore = useAuthStore()
@@ -38,10 +39,6 @@ async function handleCreate() {
   if (success) {
     showCreateModal.value = false
   }
-}
-
-function gameTypeName(type: string): string {
-  return type === 'B' ? 'BRE' : type === 'F' ? "Falcon's Eye" : type
 }
 </script>
 
@@ -128,8 +125,9 @@ function gameTypeName(type: string): string {
                 <div class="form-group">
                   <label for="gameType">Game Type</label>
                   <select id="gameType" v-model="newGameType" required>
-                    <option value="B">BRE (Barren Realms Elite)</option>
-                    <option value="F">Falcon's Eye</option>
+                    <option v-for="g in GAMES" :key="g.letter" :value="g.letter">
+                      {{ g.code }} ({{ g.name }})
+                    </option>
                   </select>
                 </div>
               </div>

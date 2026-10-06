@@ -31,7 +31,7 @@ VIEWER_ROOT = Path(os.environ.get("NOVATEST_VIEWER", "/srv/novatest/viewer"))
 DEFAULT_PORT = 8900
 
 
-def build_config(data_dir: Path, port: int) -> dict:
+def build_config(data_dir: Path, port: int, public_url: str) -> dict:
     from rig.hub import hub_config
 
     config = hub_config(data_dir)
@@ -39,6 +39,8 @@ def build_config(data_dir: Path, port: int) -> dict:
     # reachable and must not start processing games behind the viewer's back.
     config["server"]["host"] = "0.0.0.0"
     config["server"]["port"] = port
+    # Claim links and the configs they hand out carry this address.
+    config["server"]["public_url"] = public_url
     config["processing"]["poll_interval"] = 0
     return config
 
@@ -127,6 +129,8 @@ def main():
     ap.add_argument("--build", action="store_true",
                     help="wipe the viewer hub, restore fixtures and play a round")
     ap.add_argument("--port", type=int, default=DEFAULT_PORT)
+    ap.add_argument("--public-url",
+                    help="the address claim links point at (default: the tailnet address)")
     args = ap.parse_args()
 
     data_dir = VIEWER_ROOT / "nova-data"
@@ -144,7 +148,8 @@ def main():
         VIEWER_ROOT.mkdir(parents=True, exist_ok=True)
         make_data_dir(VIEWER_ROOT)
 
-    config = build_config(data_dir, args.port)
+    public_url = args.public_url or f"http://{_address()}:{args.port}"
+    config = build_config(data_dir, args.port, public_url)
     write_config(config, config_path)
 
     if args.build:
@@ -158,7 +163,7 @@ def main():
               f"UI will not. Build it where node is available and copy it here.")
 
     print()
-    print(f"  serving  http://{_address()}:{args.port}/")
+    print(f"  serving  {public_url}/")
     if password:
         print(f"  login    admin / {password}")
     else:

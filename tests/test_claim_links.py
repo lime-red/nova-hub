@@ -44,6 +44,20 @@ def _sysop():
     return SysopUser(id=2, username="sysop", hashed_password="x", is_superuser=False)
 
 
+@pytest.fixture(autouse=True)
+def no_public_url(monkeypatch):
+    """Links are built from the request unless a test sets public_url.
+
+    The host's config.toml may set [server] public_url (dev and the rig both
+    do); these tests must not depend on whether it does.
+    """
+    import importlib
+
+    # backend.core.config the attribute is the Config object, not the module
+    config_mod = importlib.import_module("backend.core.config")
+    monkeypatch.setattr(config_mod, "get_config", lambda: {"server": {}})
+
+
 @pytest.fixture
 def api():
     import backend.core.database as _db_mod

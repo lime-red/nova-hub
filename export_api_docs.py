@@ -202,20 +202,70 @@ def generate_markdown(openapi_spec: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def merge_mounted_specs(root_app, mounts: List[tuple]) -> Dict[str, Any]:
+    """Build one OpenAPI spec covering the root app and its mounted sub-apps.
+
+    The Service and Management APIs are separate FastAPI applications mounted
+    under /service and /management. ``root_app.openapi()`` does not see through
+    a mount, so generating from the root app alone produced documentation whose
+    every path was missing its mount prefix - which is how docs/API.md came to
+    advertise ``POST /auth/token`` for an endpoint that only ever existed at
+    ``POST /service/api/v1/auth/token``.
+
+    Each sub-app's paths are rewritten with its mount prefix, and component
+    schemas are merged. Schema names collide harmlessly: both sub-apps are
+    generated from the same Pydantic models.
+    """
+    spec = root_app.openapi()
+    spec.setdefault("paths", {})
+    spec.setdefault("components", {}).setdefault("schemas", {})
+
+    descriptions = [spec.get("info", {}).get("description", "")]
+
+    for prefix, sub_app in mounts:
+        sub_spec = sub_app.openapi()
+
+        # generate_markdown only renders info.description from the top-level
+        # spec, so fold each sub-app's own overview in - that is where the
+        # authentication and packet-naming notes live.
+        sub_info = sub_spec.get("info", {})
+        if sub_info.get("description"):
+            descriptions.append(
+                f"\n---\n\n# {sub_info.get('title', prefix)} "
+                f"(mounted at `{prefix}`)\n\n{sub_info['description']}"
+            )
+
+        for path, methods in sub_spec.get("paths", {}).items():
+            spec["paths"][f"{prefix}{path}"] = methods
+
+        for name, schema in sub_spec.get("components", {}).get("schemas", {}).items():
+            spec["components"]["schemas"].setdefault(name, schema)
+
+        sub_security = sub_spec.get("components", {}).get("securitySchemes")
+        if sub_security:
+            spec["components"].setdefault("securitySchemes", {}).update(sub_security)
+
+    spec.setdefault("info", {})["description"] = "\n".join(descriptions)
+    return spec
+
+
 def main():
     """Main function to export API docs"""
     print("Generating API documentation...")
 
     # Import the FastAPI app
     try:
-        from main import app
+        from main import app, management_app, service_app
     except ImportError as e:
         print(f"Error: Could not import FastAPI app: {e}")
         print("Make sure you're running this script from the nova-hub directory")
         return 1
 
-    # Get OpenAPI spec
-    openapi_spec = app.openapi()
+    # Get OpenAPI spec, including the mounted sub-applications
+    openapi_spec = merge_mounted_specs(
+        app,
+        [("/service", service_app), ("/management", management_app)],
+    )
 
     # Generate markdown
     markdown_content = generate_markdown(openapi_spec)

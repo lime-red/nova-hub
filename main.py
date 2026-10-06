@@ -142,8 +142,26 @@ This API is used by BBS clients running nova_client to:
 
 All endpoints except `/auth/token` require OAuth2 Bearer token authentication.
 
-1. Request token: `POST /api/v1/auth/token` with `client_id` and `client_secret`
-2. Use token: `Authorization: Bearer <token>` header
+1. Request a token: `POST /service/api/v1/auth/token`, form-encoded, with
+   `grant_type=client_credentials`, `client_id` and `client_secret`.
+   This is the **client credentials** grant - credentials go in the request
+   body, not in a Basic auth header. No scopes are used.
+2. Use the token: `Authorization: Bearer <token>` header.
+
+Tokens are JWTs and expire after `jwt_expiry_hours` (24 by default).
+
+Note for anyone reading the generated OpenAPI schema: the security scheme is
+declared as `OAuth2PasswordBearer` because that is FastAPI's helper for
+extracting a bearer token from the `Authorization` header. It describes how the
+token is *presented*, not how it is *obtained* - the token endpoint accepts
+`client_credentials` and nothing else.
+
+## No WebSocket
+
+There is no WebSocket endpoint. Clients discover work by polling
+`GET /service/api/v1/leagues/{league_id}/packets?unread=true`. Downloading a
+packet is itself the acknowledgement: the hub marks it read when it serves it,
+so it drops out of subsequent `unread=true` responses.
 
 ## Packet Naming Convention
 

@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue'
 import { useClientsStore, type ClientCreated } from '@/stores/clients'
 import { useAuthStore } from '@/stores/auth'
 import AppLayout from '@/components/AppLayout.vue'
+import { useCopy } from '@/clipboard'
 
 const clientsStore = useClientsStore()
 const authStore = useAuthStore()
@@ -12,6 +13,7 @@ const showSecretModal = ref(false)
 const newBbsName = ref('')
 const newClientId = ref('')
 const createdClient = ref<ClientCreated | null>(null)
+const { copy, label: copyLabel } = useCopy()
 
 onMounted(async () => {
   await clientsStore.loadClients()
@@ -38,12 +40,6 @@ async function handleCreate() {
 function closeSecretModal() {
   showSecretModal.value = false
   createdClient.value = null
-}
-
-async function copySecret() {
-  if (createdClient.value) {
-    await navigator.clipboard.writeText(createdClient.value.client_secret)
-  }
 }
 
 async function toggleActive(clientId: number, currentActive: boolean) {
@@ -200,7 +196,14 @@ async function toggleActive(clientId: number, currentActive: boolean) {
               <label>Client Secret</label>
               <div class="secret-display">
                 <input type="text" :value="createdClient?.client_secret" readonly class="font-mono" />
-                <button type="button" class="btn btn-secondary" @click="copySecret">Copy</button>
+                <button
+                  v-if="createdClient"
+                  type="button"
+                  class="btn btn-secondary"
+                  @click="copy('secret', createdClient.client_secret, $event)"
+                >
+                  {{ copyLabel('secret') }}
+                </button>
               </div>
             </div>
           </div>

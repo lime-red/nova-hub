@@ -5,6 +5,7 @@ import { useClientsStore, type FtnAddressInfo } from '@/stores/clients'
 import { useAuthStore } from '@/stores/auth'
 import AppLayout from '@/components/AppLayout.vue'
 import { clientsApi, leaguesApi } from '@/services/api'
+import { useCopy } from '@/clipboard'
 
 const route = useRoute()
 const router = useRouter()
@@ -51,7 +52,7 @@ interface ClaimLinkStatus {
 const claimStatus = ref<ClaimLinkStatus | null>(null)
 const issuedLink = ref<{ url: string; expires_at: string; superseded: number } | null>(null)
 const claimError = ref<string | null>(null)
-const linkCopied = ref(false)
+const { copy, label: copyLabel } = useCopy()
 
 async function loadClaimStatus() {
   if (!authStore.isAdmin) return
@@ -64,19 +65,12 @@ async function loadClaimStatus() {
 
 async function handleIssueClaimLink() {
   claimError.value = null
-  linkCopied.value = false
   try {
     issuedLink.value = (await clientsApi.issueClaimLink(clientId.value)).data
     await loadClaimStatus()
   } catch (e: any) {
     claimError.value = e.response?.data?.detail || 'Could not issue a claim link'
   }
-}
-
-async function copyLink() {
-  if (!issuedLink.value) return
-  await navigator.clipboard.writeText(issuedLink.value.url)
-  linkCopied.value = true
 }
 
 function claimStatusText(s: ClaimLinkStatus): string {
@@ -178,9 +172,6 @@ async function handleRemoveAddress(address: FtnAddressInfo) {
   }
 }
 
-async function copySecret() {
-  await navigator.clipboard.writeText(newSecret.value)
-}
 </script>
 
 <template>
@@ -565,8 +556,8 @@ async function copySecret() {
             </p>
             <div class="secret-display">
               <input type="text" :value="issuedLink.url" readonly class="font-mono" />
-              <button type="button" class="btn btn-secondary" @click="copyLink">
-                {{ linkCopied ? 'Copied' : 'Copy' }}
+              <button type="button" class="btn btn-secondary" @click="copy('link', issuedLink.url, $event)">
+                {{ copyLabel('link') }}
               </button>
             </div>
           </div>
@@ -590,7 +581,9 @@ async function copySecret() {
               <label>Client Secret</label>
               <div class="secret-display">
                 <input type="text" :value="newSecret" readonly class="font-mono" />
-                <button type="button" class="btn btn-secondary" @click="copySecret">Copy</button>
+                <button type="button" class="btn btn-secondary" @click="copy('secret', newSecret, $event)">
+                  {{ copyLabel('secret') }}
+                </button>
               </div>
             </div>
           </div>

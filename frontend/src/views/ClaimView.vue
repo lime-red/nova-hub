@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { claimApi } from '@/services/api'
 import { GAMES } from '@/games'
+import { useCopy } from '@/clipboard'
 
 // A sysop collecting their BBS's credentials. Public: the link is the
 // credential. Opening it only looks; pressing Claim generates the secret,
@@ -40,7 +41,7 @@ const claiming = ref(false)
 const platform = ref<'linux' | 'windows'>(
   navigator.userAgent.includes('Windows') ? 'windows' : 'linux'
 )
-const copied = ref<string | null>(null)
+const { copy, label: copyLabel } = useCopy()
 
 onMounted(async () => {
   try {
@@ -84,12 +85,6 @@ function when(iso?: string | null): string {
   return iso ? new Date(iso).toLocaleString() : ''
 }
 
-async function copy(what: string, text: string) {
-  await navigator.clipboard.writeText(text)
-  copied.value = what
-  setTimeout(() => (copied.value = null), 1500)
-}
-
 const configName = computed(() => (platform.value === 'windows' ? 'config.psd1' : 'config.toml'))
 
 function downloadConfig() {
@@ -129,15 +124,15 @@ function downloadConfig() {
           <dt>Client ID</dt>
           <dd>
             <span class="font-mono">{{ result.client_id }}</span>
-            <button class="btn btn-secondary btn-sm" @click="copy('id', result.client_id)">
-              {{ copied === 'id' ? 'Copied' : 'Copy' }}
+            <button class="btn btn-secondary btn-sm" @click="copy('id', result.client_id, $event)">
+              {{ copyLabel('id') }}
             </button>
           </dd>
           <dt>Client secret</dt>
           <dd>
             <span class="font-mono secret">{{ result.client_secret }}</span>
-            <button class="btn btn-secondary btn-sm" @click="copy('secret', result.client_secret)">
-              {{ copied === 'secret' ? 'Copied' : 'Copy' }}
+            <button class="btn btn-secondary btn-sm" @click="copy('secret', result.client_secret, $event)">
+              {{ copyLabel('secret') }}
             </button>
           </dd>
           <dt>Leagues</dt>

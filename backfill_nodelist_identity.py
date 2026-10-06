@@ -34,6 +34,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from backend.core.config import init_config
 from backend.core.database import get_session, init_database
 from backend.models.database import Client, League, LeagueMembership
+from backend.services.games import game_for_code
 from backend.services.nodes_parser import NodesFileParser
 
 
@@ -42,7 +43,7 @@ def _find_nodes_file(game_folder: str, game_type: str) -> Path | None:
     folder = Path(game_folder)
     if not folder.is_dir():
         return None
-    wanted = "brnodes.dat" if game_type == "bre" else "fenodes.dat"
+    wanted = game_for_code(game_type).nodes_file
     for entry in folder.iterdir():
         if entry.name.lower() == wanted and entry.is_file():
             return entry
@@ -101,7 +102,7 @@ def main() -> int:
                 db.query(League)
                 .filter(
                     League.league_id == league_number,
-                    League.game_type == ("B" if game_type == "bre" else "F"),
+                    League.game_type == game_for_code(game_type).letter,
                 )
                 .first()
             )

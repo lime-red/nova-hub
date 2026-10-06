@@ -16,6 +16,7 @@ from backend.core.security import get_current_client
 from backend.logging_config import get_logger
 from backend.models.database import Client, League, LeagueMembership, Packet
 from backend.schemas.packets import PacketInfo, PacketListResponse, PacketUploadResponse
+from backend.services.games import LEAGUE_ID_REGEX, game_for_letter, nodelist_game
 from backend.services.league_utils import parse_league_id
 from backend.services.packet_service import parse_packet_filename
 from backend.services.processing_service import find_file_case_insensitive
@@ -27,7 +28,7 @@ router = APIRouter()
 
 @router.put("/{filename}", response_model=PacketUploadResponse, summary="Upload Packet")
 async def upload_packet(
-    league_id: str = PathParam(..., pattern=r'^\d{3}[BF]$'),
+    league_id: str = PathParam(..., pattern=LEAGUE_ID_REGEX),
     filename: str = PathParam(...),
     request: Request = None,
     client: Client = Depends(get_current_client),
@@ -61,7 +62,7 @@ async def upload_packet(
     normalized_filename = filename.upper()
 
     # Block nodelist uploads from clients
-    if normalized_filename.startswith("BRNODES.") or normalized_filename.startswith("FENODES."):
+    if nodelist_game(normalized_filename):
         raise HTTPException(
             status_code=403,
             detail="Nodelist files cannot be uploaded by clients - they are hub-generated only"
@@ -117,11 +118,11 @@ async def upload_packet(
 
     if not league:
         # Auto-create league
-        game_full = "BRE" if league_game_type == "B" else "FE"
+        game_code = game_for_letter(league_game_type).code
         league = League(
             league_id=league_number,
             game_type=league_game_type,
-            name=f"{game_full} League {league_number}",
+            name=f"{game_code} League {league_number}",
             is_active=True,
         )
         db.add(league)
@@ -196,7 +197,7 @@ async def upload_packet(
 
 @router.get("", response_model=PacketListResponse, summary="List Available Packets")
 async def list_packets(
-    league_id: str = PathParam(..., pattern=r'^\d{3}[BF]$'),
+    league_id: str = PathParam(..., pattern=LEAGUE_ID_REGEX),
     unread: bool = Query(False, description="Filter to only unread (not downloaded) packets"),
     client: Client = Depends(get_current_client),
     db: Session = Depends(get_db),
@@ -283,7 +284,7 @@ async def list_packets(
 
 @router.get("/{filename}", summary="Download Packet")
 async def download_packet(
-    league_id: str = PathParam(..., pattern=r'^\d{3}[BF]$'),
+    league_id: str = PathParam(..., pattern=LEAGUE_ID_REGEX),
     filename: str = PathParam(...),
     request: Request = None,
     client: Client = Depends(get_current_client),
@@ -308,7 +309,7 @@ async def download_packet(
     normalized_filename = filename.upper()
 
     # Check if this is a nodelist file
-    is_nodelist = normalized_filename.startswith("BRNODES.") or normalized_filename.startswith("FENODES.")
+    is_nodelist = nodelist_game(normalized_filename) is not None
 
     if is_nodelist:
         return await _download_nodelist(
@@ -359,8 +360,8 @@ async def _download_nodelist(
 
     # Find nodelist file
     data_dir = get_config().get("server", {}).get("data_dir", "./data")
-    game_type_str = "bre" if league_game_type == "B" else "fe"
-    nodelists_dir = Path(data_dir) / "nodelists" / game_type_str / league_number
+    game_key = game_for_letter(league_game_type).key
+    nodelists_dir = Path(data_dir) / "nodelists" / game_key / league_number
 
     nodelist_path = find_file_case_insensitive(nodelists_dir, filename)
 

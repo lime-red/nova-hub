@@ -4,7 +4,9 @@ import re
 from typing import Tuple
 from fastapi import HTTPException
 
-LEAGUE_ID_PATTERN = re.compile(r'^(\d{3})([BF])$')
+from backend.services.games import GAME_LETTERS, LEAGUE_ID_REGEX
+
+LEAGUE_ID_PATTERN = re.compile(LEAGUE_ID_REGEX)
 
 
 def parse_league_id(league_id: str) -> Tuple[str, str]:
@@ -34,7 +36,7 @@ def parse_league_id(league_id: str) -> Tuple[str, str]:
             status_code=400,
             detail=(
                 f"Invalid league_id format: '{league_id}'. "
-                "Expected format: <3-digit-number><B|F> (e.g., '555B' for BRE, '555F' for FE)"
+                f"Expected format: <3-digit-number><{'|'.join(GAME_LETTERS)}> (e.g., '555B' for BRE, '555F' for FE)"
             )
         )
     return match.groups()

@@ -8,6 +8,7 @@ from typing import Optional, Tuple
 from sqlalchemy.orm import Session
 
 from backend.models.database import Client, League, LeagueMembership, Packet
+from backend.services.games import GAME_LETTERS, game_for_letter
 
 
 def parse_packet_filename(filename: str) -> Optional[dict]:
@@ -22,7 +23,7 @@ def parse_packet_filename(filename: str) -> Optional[dict]:
         or None if invalid
     """
     # Pattern: 3 digits + 1 letter + 2 hex + 2 hex + . + 3 digits
-    pattern = r"^(\d{3})([BF])([0-9A-F]{2})([0-9A-F]{2})\.(\d{3})$"
+    pattern = rf"^(\d{{3}})([{GAME_LETTERS}])([0-9A-F]{{2}})([0-9A-F]{{2}})\.(\d{{3}})$"
     match = re.match(pattern, filename.upper())
 
     if not match:
@@ -76,7 +77,7 @@ class PacketService:
         )
 
         if not league:
-            game_name = "Barren Realms Elite" if game_type == "B" else "Falcon's Eye"
+            game_name = game_for_letter(game_type).name
             league = League(
                 league_id=league_id,
                 game_type=game_type,

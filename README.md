@@ -111,15 +111,14 @@ Example: `555B0201.001`
 ## Testing
 
 ```bash
-# Run hub tests
+# Hub tests. They build their own config from config.toml.example, so no
+# config.toml is needed; the live rig tree skips itself off novatest-hl.
 .venv/bin/pytest tests/
-
-# Run mock hub for client testing
-.venv/bin/python tests/mock_hub.py
-
-# In another terminal, run client tests
-cd ../nova-client && pytest tests/
 ```
+
+The clients are tested in nova-client against its mock hub,
+`python/tests/mock_server.py`, which both the Python and PowerShell suites use.
+A change to the Service API belongs in that mock too.
 
 ## Configuration
 

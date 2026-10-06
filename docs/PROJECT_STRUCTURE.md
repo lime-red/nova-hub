@@ -70,9 +70,9 @@ nova-hub/
 │
 ├── tests/                       # Test suite
 │   ├── __init__.py
-│   ├── test_integration.py    # Integration tests
-│   ├── test_client.py         # Client tests
-│   └── mock_hub.py            # Mock server for testing
+│   ├── conftest.py            # Builds the test config from config.toml.example
+│   ├── test_*.py              # Unit and API tests
+│   └── live/                  # The live rig (novatest-hl only)
 │
 └── data/                        # Runtime data (git-ignored)
     ├── nova-hub.db             # SQLite database
@@ -132,9 +132,9 @@ All templates use Pico CSS framework:
 
 ### Testing
 
-- **mock_hub.py**: Standalone FastAPI server for testing
-- **test_client.py**: Automated client test suite
-- **test_integration.py**: Full integration tests
+- **tests/**: unit and API tests, run in CI on every push
+- **tests/live/**: the live rig, real dosemu and games, on novatest-hl only
+- Client tests live in nova-client, against its mock hub (`python/tests/mock_server.py`)
 
 ## Implementation Notes
 

@@ -15,6 +15,10 @@ All notable changes to Nova Hub will be documented in this file.
   chat app's link preview cannot use it up.
 - `[server] public_url`: the address sysops reach the hub at, used in claim
   links and the configs they hand out.
+- `GET /service/api/v1/me`: the calling BBS and the active leagues it is in,
+  with its BBS index in each. Nova Client's connection test
+  (`--test-connection` / `-TestConnection`) compares these with its config,
+  and the claim page now tells sysops to run it first.
 - **Address book** (`/address-book`): every BBS against every active league,
   with its index and FTN address in each. A BBS whose index differs between
   leagues is flagged.

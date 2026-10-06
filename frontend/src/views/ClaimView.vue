@@ -168,6 +168,12 @@ function downloadConfig() {
             filled in.
           </li>
           <li>
+            Test the connection. It signs in to the hub and checks your leagues and BBS numbers with it,
+            and it works before you have set any paths.
+            <pre v-if="platform === 'windows'">.\NovaClient-WinPS5.ps1 -TestConnection</pre>
+            <pre v-else>python client.py --test-connection</pre>
+          </li>
+          <li>
             Edit every path marked <code>CHANGE-ME</code> to where each game is installed on your BBS.
             <template v-if="platform === 'linux'">
               Under dosemu, <code>game_folder</code> is the folder as Linux sees it and

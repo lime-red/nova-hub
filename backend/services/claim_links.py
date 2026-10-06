@@ -168,7 +168,8 @@ def league_entries(db: Session, client: Client) -> list[LeagueEntry]:
 
 PLACEHOLDER_NOTE = (
     "Paths marked CHANGE-ME are placeholders: only you know where each game is "
-    "installed. Replace every one, then run the validator before the first sync."
+    "installed. Replace every one, then run the validator before the first sync. "
+    "The connection test needs none of them."
 )
 
 

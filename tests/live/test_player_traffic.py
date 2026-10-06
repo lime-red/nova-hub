@@ -10,9 +10,18 @@ to move.
 `rig.player` is the missing half: it drives BRE.EXE FULL, which `node.run()`
 refuses by design.
 """
+import os
+
 import pytest
 
-from rig import node as node_rig, player
+# rig.player needs pyte, which only the rig installs (tests/live/requirements.txt).
+# Off the rig this whole tree is skipped, but collection imports the module
+# first, and the ImportError failed the run instead. On the rig it still fails
+# loudly, which is right: there a missing pyte is a broken rig.
+if os.getenv("NOVATEST_RIG") != "1":
+    pytest.importorskip("pyte", reason="pyte is a rig-only dependency")
+
+from rig import node as node_rig, player  # noqa: E402
 from rig.layout import HUB_INDEX, LEAGUES, NODES
 
 pytestmark = pytest.mark.asyncio

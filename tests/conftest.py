@@ -1,13 +1,38 @@
 # tests/conftest.py - Shared fixtures for all test modules
 
+import os
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
+import toml
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+
+def _test_config() -> str:
+    """A config for the app under test, built from config.toml.example.
+
+    main.py reads its config when imported. Without this it read config.toml
+    from the working directory: absent on the CI runner, so every test that
+    imports the app failed to collect there, and on a dev box whatever that
+    box happened to have (a public_url, real data paths) leaked into results.
+    """
+    root = Path(tempfile.mkdtemp(prefix="nova-hub-tests-"))
+    config = toml.load(Path(__file__).parent.parent / "config.toml.example")
+    config["server"]["data_dir"] = str(root / "data")
+    config["database"]["path"] = str(root / "data" / "nova-hub.db")
+    (root / "data").mkdir()
+    path = root / "config.toml"
+    path.write_text(toml.dumps(config))
+    return str(path)
+
+
+# Before anything below imports the app. The live rig sets its own.
+os.environ.setdefault("NOVA_HUB_CONFIG", _test_config())
 
 from backend.models.database import Base, Client, FtnAddress, League, LeagueMembership, SysopUser
 

@@ -4,6 +4,7 @@ Centralized configuration management for Nova Hub
 Loads configuration from config.toml and provides typed access via Pydantic.
 """
 
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -141,11 +142,16 @@ class Config(BaseModel):
 _config: Optional[Config] = None
 
 
-def load_config(config_path: str = "config.toml") -> Config:
+def default_config_path() -> str:
+    """config.toml in the working directory, unless NOVA_HUB_CONFIG names another file."""
+    return os.environ.get("NOVA_HUB_CONFIG", "config.toml")
+
+
+def load_config(config_path: Optional[str] = None) -> Config:
     """Load configuration from TOML file"""
     global _config
 
-    raw_config = toml.load(config_path)
+    raw_config = toml.load(config_path or default_config_path())
 
     alerting_raw = dict(raw_config.get("alerting", {}))
     email_raw = dict(alerting_raw.get("email", {}))
@@ -184,7 +190,7 @@ def get_config() -> Config:
 config: Config = None  # type: ignore
 
 
-def init_config(config_path: str = "config.toml") -> Config:
+def init_config(config_path: Optional[str] = None) -> Config:
     """Initialize the global config instance"""
     global config
     config = load_config(config_path)

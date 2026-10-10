@@ -52,8 +52,10 @@ jobs:
           id; echo "HOME=$HOME"; ls -la "$HOME" | head
           command -v strace || (apt-get update -qq && apt-get install -y -qq strace) >/dev/null
           set +e  # the runner's bash -e would stop at the first timeout
-          timeout 20 strace -f -tt -o /tmp/wcli.trace "$bin" --version; echo "direct rc=$?"
-          grep -v "futex\|mmap\|mprotect\|rt_sig" /tmp/wcli.trace | tail -80
+          timeout 20 strace -f -tt -s 120 -o /tmp/wcli.trace \
+            -e trace=%network,%file,read,write,poll,ppoll,epoll_wait,epoll_pwait,select,pselect6,nanosleep,clock_nanosleep \
+            "$bin" --version; echo "direct rc=$?"
+          grep -v ENOENT /tmp/wcli.trace | tail -60
           HOME=$(mktemp -d) timeout 20 "$bin" --version; echo "fresh HOME rc=$?"
           set -e
           time timeout 300 npx -y --loglevel http workos@0.23.0 --version

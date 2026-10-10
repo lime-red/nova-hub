@@ -7,7 +7,8 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from backend.core.database import get_db
-from backend.core.security import get_current_user, require_admin
+from backend.core.scope import Scope, get_scope
+from backend.core.security import require_admin
 from backend.logging_config import get_logger
 from backend.models.database import League, Packet, ProcessingRun, ProcessingRunFile, SysopUser
 from backend.schemas.processing import (
@@ -26,7 +27,7 @@ router = APIRouter()
 @router.get("/runs", response_model=List[ProcessingRunResponse], summary="List Processing Runs")
 async def list_runs(
     limit: int = Query(50, ge=1, le=200, description="Number of runs to return"),
-    current_user: SysopUser = Depends(get_current_user),
+    scope: Scope = Depends(get_scope),
     db: Session = Depends(get_db),
 ):
     """
@@ -43,8 +44,11 @@ async def list_runs(
       -b cookies.txt
     ```
     """
+    query = db.query(ProcessingRun)
+    if not scope.is_admin:
+        query = query.filter(scope.league_clause(ProcessingRun.league_id))
     runs = (
-        db.query(ProcessingRun)
+        query
         .order_by(ProcessingRun.started_at.desc())
         .limit(limit)
         .all()
@@ -84,7 +88,7 @@ async def list_runs(
 @router.get("/runs/{run_id}", response_model=ProcessingRunDetail, summary="Get Processing Run Details")
 async def get_run(
     run_id: int,
-    current_user: SysopUser = Depends(get_current_user),
+    scope: Scope = Depends(get_scope),
     db: Session = Depends(get_db),
 ):
     """
@@ -102,7 +106,7 @@ async def get_run(
     ```
     """
     run = db.query(ProcessingRun).filter(ProcessingRun.id == run_id).first()
-    if not run:
+    if not run or not scope.sees_league(run.league_id):
         raise HTTPException(status_code=404, detail="Run not found")
 
     # Calculate duration
@@ -120,6 +124,8 @@ async def get_run(
 
     # Get packets processed in this run
     packets = db.query(Packet).filter(Packet.processing_run_id == run_id).all()
+    # A sysop sees the run's scores, but only their own BBS's packets in it.
+    packets = [p for p in packets if scope.sees_packet(p)]
 
     packet_list = []
     for packet in packets:
@@ -141,6 +147,8 @@ async def get_run(
     bbsinfo_files = []
 
     for file in files:
+        if file.league_id and not scope.sees_league(file.league_id):
+            continue
         file_data = None
         file_data_html = None
 
@@ -174,9 +182,10 @@ async def get_run(
         elif file.file_type == "bbsinfo":
             bbsinfo_files.append(file_schema)
 
-    # Convert ANSI to HTML for dosemu log
+    # Convert ANSI to HTML for dosemu log. The transcript is the hub's
+    # troubleshooting record of the whole league's run: admins only.
     dosemu_log_html = None
-    if run.dosemu_log:
+    if run.dosemu_log and scope.is_admin:
         try:
             dosemu_log_html = await ansi_to_html(run.dosemu_log)
             dosemu_log_html = await strip_multiple_blank_lines(dosemu_log_html)
@@ -197,7 +206,7 @@ async def get_run(
         # the detail view showed nothing for a failure that had a perfectly good
         # explanation recorded next to it.
         error_message=run.error_message or run.stderr_log,
-        dosemu_output=run.dosemu_log,
+        dosemu_output=run.dosemu_log if scope.is_admin else None,
         dosemu_output_html=dosemu_log_html,
         packets=packet_list,
         score_files=score_files,

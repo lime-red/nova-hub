@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from backend.core.database import get_db
-from backend.core.security import get_current_user
+from backend.core.scope import Scope, get_scope
 from backend.logging_config import get_logger
 from backend.models.database import League, SequenceAlert, SysopUser
 from backend.schemas.dashboard import (
@@ -23,9 +23,15 @@ logger = get_logger(context="management_dashboard")
 router = APIRouter()
 
 
+def _scoped_alerts(db: Session, scope: Scope):
+    query = db.query(SequenceAlert)
+    clause = scope.alert_clause()
+    return query if clause is None else query.filter(clause)
+
+
 @router.get("/stats", response_model=DashboardStats, summary="Get Dashboard Stats")
 async def get_dashboard_stats(
-    current_user: SysopUser = Depends(get_current_user),
+    scope: Scope = Depends(get_scope),
     db: Session = Depends(get_db),
 ):
     """
@@ -39,7 +45,7 @@ async def get_dashboard_stats(
       -b cookies.txt
     ```
     """
-    stats_service = StatsService(db)
+    stats_service = StatsService(db, scope)
     stats = stats_service.get_dashboard_stats()
 
     return DashboardStats(
@@ -55,7 +61,7 @@ async def get_dashboard_stats(
 @router.get("/activity", response_model=List[ActivityItem], summary="Get Recent Activity")
 async def get_recent_activity(
     limit: int = Query(10, ge=1, le=100, description="Number of items to return"),
-    current_user: SysopUser = Depends(get_current_user),
+    scope: Scope = Depends(get_scope),
     db: Session = Depends(get_db),
 ):
     """
@@ -72,7 +78,7 @@ async def get_recent_activity(
       -b cookies.txt
     ```
     """
-    stats_service = StatsService(db)
+    stats_service = StatsService(db, scope)
     activity = stats_service.get_recent_activity(limit=limit)
 
     return [
@@ -94,7 +100,7 @@ async def get_recent_activity(
 @router.get("/alerts", response_model=List[AlertSummary], summary="Get Active Alerts")
 async def get_active_alerts(
     limit: int = Query(5, ge=1, le=50, description="Number of alerts to return"),
-    current_user: SysopUser = Depends(get_current_user),
+    scope: Scope = Depends(get_scope),
     db: Session = Depends(get_db),
 ):
     """
@@ -111,10 +117,10 @@ async def get_active_alerts(
       -b cookies.txt
     ```
     """
-    stats_service = StatsService(db)
+    stats_service = StatsService(db, scope)
 
     alerts = (
-        db.query(SequenceAlert)
+        _scoped_alerts(db, scope)
         .filter(SequenceAlert.resolved_at == None)
         .order_by(SequenceAlert.detected_at.desc())
         .limit(limit)
@@ -143,7 +149,7 @@ async def get_active_alerts(
 @router.get("/charts/activity", response_model=ChartData, summary="Get Activity Chart Data")
 async def get_activity_chart(
     hours: int = Query(24, ge=1, le=168, description="Number of hours to include"),
-    current_user: SysopUser = Depends(get_current_user),
+    scope: Scope = Depends(get_scope),
     db: Session = Depends(get_db),
 ):
     """
@@ -160,7 +166,7 @@ async def get_activity_chart(
       -b cookies.txt
     ```
     """
-    stats_service = StatsService(db)
+    stats_service = StatsService(db, scope)
     labels, data = stats_service.get_activity_chart_data(hours=hours)
 
     return ChartData(
@@ -171,7 +177,7 @@ async def get_activity_chart(
 
 @router.get("/charts/leagues", response_model=ChartData, summary="Get League Distribution Chart")
 async def get_league_chart(
-    current_user: SysopUser = Depends(get_current_user),
+    scope: Scope = Depends(get_scope),
     db: Session = Depends(get_db),
 ):
     """
@@ -185,7 +191,7 @@ async def get_league_chart(
       -b cookies.txt
     ```
     """
-    stats_service = StatsService(db)
+    stats_service = StatsService(db, scope)
     labels, data = stats_service.get_league_distribution()
 
     return ChartData(
@@ -196,7 +202,7 @@ async def get_league_chart(
 
 @router.get("", response_model=DashboardResponse, summary="Get Full Dashboard Data")
 async def get_dashboard(
-    current_user: SysopUser = Depends(get_current_user),
+    scope: Scope = Depends(get_scope),
     db: Session = Depends(get_db),
 ):
     """
@@ -210,7 +216,7 @@ async def get_dashboard(
       -b cookies.txt
     ```
     """
-    stats_service = StatsService(db)
+    stats_service = StatsService(db, scope)
 
     # Get stats
     stats = stats_service.get_dashboard_stats()
@@ -220,7 +226,7 @@ async def get_dashboard(
 
     # Get alerts
     alerts = (
-        db.query(SequenceAlert)
+        _scoped_alerts(db, scope)
         .filter(SequenceAlert.resolved_at == None)
         .order_by(SequenceAlert.detected_at.desc())
         .limit(5)

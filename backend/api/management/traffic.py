@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from backend.core.config import get_config
 from backend.core.database import get_db
-from backend.core.security import get_current_user, require_admin
+from backend.core.security import require_admin
 from backend.logging_config import get_logger
 from backend.models.database import League, Packet, SysopUser, TrafficSighting
 from backend.schemas.attacks import AttackHop
@@ -45,7 +45,7 @@ async def list_traffic(
     league_id: Optional[int] = Query(None),
     planet: Optional[int] = Query(None, description="Either end"),
     limit: int = Query(500, ge=1, le=2000),
-    current_user: SysopUser = Depends(get_current_user),
+    current_user: SysopUser = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     """Journeys with anything reaching the hub within `days`, newest first.

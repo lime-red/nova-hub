@@ -16,7 +16,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from backend.core.database import get_db
-from backend.core.security import get_current_user
+from backend.core.security import require_admin
 from backend.logging_config import get_logger
 from backend.models.database import League, ProcessingRunItem, SysopUser
 from backend.schemas.movements import (
@@ -71,7 +71,7 @@ async def list_movements(
     node: Optional[int] = Query(None),
     run_id: Optional[int] = Query(None, description="One run's items; ignores `days`"),
     limit: int = Query(200, ge=1, le=2000),
-    current_user: SysopUser = Depends(get_current_user),
+    current_user: SysopUser = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     """Individual item movements, most recent first.
@@ -113,7 +113,7 @@ async def list_movements(
 async def summarise_movements(
     days: int = Query(DEFAULT_WINDOW_DAYS, ge=1, le=MAX_WINDOW_DAYS),
     league_id: Optional[int] = Query(None),
-    current_user: SysopUser = Depends(get_current_user),
+    current_user: SysopUser = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     """The shape of the traffic: by type, by node pair, and by day.

@@ -10,7 +10,8 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from backend.core.database import get_db
-from backend.core.security import get_current_user, require_admin
+from backend.core.scope import Scope, get_scope
+from backend.core.security import require_admin
 from backend.logging_config import get_logger
 from backend.services.games import game_for_letter
 from backend.models.database import (
@@ -45,7 +46,7 @@ router = APIRouter()
 
 @router.get("", response_model=List[LeagueResponse], summary="List All Leagues")
 async def list_leagues(
-    current_user: SysopUser = Depends(get_current_user),
+    scope: Scope = Depends(get_scope),
     db: Session = Depends(get_db),
 ):
     """
@@ -59,7 +60,10 @@ async def list_leagues(
       -b cookies.txt
     ```
     """
-    leagues = db.query(League).all()
+    query = db.query(League)
+    if not scope.is_admin:
+        query = query.filter(scope.league_clause(League.id))
+    leagues = query.all()
 
     league_list = []
     for league in leagues:
@@ -93,7 +97,7 @@ async def list_leagues(
 @router.get("/{league_id}", response_model=LeagueDetailResponse, summary="Get League Details")
 async def get_league(
     league_id: int,
-    current_user: SysopUser = Depends(get_current_user),
+    scope: Scope = Depends(get_scope),
     db: Session = Depends(get_db),
 ):
     """
@@ -110,6 +114,7 @@ async def get_league(
       -b cookies.txt
     ```
     """
+    scope.require_league(league_id)
     league = db.query(League).filter(League.id == league_id).first()
     if not league:
         raise HTTPException(status_code=404, detail="League not found")
@@ -122,6 +127,11 @@ async def get_league(
     )
 
     members = [_member_response(m) for m in memberships if m.client]
+    if not scope.is_admin:
+        # A member sees the league as its nodelist shows it: who is in it, at
+        # what index and address. Not the hub's paths, other BBSes' OAuth ids,
+        # or which BBSes could be added.
+        members = [_public_member(m) for m in members if m.is_active]
 
     # Get available clients (not already in this league)
     member_client_ids = [m.client_id for m in memberships]
@@ -179,11 +189,11 @@ async def get_league(
         description=league.description,
         hub_fidonet_address=league.hub_fidonet_address,
         hub_routes_mail=league.hub_routes_mail,
-        dosemu_path=league.dosemu_path,
-        game_executable=league.game_executable,
+        dosemu_path=league.dosemu_path if scope.is_admin else None,
+        game_executable=league.game_executable if scope.is_admin else None,
         is_active=league.is_active,
         members=members,
-        available_clients=available_list,
+        available_clients=available_list if scope.is_admin else [],
         stats=stats,
         nodelist=_nodelist_info(league),
     )
@@ -496,6 +506,11 @@ def _address_refs(client: Client) -> List[FtnAddressRef]:
     return [FtnAddressRef(id=a.id, address=a.address) for a in client.ftn_addresses]
 
 
+def _public_member(member: MemberResponse) -> MemberResponse:
+    return member.model_copy(update={"client_oauth_id": None, "client_ftn_addresses": [],
+                                     "ftn_address_id": None})
+
+
 def _member_response(membership: LeagueMembership) -> MemberResponse:
     client = membership.client
     return MemberResponse(
@@ -611,7 +626,7 @@ def _nodelist_info(league: League) -> Optional[NodelistInfo]:
 @router.get("/{league_id}/nodelist", summary="Download Nodelist")
 async def download_nodelist(
     league_id: int,
-    current_user: SysopUser = Depends(get_current_user),
+    scope: Scope = Depends(get_scope),
     db: Session = Depends(get_db),
 ):
     """
@@ -628,6 +643,7 @@ async def download_nodelist(
     """
     from backend.services.nodelist_generator import find_nodelist
 
+    scope.require_league(league_id)
     league = db.query(League).filter(League.id == league_id).first()
     if not league:
         raise HTTPException(status_code=404, detail="League not found")

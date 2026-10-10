@@ -13,8 +13,8 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session, selectinload
 
 from backend.core.database import get_db
-from backend.core.security import get_current_user
-from backend.models.database import Client, League, LeagueMembership, SysopUser
+from backend.core.scope import Scope, get_scope
+from backend.models.database import Client, League, LeagueMembership
 
 router = APIRouter()
 
@@ -47,7 +47,7 @@ class AddressBook(BaseModel):
 
 @router.get("", response_model=AddressBook, summary="Address Book")
 async def address_book(
-    current_user: SysopUser = Depends(get_current_user),
+    scope: Scope = Depends(get_scope),
     db: Session = Depends(get_db),
 ):
     """
@@ -56,13 +56,14 @@ async def address_book(
 
     Only active memberships are listed. BBSes in no league are included, so a
     newly added one shows up here before it joins anything.
+
+    A sysop sees only their own leagues, the BBSes in them, and the addresses
+    those BBSes use there -- what the leagues' nodelists publish.
     """
-    leagues = (
-        db.query(League)
-        .filter(League.is_active == True)  # noqa: E712
-        .order_by(League.league_id, League.game_type)
-        .all()
-    )
+    query = db.query(League).filter(League.is_active == True)  # noqa: E712
+    if not scope.is_admin:
+        query = query.filter(scope.league_clause(League.id))
+    leagues = query.order_by(League.league_id, League.game_type).all()
     league_ids = {league.id for league in leagues}
 
     clients = (
@@ -77,6 +78,7 @@ async def address_book(
 
     bbses = []
     for client in clients:
+        own = scope.sees_client(client.id)
         memberships = [
             AddressBookEntry(
                 league_id=m.league_id,
@@ -86,12 +88,17 @@ async def address_book(
             for m in client.league_memberships
             if m.is_active and m.league_id in league_ids
         ]
+        if not scope.is_admin and not memberships and not own:
+            continue  # in none of this sysop's leagues
+        addresses = [a.address for a in client.ftn_addresses]
+        if not scope.is_admin and not own:
+            addresses = sorted({m.fidonet_address for m in memberships if m.fidonet_address})
         bbses.append(
             AddressBookBbs(
                 id=client.id,
                 bbs_name=client.bbs_name,
                 is_active=bool(client.is_active),
-                addresses=[a.address for a in client.ftn_addresses],
+                addresses=addresses,
                 memberships=memberships,
                 index_differs=len({m.bbs_index for m in memberships}) > 1,
             )

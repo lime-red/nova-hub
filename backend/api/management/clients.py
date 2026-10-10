@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 
 from backend.api.management.claim import public_url, utc
 from backend.core.database import get_db
-from backend.core.security import get_current_user, get_password_hash, require_admin
+from backend.core.scope import Scope, get_scope
+from backend.core.security import get_password_hash, require_admin
 from backend.logging_config import get_logger
 from backend.models.database import (
     ClaimLink,
@@ -46,13 +47,13 @@ router = APIRouter()
 
 @router.get("", response_model=List[ClientResponse], summary="List All Clients")
 async def list_clients(
-    current_user: SysopUser = Depends(get_current_user),
+    scope: Scope = Depends(get_scope),
     db: Session = Depends(get_db),
 ):
     """
-    List all clients with basic stats
+    List clients with basic stats: all of them for an admin, a sysop's own for a sysop
 
-    **Returns:** List of all clients with 24h activity stats
+    **Returns:** List of clients with 24h activity stats
 
     **Example:**
     ```bash
@@ -61,7 +62,10 @@ async def list_clients(
     ```
     """
     stats_service = StatsService(db)
-    clients = db.query(Client).all()
+    query = db.query(Client)
+    if not scope.is_admin:
+        query = query.filter(Client.id.in_(scope.client_ids))
+    clients = query.order_by(Client.bbs_name).all()
 
     client_list = []
     for client in clients:
@@ -87,7 +91,7 @@ async def list_clients(
 @router.get("/{client_id}", response_model=ClientDetailResponse, summary="Get Client Details")
 async def get_client(
     client_id: int,
-    current_user: SysopUser = Depends(get_current_user),
+    scope: Scope = Depends(get_scope),
     db: Session = Depends(get_db),
 ):
     """
@@ -104,6 +108,7 @@ async def get_client(
       -b cookies.txt
     ```
     """
+    scope.require_client(client_id)
     client = db.query(Client).filter(Client.id == client_id).first()
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
@@ -210,7 +215,7 @@ async def get_client(
         packets=packets,
         league_memberships=league_memberships,
         ftn_addresses=[_address_info(a) for a in client.ftn_addresses],
-        owners=[_owner_info(o, current_user) for o in client.owners],
+        owners=[_owner_info(o, scope.user) for o in client.owners],
     )
 
 

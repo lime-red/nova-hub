@@ -21,6 +21,7 @@ from main import app, service_app, management_app
 from backend.core.database import get_db
 from backend.core.security import get_current_user
 from backend.models.database import (
+    ClientOwner,
     Base,
     Client,
     FtnAddress,
@@ -426,12 +427,19 @@ def test_download_is_the_file_byte_for_byte(api, world, data_dir):
     assert 'filename="brnodes.900"' in response.headers["content-disposition"]
 
 
-def test_sysops_can_download_the_nodelist(api, world, data_dir):
-    client, _ = api
+def test_member_sysops_can_download_the_nodelist(api, world, data_dir):
+    """The sysop of a member BBS can; any other sysop finds no such league."""
+    client, db = api
     _write_nodelist(data_dir)
     _as_sysop()
+    url = f"{LEAGUES}/{world['league']}/nodelist"
 
-    assert client.get(f"{LEAGUES}/{world['league']}/nodelist").status_code == 200
+    assert client.get(url).status_code == 404
+
+    db.add(SysopUser(id=2, username="sysop", hashed_password="x"))
+    db.add(ClientOwner(sysop_user_id=2, client_id=world["alpha"]))
+    db.commit()
+    assert client.get(url).status_code == 200
 
 
 def test_generated_nodelist_is_the_one_served(api, world, data_dir):

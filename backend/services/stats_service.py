@@ -1,7 +1,7 @@
 # backend/services/stats_service.py
 
 from datetime import datetime, timedelta
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
@@ -10,33 +10,38 @@ from backend.models.database import Client, League, LeagueMembership, Packet, Pr
 
 
 class StatsService:
-    """Service for computing statistics"""
+    """Service for computing statistics.
 
-    def __init__(self, db: Session):
+    Given a Scope (backend/core/scope.py), the dashboard figures count only
+    what that user may see; without one, everything.
+    """
+
+    def __init__(self, db: Session, scope=None):
         self.db = db
+        self.scope = scope
+
+    def _packets(self, query):
+        clause = self.scope.packet_clause() if self.scope else None
+        return query if clause is None else query.filter(clause)
 
     def get_dashboard_stats(self) -> Dict:
         """Get stats for dashboard"""
         now = datetime.now()
         day_ago = now - timedelta(days=1)
 
-        total_packets = self.db.query(func.count(Packet.id)).scalar()
-        total_clients = self.db.query(func.count(Client.id)).scalar()
-        active_clients = (
-            self.db.query(func.count(Client.id))
-            .filter(Client.is_active == True)
-            .scalar()
-        )
-        active_leagues = (
-            self.db.query(func.count(League.id))
-            .filter(League.is_active == True)
-            .scalar()
-        )
-        pending_alerts = (
-            self.db.query(func.count(SequenceAlert.id))
-            .filter(SequenceAlert.resolved_at == None)
-            .scalar()
-        )
+        clients = self.db.query(func.count(Client.id))
+        leagues = self.db.query(func.count(League.id))
+        alerts = self.db.query(func.count(SequenceAlert.id))
+        if self.scope and not self.scope.is_admin:
+            clients = clients.filter(Client.id.in_(self.scope.client_ids))
+            leagues = leagues.filter(self.scope.league_clause(League.id))
+            alerts = alerts.filter(self.scope.alert_clause())
+
+        total_packets = self._packets(self.db.query(func.count(Packet.id))).scalar()
+        total_clients = clients.scalar()
+        active_clients = clients.filter(Client.is_active == True).scalar()
+        active_leagues = leagues.filter(League.is_active == True).scalar()
+        pending_alerts = alerts.filter(SequenceAlert.resolved_at == None).scalar()
 
         return {
             "total_packets": total_packets or 0,
@@ -49,7 +54,8 @@ class StatsService:
     def get_recent_activity(self, limit: int = 20) -> List[Dict]:
         """Get recent packet activity"""
         packets = (
-            self.db.query(Packet).order_by(Packet.uploaded_at.desc()).limit(limit).all()
+            self._packets(self.db.query(Packet))
+            .order_by(Packet.uploaded_at.desc()).limit(limit).all()
         )
 
         activity = []
@@ -119,7 +125,7 @@ class StatsService:
             hour_end = hour_start + timedelta(hours=1)
 
             count = (
-                self.db.query(func.count(Packet.id))
+                self._packets(self.db.query(func.count(Packet.id)))
                 .filter(
                     and_(
                         Packet.uploaded_at >= hour_start, Packet.uploaded_at < hour_end
@@ -136,12 +142,14 @@ class StatsService:
     def get_league_distribution(self) -> tuple:
         """Get packet distribution by league"""
         results = (
-            self.db.query(
-                League.game_type,
-                League.league_id,
-                func.count(Packet.id).label("count"),
+            self._packets(
+                self.db.query(
+                    League.game_type,
+                    League.league_id,
+                    func.count(Packet.id).label("count"),
+                )
+                .join(Packet)
             )
-            .join(Packet)
             .group_by(League.id)
             .all()
         )

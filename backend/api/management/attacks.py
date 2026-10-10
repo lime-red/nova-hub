@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from backend.core.config import get_config
 from backend.core.database import get_db
-from backend.core.security import get_current_user, require_admin
+from backend.core.security import require_admin
 from backend.logging_config import get_logger
 from backend.models.database import League, SysopUser
 from backend.schemas.attacks import AttackForces, AttackHop, AttackJourney
@@ -42,7 +42,7 @@ async def list_attacks(
     stage: Optional[str] = Query(None),
     mit: Optional[str] = Query(None, pattern="^(late|possible|overdue|any)$"),
     limit: int = Query(500, ge=1, le=2000),
-    current_user: SysopUser = Depends(get_current_user),
+    current_user: SysopUser = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     """Individual attacks, most recently launched first, each with its hops.

@@ -7,7 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from backend.core.database import get_db
-from backend.core.security import get_current_user, require_admin
+from backend.core.scope import Scope, get_scope
+from backend.core.security import require_admin
 from backend.logging_config import get_logger
 from backend.models.database import League, SequenceAlert, SysopUser
 from backend.schemas.alerts import AlertResponse
@@ -21,7 +22,7 @@ router = APIRouter()
 async def list_alerts(
     resolved: bool = Query(None, description="Filter by resolved status (true/false/none for all)"),
     limit: int = Query(100, ge=1, le=500, description="Number of alerts to return"),
-    current_user: SysopUser = Depends(get_current_user),
+    scope: Scope = Depends(get_scope),
     db: Session = Depends(get_db),
 ):
     """
@@ -40,6 +41,9 @@ async def list_alerts(
     ```
     """
     query = db.query(SequenceAlert)
+    clause = scope.alert_clause()
+    if clause is not None:
+        query = query.filter(clause)
 
     # Filter by resolved status if specified
     if resolved is not None:
@@ -85,7 +89,7 @@ async def list_alerts(
 @router.get("/{alert_id}", response_model=AlertResponse, summary="Get Alert Details")
 async def get_alert(
     alert_id: int,
-    current_user: SysopUser = Depends(get_current_user),
+    scope: Scope = Depends(get_scope),
     db: Session = Depends(get_db),
 ):
     """
@@ -102,7 +106,11 @@ async def get_alert(
       -b cookies.txt
     ```
     """
-    alert = db.query(SequenceAlert).filter(SequenceAlert.id == alert_id).first()
+    query = db.query(SequenceAlert).filter(SequenceAlert.id == alert_id)
+    clause = scope.alert_clause()
+    if clause is not None:
+        query = query.filter(clause)
+    alert = query.first()
     if not alert:
         raise HTTPException(status_code=404, detail="Alert not found")
 

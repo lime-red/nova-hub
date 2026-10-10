@@ -82,7 +82,7 @@ class MemberResponse(BaseModel):
     ftn_address_id: Optional[int] = None
     fidonet_address: Optional[str] = None  # the address's text, for display
     client_ftn_addresses: List[FtnAddressRef] = []  # what an edit may choose from
-    client_oauth_id: str  # The client's OAuth client_id
+    client_oauth_id: Optional[str] = None  # The client's OAuth client_id; admins only
     joined_at: Optional[str] = None
     is_active: bool
 

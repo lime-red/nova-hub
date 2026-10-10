@@ -5,9 +5,9 @@ covers the adapter itself: the authorize URL WorkOS is sent to, the redirect
 back with a code, and the code exchange, over HTTP, with no WorkOS account.
 The emulator serves the same endpoints as api.workos.com.
 
-Needs npx (Node.js) and the npm registry. Without npx the tests skip, unless
-NOVA_REQUIRE_EMULATOR=1 is set, as CI sets it, so that a runner losing Node
-fails the build instead of quietly passing.
+Needs npx (Node.js) and the npm registry, and a host the CLI runs on: it is a
+Bun binary, and it hangs at startup in the gitea runner's container. Where it
+cannot run, the tests skip, unless NOVA_REQUIRE_EMULATOR=1 is set.
 """
 import os
 import shutil
@@ -40,10 +40,27 @@ API_KEY = "sk_test_default"  # the emulator's fixed key
 CLIENT_ID = "client_emulator"
 AUTH = "/management/api/v1/auth"
 
-if not shutil.which("npx"):
+def _cli_problem():
+    """Why the WorkOS CLI cannot run here, or None if it can."""
+    if not shutil.which("npx"):
+        return "npx is not on PATH"
+    probe = subprocess.Popen(["npx", "-y", WORKOS_CLI, "--version"], stdin=subprocess.DEVNULL,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                             start_new_session=True)
+    try:
+        # Generous: the first run downloads the CLI.
+        return None if probe.wait(timeout=90) == 0 else f"`workos --version` exited {probe.returncode}"
+    except subprocess.TimeoutExpired:
+        os.killpg(probe.pid, signal.SIGKILL)
+        probe.wait()
+        return "`workos --version` hung"
+
+
+_problem = _cli_problem()
+if _problem:
     if os.environ.get("NOVA_REQUIRE_EMULATOR") == "1":
-        raise RuntimeError("NOVA_REQUIRE_EMULATOR=1 but npx is not on PATH")
-    pytest.skip("npx not available for the WorkOS emulator", allow_module_level=True)
+        raise RuntimeError(f"NOVA_REQUIRE_EMULATOR=1 but the WorkOS CLI cannot run: {_problem}")
+    pytest.skip(f"WorkOS emulator unavailable: {_problem}", allow_module_level=True)
 
 
 def _free_port() -> int:

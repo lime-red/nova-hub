@@ -34,6 +34,14 @@ jobs:
           # For the WorkOS emulator (npx workos@0.23.0 emulate).
           node-version: "22"
 
+      - name: Fetch the WorkOS CLI
+        # Into npx's cache, so the emulator test starts it in seconds. Its own
+        # step so that a slow or failing download shows here, with npm's
+        # output, rather than as an emulator that "did not start".
+        timeout-minutes: 10
+        run: |
+          time npx -y workos@0.23.0 --version
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip

@@ -51,9 +51,11 @@ jobs:
           bin=$(ls /tmp/wcli/node_modules/@workos/cli-linux-x64/bin/workos)
           id; echo "HOME=$HOME"; ls -la "$HOME" | head
           command -v strace || (apt-get update -qq && apt-get install -y -qq strace) >/dev/null
+          set +e  # the runner's bash -e would stop at the first timeout
           timeout 20 strace -f -tt -o /tmp/wcli.trace "$bin" --version; echo "direct rc=$?"
-          tail -60 /tmp/wcli.trace
+          grep -v "futex\|mmap\|mprotect\|rt_sig" /tmp/wcli.trace | tail -80
           HOME=$(mktemp -d) timeout 20 "$bin" --version; echo "fresh HOME rc=$?"
+          set -e
           time timeout 300 npx -y --loglevel http workos@0.23.0 --version
 
       - name: Install dependencies

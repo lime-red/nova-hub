@@ -15,6 +15,11 @@ on:
 jobs:
   unit:
     runs-on: ubuntu-latest
+    env:
+      # tests/test_identity_emulator.py runs the WorkOS adapter against the
+      # emulator through npx. Without this it skips when Node is missing; here
+      # a runner losing Node must fail the build instead.
+      NOVA_REQUIRE_EMULATOR: "1"
     steps:
       - uses: actions/checkout@v4
 

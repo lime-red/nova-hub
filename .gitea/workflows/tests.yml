@@ -18,7 +18,7 @@ jobs:
     env:
       # tests/test_identity_emulator.py runs the WorkOS adapter against the
       # emulator through npx. Without this it skips when Node is missing; here
-      # a runner losing Node must fail the build instead.
+      # Node is installed below, and losing it must fail the build instead.
       NOVA_REQUIRE_EMULATOR: "1"
     steps:
       - uses: actions/checkout@v4
@@ -26,6 +26,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          # For the WorkOS emulator (npx workos@0.23.0 emulate).
+          node-version: "22"
 
       - name: Install dependencies
         run: |

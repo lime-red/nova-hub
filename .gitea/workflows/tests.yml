@@ -38,9 +38,14 @@ jobs:
         # Into npx's cache, so the emulator test starts it in seconds. Its own
         # step so that a slow or failing download shows here, with npm's
         # output, rather than as an emulator that "did not start".
-        timeout-minutes: 10
+        timeout-minutes: 12
         run: |
-          time npx -y workos@0.23.0 --version
+          # Run 77 sat silent here for ten minutes; say where it stalls.
+          curl -sS -o /dev/null -m 30 -w "registry: %{http_code} in %{time_total}s via %{remote_ip}\n" \
+            https://registry.npmjs.org/workos
+          npm config get registry
+          timeout 300 npm view workos@0.23.0 version --loglevel http
+          time timeout 300 npx -y --loglevel http workos@0.23.0 --version
 
       - name: Install dependencies
         run: |

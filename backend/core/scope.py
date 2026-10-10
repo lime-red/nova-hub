@@ -7,7 +7,7 @@ Admins see everything. A sysop sees:
   indexes and addresses (published in the nodelist anyway), nothing more,
 - packets and sequence alerts to or from their BBSes, in any league they have
   been a member of, and
-- processing runs in their leagues.
+- processing runs that carried a packet or made a file in their leagues.
 
 Every management read takes a Scope and applies it on the server; the console
 hiding things is presentation, not enforcement. A record outside the scope is
@@ -18,12 +18,20 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from fastapi import Depends, HTTPException
-from sqlalchemy import and_, false, or_
+from sqlalchemy import and_, exists, false, or_
 from sqlalchemy.orm import Session
 
 from backend.core.database import get_db
 from backend.core.security import get_current_user
-from backend.models.database import ClientOwner, LeagueMembership, Packet, SequenceAlert, SysopUser
+from backend.models.database import (
+    ClientOwner,
+    LeagueMembership,
+    Packet,
+    ProcessingRun,
+    ProcessingRunFile,
+    SequenceAlert,
+    SysopUser,
+)
 
 
 @dataclass(frozen=True)
@@ -75,6 +83,25 @@ class Scope:
         if self.is_admin:
             return None
         return league_col.in_(self.league_ids) if self.league_ids else false()
+
+    def run_clause(self):
+        """A filter for ProcessingRun queries, or None for no filter.
+
+        A run processes every league at once and its league_id is normally
+        unset, so a run is in a sysop's leagues by what it carried or made.
+        """
+        if self.is_admin:
+            return None
+        if not self.league_ids:
+            return false()
+        leagues = list(self.league_ids)
+        return or_(
+            ProcessingRun.league_id.in_(leagues),
+            exists().where(Packet.processing_run_id == ProcessingRun.id,
+                           Packet.league_id.in_(leagues)),
+            exists().where(ProcessingRunFile.processing_run_id == ProcessingRun.id,
+                           ProcessingRunFile.league_id.in_(leagues)),
+        )
 
     def sees_packet(self, packet: Packet) -> bool:
         return self.is_admin or any(

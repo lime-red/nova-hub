@@ -72,8 +72,10 @@ def world():
     db.flush()
     db.add(FtnAddress(client_id=bravo.id, address="9:9/9"))  # Bravo's, used in no league
 
-    run_bre = ProcessingRun(league_id=bre.id, status="completed", dosemu_log="BRE transcript")
-    run_fe = ProcessingRun(league_id=fe.id, status="completed", dosemu_log="FE transcript")
+    # Runs are hub-wide, as the processing service makes them: no league_id.
+    # Which leagues a run touched is in its packets and files.
+    run_bre = ProcessingRun(status="completed", dosemu_log="BRE transcript")
+    run_fe = ProcessingRun(status="completed", dosemu_log="FE transcript")
     db.add_all([run_bre, run_fe])
     db.flush()
     db.add_all([

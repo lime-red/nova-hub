@@ -46,7 +46,7 @@ async def list_runs(
     """
     query = db.query(ProcessingRun)
     if not scope.is_admin:
-        query = query.filter(scope.league_clause(ProcessingRun.league_id))
+        query = query.filter(scope.run_clause())
     runs = (
         query
         .order_by(ProcessingRun.started_at.desc())
@@ -105,8 +105,11 @@ async def get_run(
       -b cookies.txt
     ```
     """
-    run = db.query(ProcessingRun).filter(ProcessingRun.id == run_id).first()
-    if not run or not scope.sees_league(run.league_id):
+    query = db.query(ProcessingRun).filter(ProcessingRun.id == run_id)
+    if not scope.is_admin:
+        query = query.filter(scope.run_clause())
+    run = query.first()
+    if not run:
         raise HTTPException(status_code=404, detail="Run not found")
 
     # Calculate duration

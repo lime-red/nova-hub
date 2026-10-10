@@ -37,9 +37,11 @@ mkdir -p ./data
 
 Access the web interface at: http://localhost:8000
 
-Default credentials:
-- Username: `admin`
-- Password: `admin` (⚠️ Change this immediately!)
+Log in as `admin` with the password `create_admin_sql.py` printed. There is no
+default password.
+
+Sysops sign in through an identity provider once `[identity]` is set in
+`config.toml`; see [Sysop accounts](docs/SETUP_GUIDE.md#sysop-accounts).
 
 ### Client Setup
 

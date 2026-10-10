@@ -486,6 +486,96 @@
         }
       }
     },
+    "/management/api/v1/auth/methods": {
+      "get": {
+        "tags": [
+          "Management API - Authentication"
+        ],
+        "summary": "Sign-in Methods",
+        "description": "Which sign-in methods the login page should offer. Public.",
+        "operationId": "methods_api_v1_auth_methods_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthMethods"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/management/api/v1/auth/sso/start": {
+      "get": {
+        "tags": [
+          "Management API - Authentication"
+        ],
+        "summary": "Start Provider Sign-in",
+        "description": "Send the browser to the identity provider to sign in.\n\nA random state goes both into the provider URL and, signed, into a short-lived\ncookie; the callback accepts only a state that matches its own browser's\ncookie, so a sign-in cannot be started in one browser and finished in another.",
+        "operationId": "sso_start_api_v1_auth_sso_start_get",
+        "parameters": [
+          {
+            "name": "next",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Console path to land on afterwards",
+              "title": "Next"
+            },
+            "description": "Console path to land on afterwards"
+          },
+          {
+            "name": "relink",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A re-link link's token: bind this sign-in to the account it was issued for",
+              "title": "Relink"
+            },
+            "description": "A re-link link's token: bind this sign-in to the account it was issued for"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/management/api/v1/claim/{token}": {
       "get": {
         "tags": [
@@ -555,6 +645,170 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ClaimResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/management/api/v1/audit": {
+      "get": {
+        "tags": [
+          "Management API - Audit Log"
+        ],
+        "summary": "Audit Log",
+        "description": "Who did what, newest first (admin only)\n\n**Example:** everything that happened to one BBS\n```bash\ncurl \"https://hub.example.com/management/api/v1/audit?target_type=client&target_id=3\" \\\n  -b cookies.txt\n```",
+        "operationId": "list_audit_events_api_v1_audit_get",
+        "parameters": [
+          {
+            "name": "target_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "client or user",
+              "title": "Target Type"
+            },
+            "description": "client or user"
+          },
+          {
+            "name": "target_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Target Id"
+            }
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "An action, or a prefix such as 'owner.'",
+              "title": "Action"
+            },
+            "description": "An action, or a prefix such as 'owner.'"
+          },
+          {
+            "name": "before_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Page back: events older than this id",
+              "title": "Before Id"
+            },
+            "description": "Page back: events older than this id"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AuditEventInfo"
+                  },
+                  "title": "Response List Audit Events Api V1 Audit Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/management/api/v1/relink/{token}": {
+      "get": {
+        "tags": [
+          "Management API - Claim Links"
+        ],
+        "summary": "Re-link Link Status",
+        "description": "Which hub account this link connects a sign-in to, and whether it still can.",
+        "operationId": "relink_status_api_v1_relink__token__get",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{20,64}$",
+              "title": "Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RelinkPageStatus"
                 }
               }
             }
@@ -796,7 +1050,7 @@
           "Management API - Clients"
         ],
         "summary": "List All Clients",
-        "description": "List all clients with basic stats\n\n**Returns:** List of all clients with 24h activity stats\n\n**Example:**\n```bash\ncurl -X GET \"https://hub.example.com/management/api/v1/clients\" \\\n  -b cookies.txt\n```",
+        "description": "List clients with basic stats: all of them for an admin, a sysop's own for a sysop\n\n**Returns:** List of clients with 24h activity stats\n\n**Example:**\n```bash\ncurl -X GET \"https://hub.example.com/management/api/v1/clients\" \\\n  -b cookies.txt\n```",
         "operationId": "list_clients_api_v1_clients_get",
         "responses": {
           "200": {
@@ -1287,6 +1541,119 @@
         }
       }
     },
+    "/management/api/v1/clients/{client_id}/owners": {
+      "post": {
+        "tags": [
+          "Management API - Clients"
+        ],
+        "summary": "Add Owner",
+        "description": "Make a sysop an owner of this BBS (admin only)\n\nThe sysop then sees the BBS, its leagues, packets and runs in the console.\nA BBS can have several owners, and a sysop can own several BBSes.\n\n**Returns:** the BBS's owners",
+        "operationId": "add_owner_api_v1_clients__client_id__owners_post",
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Client Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OwnerRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OwnerInfo"
+                  },
+                  "title": "Response Add Owner Api V1 Clients  Client Id  Owners Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/management/api/v1/clients/{client_id}/owners/{user_id}": {
+      "delete": {
+        "tags": [
+          "Management API - Clients"
+        ],
+        "summary": "Remove Owner",
+        "description": "Stop a sysop owning this BBS (admin only)\n\n**Returns:** the BBS's remaining owners",
+        "operationId": "remove_owner_api_v1_clients__client_id__owners__user_id__delete",
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Client Id"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OwnerInfo"
+                  },
+                  "title": "Response Remove Owner Api V1 Clients  Client Id  Owners  User Id  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/management/api/v1/leagues": {
       "get": {
         "tags": [
@@ -1749,7 +2116,7 @@
           "Management API - Address Book"
         ],
         "summary": "Address Book",
-        "description": "Every BBS against every active league: its index and FTN address in each,\nand whether its index differs between leagues.\n\nOnly active memberships are listed. BBSes in no league are included, so a\nnewly added one shows up here before it joins anything.",
+        "description": "Every BBS against every active league: its index and FTN address in each,\nand whether its index differs between leagues.\n\nOnly active memberships are listed. BBSes in no league are included, so a\nnewly added one shows up here before it joins anything.\n\nA sysop sees only their own leagues, the BBSes in them, and the addresses\nthose BBSes use there -- what the leagues' nodelists publish.",
         "operationId": "address_book_api_v1_address_book_get",
         "responses": {
           "200": {
@@ -2790,6 +3157,141 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/management/api/v1/users/{user_id}/relink-link": {
+      "post": {
+        "tags": [
+          "Management API - Users"
+        ],
+        "summary": "Issue Re-link Link",
+        "description": "Issue a single-use link that connects a sign-in to this account (admin only).\n\nWhoever opens it and signs in through the identity provider has that sign-in\nbound to this account, replacing any it had. Use it for an account that\npredates provider sign-in, or a sysop who has lost access to their email.\nExpires after 72 hours; supersedes any outstanding link for the account.\n\n**Returns:** the link (shown only here) and its expiry",
+        "operationId": "issue_relink_link_api_v1_users__user_id__relink_link_post",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClaimLinkIssued"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Management API - Users"
+        ],
+        "summary": "Re-link Link Status",
+        "description": "The latest re-link link issued for this account, or null (admin only). Never the link itself.",
+        "operationId": "get_relink_link_api_v1_users__user_id__relink_link_get",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ClaimLinkStatus"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Get Relink Link Api V1 Users  User Id  Relink Link Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/management/api/v1/users/{user_id}/unlink": {
+      "post": {
+        "tags": [
+          "Management API - Users"
+        ],
+        "summary": "Remove Sign-in",
+        "description": "Disconnect this account's provider sign-in (admin only).\n\nIt can no longer sign in through the provider until a re-link link is used.\nSessions already open last until they expire. Refused for an account that\nwould then have no way in at all, unless it is not your own.",
+        "operationId": "unlink_identity_api_v1_users__user_id__unlink_post",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
               }
             }
           },
@@ -3878,6 +4380,127 @@
         ],
         "title": "AttackJourney"
       },
+      "AuditEventInfo": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "At"
+          },
+          "actor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor"
+          },
+          "actor_user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor User Id"
+          },
+          "action": {
+            "type": "string",
+            "title": "Action"
+          },
+          "target_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Type"
+          },
+          "target_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Id"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "ip": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ip"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "at",
+          "action"
+        ],
+        "title": "AuditEventInfo",
+        "description": "One audit log entry. actor is None for the hub itself or a signed-out visitor."
+      },
+      "AuthMethods": {
+        "properties": {
+          "password": {
+            "type": "boolean",
+            "title": "Password"
+          },
+          "sso": {
+            "type": "boolean",
+            "title": "Sso"
+          }
+        },
+        "type": "object",
+        "required": [
+          "password",
+          "sso"
+        ],
+        "title": "AuthMethods",
+        "description": "What the login page offers"
+      },
       "ChangePasswordRequest": {
         "properties": {
           "current_password": {
@@ -4298,6 +4921,14 @@
             },
             "type": "array",
             "title": "Ftn Addresses",
+            "default": []
+          },
+          "owners": {
+            "items": {
+              "$ref": "#/components/schemas/OwnerInfo"
+            },
+            "type": "array",
+            "title": "Owners",
             "default": []
           }
         },
@@ -5212,7 +5843,14 @@
             "default": []
           },
           "client_oauth_id": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Client Oauth Id"
           },
           "joined_at": {
@@ -5237,7 +5875,6 @@
           "client_id",
           "bbs_name",
           "bbs_index",
-          "client_oauth_id",
           "is_active"
         ],
         "title": "MemberResponse",
@@ -5440,6 +6077,80 @@
         ],
         "title": "NodelistInfo",
         "description": "The league's current nodelist file, as served for download"
+      },
+      "OwnedClient": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "bbs_name": {
+            "type": "string",
+            "title": "Bbs Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "bbs_name"
+        ],
+        "title": "OwnedClient",
+        "description": "A BBS the user owns"
+      },
+      "OwnerInfo": {
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "title": "User Id"
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "full_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Name"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id",
+          "username"
+        ],
+        "title": "OwnerInfo",
+        "description": "A sysop who owns a BBS. email is filled in for admins only."
+      },
+      "OwnerRequest": {
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "title": "User Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id"
+        ],
+        "title": "OwnerRequest",
+        "description": "Make a user an owner of a BBS"
       },
       "PacketHistoryItem": {
         "properties": {
@@ -5839,6 +6550,36 @@
         "title": "ProcessingRunResponse",
         "description": "Processing run response"
       },
+      "RelinkPageStatus": {
+        "properties": {
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "state": {
+            "type": "string",
+            "title": "State"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          },
+          "has_sign_in": {
+            "type": "boolean",
+            "title": "Has Sign In"
+          }
+        },
+        "type": "object",
+        "required": [
+          "username",
+          "state",
+          "expires_at",
+          "has_sign_in"
+        ],
+        "title": "RelinkPageStatus",
+        "description": "What the re-link page shows: which account the link connects a sign-in to"
+      },
       "TrafficDetails": {
         "properties": {
           "key": {
@@ -6224,6 +6965,46 @@
             "title": "Is Admin",
             "default": false
           },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "full_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Name"
+          },
+          "has_password": {
+            "type": "boolean",
+            "title": "Has Password",
+            "default": false
+          },
+          "sso_linked": {
+            "type": "boolean",
+            "title": "Sso Linked",
+            "default": false
+          },
+          "owned_clients": {
+            "items": {
+              "$ref": "#/components/schemas/OwnedClient"
+            },
+            "type": "array",
+            "title": "Owned Clients",
+            "default": []
+          },
           "created_at": {
             "anyOf": [
               {
@@ -6234,6 +7015,17 @@
               }
             ],
             "title": "Created At"
+          },
+          "last_login": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Login"
           }
         },
         "type": "object",

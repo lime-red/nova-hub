@@ -143,6 +143,26 @@ You'll be redirected to the login page. Use the admin credentials from step 5.
 4. Log out and log in with the new account
 5. Delete or disable the default admin account
 
+### Sysop accounts
+
+Sysops sign in with their own accounts through an identity provider (WorkOS
+AuthKit), so they can see their BBS without the hub admin's password.
+
+1. In WorkOS, add `<public_url>/management/api/v1/auth/sso/callback` as a
+   redirect URI, with `public_url` from `[server]`.
+2. Fill in `[identity]` in `config.toml` (`provider = "workos"`, `client_id`,
+   `api_key`) and restart. The login page now offers "Sign in".
+3. Connect your own account: Admin > Users, "Connect sign-in" on `admin`, open
+   the link it gives you and sign in. From then on either way in works; keep
+   the password as the way in when the provider is down.
+4. A sysop signs in once, which makes an account that sees nothing. Add them
+   on their BBS's page, under Sysops.
+
+A sign-in is never joined to an existing account by email. If a sysop loses
+the email their sign-in used, give them a new link from the Users page.
+
+Everything above is recorded in Admin > Audit Log.
+
 ### Register BBS Clients
 
 1. Go to Admin > Clients

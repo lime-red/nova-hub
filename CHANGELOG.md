@@ -37,12 +37,34 @@ All notable changes to Nova Hub will be documented in this file.
 - `tools/release.sh <tag>` publishes a version's section of this file as the
   release notes on GitHub and gitea.
 - MIT licence.
+- **Sysop accounts.** Sysops sign in through an identity provider (WorkOS
+  AuthKit), configured in a new `[identity]` table; with it unset the hub
+  works as before. The first sign-in makes a sysop account that owns nothing
+  and sees nothing until an admin adds it as a BBS's sysop (the new Sysops
+  card on the client page). The hub admin's password still works, as the way
+  in when the provider is down. A sign-in is never attached to an existing
+  account by matching email: an admin issues a **sign-in link** from the Users
+  page, which works once, for 72 hours, for the account it names. Admins can
+  also remove an account's sign-in.
+- **What a sysop sees** is limited, on the server, to their own BBSes and the
+  leagues those are active in: dashboard, alerts, processing runs (their own
+  packets, no transcript), leagues (active members, no install paths), the
+  address book and nodelists. Anything else is a 404. A test fails if a
+  management route is added without either admin-only or this scope.
+- **Audit log** (`/admin/audit`, `GET /audit`): who created, changed or
+  deleted a BBS, issued or used a claim or sign-in link, assigned an FTN
+  address, added an owner, or changed a user or role, with when and from what
+  IP.
 
 ### Changed
 - Each game's names (letter, code, nodelist and nodes-file names) live in one
   table, `backend/services/games.py`, mirrored in `frontend/src/games.ts`. An
   unknown game letter is now an error instead of being treated as Falcon's Eye.
   Contributed by Andy Alt (GitHub PR #1).
+
+- Movements, attacks and the traffic view are admin-only: they show every
+  league's game intelligence.
+- An admin cannot remove their own admin role.
 
 ### Removed
 - `PUT /leagues/{id}/members/{membership_id}/bbs-index` and `.../fidonet`,
@@ -52,6 +74,14 @@ All notable changes to Nova Hub will be documented in this file.
 - Migration `a7d3e9f15b20` copies each membership's address onto its BBS. It
   refuses, naming them, if one address is held by more than one BBS; give one of
   them a different address and re-run. Nothing is changed until it succeeds.
+- Migrations `6d2f8a41c9e7` and `9a4b2e7c1f05` add provider sign-in to user
+  accounts, BBS owners, the audit log and sign-in links. Existing accounts
+  keep their passwords.
+- To turn on provider sign-in, fill in `[identity]` (see
+  `config.toml.example`) and register
+  `<public_url>/management/api/v1/auth/sso/callback` as a redirect URI with
+  the provider. Then connect the admin account's own sign-in with a link from
+  the Users page.
 
 ## [0.4.0] - 2026-09-17
 

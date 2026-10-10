@@ -106,6 +106,7 @@ Uses session-based JWT stored in httpOnly cookies.
 - [Management API - Address Book](#management-api---address-book)
 - [Management API - Alerts](#management-api---alerts)
 - [Management API - Attacks](#management-api---attacks)
+- [Management API - Audit Log](#management-api---audit-log)
 - [Management API - Authentication](#management-api---authentication)
 - [Management API - Claim Links](#management-api---claim-links)
 - [Management API - Clients](#management-api---clients)
@@ -133,6 +134,9 @@ and whether its index differs between leagues.
 
 Only active memberships are listed. BBSes in no league are included, so a
 newly added one shows up here before it joins anything.
+
+A sysop sees only their own leagues, the BBSes in them, and the addresses
+those BBSes use there -- what the leagues' nodelists publish.
 
 #### Responses
 
@@ -420,6 +424,63 @@ Validation Error
 
 ---
 
+## Management API - Audit Log
+
+### GET `/management/api/v1/audit`
+
+**Audit Log**
+
+Who did what, newest first (admin only)
+
+**Example:** everything that happened to one BBS
+```bash
+curl "https://hub.example.com/management/api/v1/audit?target_type=client&target_id=3" \
+  -b cookies.txt
+```
+
+#### Parameters
+
+**target_type**
+- client or user
+  - Type: `string`
+  - Location: query
+
+**target_id**
+  - Type: `string`
+  - Location: query
+
+**action**
+- An action, or a prefix such as 'owner.'
+  - Type: `string`
+  - Location: query
+
+**before_id**
+- Page back: events older than this id
+  - Type: `string`
+  - Location: query
+
+**limit**
+  - Type: `integer`
+  - Location: query
+
+#### Responses
+
+#### 200
+
+Successful Response
+
+
+**Content-Type:** `application/json`
+
+#### 422
+
+Validation Error
+
+
+**Content-Type:** `application/json`
+
+---
+
 ## Management API - Authentication
 
 ### POST `/management/api/v1/auth/login`
@@ -559,6 +620,63 @@ Validation Error
 
 ---
 
+### GET `/management/api/v1/auth/methods`
+
+**Sign-in Methods**
+
+Which sign-in methods the login page should offer. Public.
+
+#### Responses
+
+#### 200
+
+Successful Response
+
+
+**Content-Type:** `application/json`
+
+---
+
+### GET `/management/api/v1/auth/sso/start`
+
+**Start Provider Sign-in**
+
+Send the browser to the identity provider to sign in.
+
+A random state goes both into the provider URL and, signed, into a short-lived
+cookie; the callback accepts only a state that matches its own browser's
+cookie, so a sign-in cannot be started in one browser and finished in another.
+
+#### Parameters
+
+**next**
+- Console path to land on afterwards
+  - Type: `string`
+  - Location: query
+
+**relink**
+- A re-link link's token: bind this sign-in to the account it was issued for
+  - Type: `string`
+  - Location: query
+
+#### Responses
+
+#### 200
+
+Successful Response
+
+
+**Content-Type:** `application/json`
+
+#### 422
+
+Validation Error
+
+
+**Content-Type:** `application/json`
+
+---
+
 ## Management API - Claim Links
 
 ### GET `/management/api/v1/claim/{token}`
@@ -631,15 +749,46 @@ Validation Error
 
 ---
 
+### GET `/management/api/v1/relink/{token}`
+
+**Re-link Link Status**
+
+Which hub account this link connects a sign-in to, and whether it still can.
+
+#### Parameters
+
+**token**
+  - Type: `string`
+  - Location: path *(required)*
+  - Pattern: `^[A-Za-z0-9_-]{20,64}$`
+
+#### Responses
+
+#### 200
+
+Successful Response
+
+
+**Content-Type:** `application/json`
+
+#### 422
+
+Validation Error
+
+
+**Content-Type:** `application/json`
+
+---
+
 ## Management API - Clients
 
 ### GET `/management/api/v1/clients`
 
 **List All Clients**
 
-List all clients with basic stats
+List clients with basic stats: all of them for an admin, a sysop's own for a sysop
 
-**Returns:** List of all clients with 24h activity stats
+**Returns:** List of clients with 24h activity stats
 
 **Example:**
 ```bash
@@ -1049,6 +1198,81 @@ Refused while any league membership still uses it.
   - Location: path *(required)*
 
 **address_id**
+  - Type: `integer`
+  - Location: path *(required)*
+
+#### Responses
+
+#### 200
+
+Successful Response
+
+
+**Content-Type:** `application/json`
+
+#### 422
+
+Validation Error
+
+
+**Content-Type:** `application/json`
+
+---
+
+### POST `/management/api/v1/clients/{client_id}/owners`
+
+**Add Owner**
+
+Make a sysop an owner of this BBS (admin only)
+
+The sysop then sees the BBS, its leagues, packets and runs in the console.
+A BBS can have several owners, and a sysop can own several BBSes.
+
+**Returns:** the BBS's owners
+
+#### Parameters
+
+**client_id**
+  - Type: `integer`
+  - Location: path *(required)*
+
+### Request Body
+
+**Content-Type:** `application/json`
+
+#### Responses
+
+#### 200
+
+Successful Response
+
+
+**Content-Type:** `application/json`
+
+#### 422
+
+Validation Error
+
+
+**Content-Type:** `application/json`
+
+---
+
+### DELETE `/management/api/v1/clients/{client_id}/owners/{user_id}`
+
+**Remove Owner**
+
+Stop a sysop owning this BBS (admin only)
+
+**Returns:** the BBS's remaining owners
+
+#### Parameters
+
+**client_id**
+  - Type: `integer`
+  - Location: path *(required)*
+
+**user_id**
   - Type: `integer`
   - Location: path *(required)*
 
@@ -2229,6 +2453,107 @@ Delete a sysop user (admin only)
 curl -X DELETE "https://hub.example.com/management/api/v1/users/1" \
   -b cookies.txt
 ```
+
+#### Parameters
+
+**user_id**
+  - Type: `integer`
+  - Location: path *(required)*
+
+#### Responses
+
+#### 200
+
+Successful Response
+
+
+**Content-Type:** `application/json`
+
+#### 422
+
+Validation Error
+
+
+**Content-Type:** `application/json`
+
+---
+
+### POST `/management/api/v1/users/{user_id}/relink-link`
+
+**Issue Re-link Link**
+
+Issue a single-use link that connects a sign-in to this account (admin only).
+
+Whoever opens it and signs in through the identity provider has that sign-in
+bound to this account, replacing any it had. Use it for an account that
+predates provider sign-in, or a sysop who has lost access to their email.
+Expires after 72 hours; supersedes any outstanding link for the account.
+
+**Returns:** the link (shown only here) and its expiry
+
+#### Parameters
+
+**user_id**
+  - Type: `integer`
+  - Location: path *(required)*
+
+#### Responses
+
+#### 200
+
+Successful Response
+
+
+**Content-Type:** `application/json`
+
+#### 422
+
+Validation Error
+
+
+**Content-Type:** `application/json`
+
+---
+
+### GET `/management/api/v1/users/{user_id}/relink-link`
+
+**Re-link Link Status**
+
+The latest re-link link issued for this account, or null (admin only). Never the link itself.
+
+#### Parameters
+
+**user_id**
+  - Type: `integer`
+  - Location: path *(required)*
+
+#### Responses
+
+#### 200
+
+Successful Response
+
+
+**Content-Type:** `application/json`
+
+#### 422
+
+Validation Error
+
+
+**Content-Type:** `application/json`
+
+---
+
+### POST `/management/api/v1/users/{user_id}/unlink`
+
+**Remove Sign-in**
+
+Disconnect this account's provider sign-in (admin only).
+
+It can no longer sign in through the provider until a re-link link is used.
+Sessions already open last until they expire. Refused for an account that
+would then have no way in at all, unless it is not your own.
 
 #### Parameters
 

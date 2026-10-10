@@ -1,7 +1,7 @@
 """Authentication schemas for Nova Hub APIs"""
 
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 from pydantic import BaseModel
 
 
@@ -28,6 +28,12 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class OwnedClient(BaseModel):
+    """A BBS the user owns"""
+    id: int
+    bbs_name: str
+
+
 class UserResponse(BaseModel):
     """User information response"""
     id: int
@@ -37,7 +43,9 @@ class UserResponse(BaseModel):
     full_name: Optional[str] = None
     has_password: bool = False  # can use the local login
     sso_linked: bool = False  # can sign in through the identity provider
+    owned_clients: List[OwnedClient] = []
     created_at: Optional[str] = None
+    last_login: Optional[str] = None
 
     class Config:
         from_attributes = True

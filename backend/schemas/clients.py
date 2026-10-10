@@ -151,6 +151,19 @@ class FtnAddressRequest(BaseModel):
     address: str
 
 
+class OwnerInfo(BaseModel):
+    """A sysop who owns a BBS. email is filled in for admins only."""
+    user_id: int
+    username: str
+    full_name: Optional[str] = None
+    email: Optional[str] = None
+
+
+class OwnerRequest(BaseModel):
+    """Make a user an owner of a BBS"""
+    user_id: int
+
+
 class ClientDetailResponse(BaseModel):
     """Detailed client info with stats and recent packets"""
     id: int
@@ -165,6 +178,7 @@ class ClientDetailResponse(BaseModel):
     packets: List[PacketHistoryItem] = []
     league_memberships: List[LeagueMembershipInfo] = []
     ftn_addresses: List[FtnAddressInfo] = []
+    owners: List[OwnerInfo] = []
 
     class Config:
         from_attributes = True

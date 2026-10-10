@@ -36,6 +36,7 @@ from backend.schemas.auth import (
     ChangePasswordRequest,
     LoginRequest,
     LoginResponse,
+    OwnedClient,
     UserResponse,
 )
 from backend.services import sysop_accounts
@@ -207,7 +208,9 @@ def user_response(user: SysopUser) -> UserResponse:
         full_name=user.full_name,
         has_password=bool(user.hashed_password),
         sso_linked=bool(user.idp_subject),
+        owned_clients=[OwnedClient(id=c.id, bbs_name=c.bbs_name) for c in user.owned_clients],
         created_at=user.created_at.strftime("%Y-%m-%d") if user.created_at else None,
+        last_login=user.last_login.strftime("%Y-%m-%d %H:%M") if user.last_login else None,
     )
 
 

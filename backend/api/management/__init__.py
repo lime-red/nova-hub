@@ -11,6 +11,7 @@ This API is used by the Vue.js frontend to:
 from fastapi import APIRouter
 
 from .address_book import router as address_book_router
+from .audit import router as audit_router
 from .attacks import router as attacks_router
 from .traffic import router as traffic_router
 from .auth import router as auth_router
@@ -37,6 +38,12 @@ management_router.include_router(
     claim_router,
     prefix="/claim",
     tags=["Management API - Claim Links"]
+)
+
+management_router.include_router(
+    audit_router,
+    prefix="/audit",
+    tags=["Management API - Audit Log"]
 )
 
 management_router.include_router(

@@ -31,10 +31,12 @@ from backend.schemas.clients import (
     FtnAddressInfo,
     FtnAddressRequest,
     LeagueMembershipInfo,
+    OwnerInfo,
+    OwnerRequest,
     PacketHistoryItem,
 )
 from backend.schemas.claim import ClaimLinkIssued, ClaimLinkStatus
-from backend.services import claim_links
+from backend.services import audit, claim_links
 from backend.services.stats_service import StatsService
 
 logger = get_logger(context="management_clients")
@@ -208,12 +210,14 @@ async def get_client(
         packets=packets,
         league_memberships=league_memberships,
         ftn_addresses=[_address_info(a) for a in client.ftn_addresses],
+        owners=[_owner_info(o, current_user) for o in client.owners],
     )
 
 
 @router.post("", response_model=ClientCreatedResponse, summary="Create Client")
 async def create_client(
     request: ClientCreate,
+    http_request: Request,
     current_user: SysopUser = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
@@ -254,6 +258,9 @@ async def create_client(
         is_active=True,
     )
     db.add(client)
+    db.flush()
+    audit.record(db, "client.created", actor=current_user, target=client,
+                 detail=f"client_id {client.client_id}", request=http_request)
     db.commit()
     db.refresh(client)
 
@@ -271,6 +278,7 @@ async def create_client(
 async def update_client(
     client_id: int,
     request: ClientUpdate,
+    http_request: Request,
     current_user: SysopUser = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
@@ -300,6 +308,7 @@ async def update_client(
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
 
+    before = {f: getattr(client, f) for f in ("bbs_name", "city", "state", "country", "is_active")}
     if request.bbs_name is not None:
         client.bbs_name = request.bbs_name
     if request.city is not None:
@@ -311,6 +320,11 @@ async def update_client(
     if request.is_active is not None:
         client.is_active = request.is_active
 
+    changes = [f"{f}: {old!r} -> {getattr(client, f)!r}"
+               for f, old in before.items() if getattr(client, f) != old]
+    if changes:
+        audit.record(db, "client.updated", actor=current_user, target=client,
+                     detail="; ".join(changes), request=http_request)
     db.commit()
     db.refresh(client)
 
@@ -336,6 +350,7 @@ async def update_client(
 @router.delete("/{client_id}", summary="Delete Client")
 async def delete_client(
     client_id: int,
+    http_request: Request,
     current_user: SysopUser = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
@@ -362,6 +377,8 @@ async def delete_client(
     for address in client.ftn_addresses:
         db.delete(address)
     db.query(ClaimLink).filter(ClaimLink.client_id == client.id).delete()
+    audit.record(db, "client.deleted", actor=current_user, target=client,
+                 detail=f"client_id {client.client_id}", request=http_request)
     db.delete(client)
     db.commit()
 
@@ -392,6 +409,11 @@ async def issue_claim_link(
         raise HTTPException(status_code=404, detail="Client not found")
 
     token, link, superseded = claim_links.issue(db, client, current_user.username)
+    audit.record(db, "claim_link.issued", actor=current_user, target=client,
+                 detail=f"link {link.id}, expires {link.expires_at:%Y-%m-%d %H:%M} UTC"
+                 + (f", superseding {superseded}" if superseded else ""),
+                 request=request)
+    db.commit()
     logger.info(
         f"Claim link {link.id} issued for client {client.client_id} by {current_user.username}"
         + (f" (superseding {superseded})" if superseded else "")
@@ -433,6 +455,7 @@ async def get_claim_link(
 @router.post("/{client_id}/regenerate-secret", response_model=ClientSecretResponse, summary="Regenerate Secret")
 async def regenerate_secret(
     client_id: int,
+    http_request: Request,
     current_user: SysopUser = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
@@ -457,6 +480,8 @@ async def regenerate_secret(
     # Generate new secret
     new_secret = Client.generate_client_secret()
     client.client_secret = get_password_hash(new_secret)
+    audit.record(db, "client.secret_regenerated", actor=current_user, target=client,
+                 request=http_request)
     db.commit()
 
     logger.info(f"Regenerated secret for client {client.client_id} by {current_user.username}")
@@ -533,6 +558,7 @@ def _client_address(db: Session, client_id: int, address_id: int) -> FtnAddress:
 async def add_ftn_address(
     client_id: int,
     request: FtnAddressRequest,
+    http_request: Request,
     current_user: SysopUser = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
@@ -556,6 +582,8 @@ async def add_ftn_address(
 
     address = FtnAddress(client_id=client.id, address=_check_address(db, request.address))
     db.add(address)
+    audit.record(db, "ftn_address.assigned", actor=current_user, target=client,
+                 detail=address.address, request=http_request)
     db.commit()
     db.refresh(address)
 
@@ -568,6 +596,7 @@ async def update_ftn_address(
     client_id: int,
     address_id: int,
     request: FtnAddressRequest,
+    http_request: Request,
     current_user: SysopUser = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
@@ -580,6 +609,8 @@ async def update_ftn_address(
     address = _client_address(db, client_id, address_id)
     old = address.address
     address.address = _check_address(db, request.address, exclude_id=address.id)
+    audit.record(db, "ftn_address.renumbered", actor=current_user, target=address.client,
+                 detail=f"{old} -> {address.address}", request=http_request)
     db.commit()
     db.refresh(address)
 
@@ -594,6 +625,7 @@ async def update_ftn_address(
 async def delete_ftn_address(
     client_id: int,
     address_id: int,
+    http_request: Request,
     current_user: SysopUser = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
@@ -611,8 +643,81 @@ async def delete_ftn_address(
             "move those memberships to another address first",
         )
     text = address.address
+    audit.record(db, "ftn_address.removed", actor=current_user, target=address.client,
+                 detail=text, request=http_request)
     db.delete(address)
     db.commit()
 
     logger.info(f"Removed {text} from client {client_id} by {current_user.username}")
     return {"message": f"{text} removed"}
+
+
+# Owners: the sysops who run a BBS, and so see it in the console. Admin only:
+# whoever controls ownership controls who sees a board's traffic.
+
+def _owner_info(user: SysopUser, viewer: SysopUser) -> OwnerInfo:
+    # Co-sysops see each other's names; only admins see email addresses.
+    return OwnerInfo(
+        user_id=user.id,
+        username=user.username,
+        full_name=user.full_name,
+        email=user.email if viewer.is_superuser else None,
+    )
+
+
+@router.post("/{client_id}/owners", response_model=List[OwnerInfo], summary="Add Owner")
+async def add_owner(
+    client_id: int,
+    request: OwnerRequest,
+    http_request: Request,
+    current_user: SysopUser = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    Make a sysop an owner of this BBS (admin only)
+
+    The sysop then sees the BBS, its leagues, packets and runs in the console.
+    A BBS can have several owners, and a sysop can own several BBSes.
+
+    **Returns:** the BBS's owners
+    """
+    client = db.query(Client).filter(Client.id == client_id).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+    user = db.query(SysopUser).filter(SysopUser.id == request.user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user not in client.owners:
+        client.owners.append(user)
+        audit.record(db, "owner.added", actor=current_user, target=client,
+                     detail=f"{user.username} now owns {client.bbs_name}", request=http_request)
+        db.commit()
+        logger.info(f"{user.username} added as owner of {client.bbs_name} by {current_user.username}")
+    return [_owner_info(o, current_user) for o in client.owners]
+
+
+@router.delete("/{client_id}/owners/{user_id}", response_model=List[OwnerInfo], summary="Remove Owner")
+async def remove_owner(
+    client_id: int,
+    user_id: int,
+    http_request: Request,
+    current_user: SysopUser = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    Stop a sysop owning this BBS (admin only)
+
+    **Returns:** the BBS's remaining owners
+    """
+    client = db.query(Client).filter(Client.id == client_id).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+    user = next((o for o in client.owners if o.id == user_id), None)
+    if user is None:
+        raise HTTPException(status_code=404, detail="That user does not own this BBS")
+    client.owners.remove(user)
+    audit.record(db, "owner.removed", actor=current_user, target=client,
+                 detail=f"{user.username} no longer owns {client.bbs_name}", request=http_request)
+    db.commit()
+    logger.info(f"{user.username} removed as owner of {client.bbs_name} by {current_user.username}")
+    return [_owner_info(o, current_user) for o in client.owners]

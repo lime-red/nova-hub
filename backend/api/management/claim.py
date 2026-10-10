@@ -20,7 +20,7 @@ from backend.core.rate_limiter import _get_client_ip, check_rate_limit, record_f
 from backend.logging_config import get_logger
 from backend.models.database import ClaimLink, Client
 from backend.schemas.claim import ClaimedLeague, ClaimPageStatus, ClaimResult
-from backend.services import claim_links
+from backend.services import audit, claim_links
 
 logger = get_logger(context="claim_links")
 
@@ -96,6 +96,9 @@ async def claim(request: Request, token: str = TOKEN, db: Session = Depends(get_
         )
 
     client: Client = link.client
+    audit.record(db, "claim_link.used", target=client,
+                 detail=f"link {link.id}; the BBS's secret was replaced", request=request)
+    db.commit()
     logger.info(f"Claim link {link.id} used for client {client.client_id} from {ip}")
 
     hub_url = public_url(request)

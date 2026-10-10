@@ -15,6 +15,8 @@ on:
 jobs:
   unit:
     runs-on: ubuntu-latest
+    # A hung test should fail the run, not hold the runner.
+    timeout-minutes: 20
     env:
       # tests/test_identity_emulator.py runs the WorkOS adapter against the
       # emulator through npx. Without this it skips when Node is missing; here

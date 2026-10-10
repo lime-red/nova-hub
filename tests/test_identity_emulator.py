@@ -15,6 +15,7 @@ import signal
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -51,12 +52,30 @@ def _free_port() -> int:
         return s.getsockname()[1]
 
 
+def _stop(process: subprocess.Popen) -> None:
+    # npx runs the CLI as a child; take the whole group down.
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(process.pid, sig)
+        except ProcessLookupError:
+            return
+        try:
+            process.wait(timeout=10)
+            return
+        except subprocess.TimeoutExpired:
+            continue
+
+
 @pytest.fixture(scope="module")
 def emulator():
     port = _free_port()
+    # Output goes to a file, not a pipe: nothing drains a pipe while the tests
+    # run, and a full one blocks the emulator mid-request.
+    log = tempfile.TemporaryFile()
     process = subprocess.Popen(
         ["npx", "-y", WORKOS_CLI, "emulate", "--port", str(port), "--json"],
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True,
+        stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
+        start_new_session=True,
     )
     base = f"http://127.0.0.1:{port}"
     try:
@@ -68,17 +87,15 @@ def emulator():
             except httpx.HTTPError:
                 pass
             if process.poll() is not None or time.monotonic() > deadline:
-                output = process.stdout.read().decode(errors="replace") if process.stdout else ""
+                _stop(process)
+                log.seek(0)
+                output = log.read().decode(errors="replace")
                 raise RuntimeError(f"WorkOS emulator did not start:\n{output[-2000:]}")
             time.sleep(0.5)
         yield base
     finally:
-        # npx runs the CLI as a child; take the whole group down.
-        try:
-            os.killpg(process.pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
-        process.wait(timeout=10)
+        _stop(process)
+        log.close()
 
 
 def make_user(emulator: str, email: str, verified: bool = True) -> str:

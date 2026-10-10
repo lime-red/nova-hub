@@ -308,6 +308,14 @@ async def sso_callback(
         logger.info(f"Provider sign-in ended with error={error!r}")
         return _to_login("cancelled")
 
+    if SSO_COOKIE not in request.cookies:
+        # Usually the browser dropping a Secure cookie on plain http, which
+        # breaks every sign-in rather than the odd stale one.
+        logger.warning(
+            "Provider sign-in came back without its state cookie"
+            + (" -- [security] cookie_secure is true but this request is plain http"
+               if get_config().security.cookie_secure and request.url.scheme == "http" else "")
+        )
     claims = verify_token(request.cookies.get(SSO_COOKIE, ""))
     if (not claims or claims.get("type") != "sso_state" or not state or not code
             or not secrets.compare_digest(claims.get("state", ""), state)):

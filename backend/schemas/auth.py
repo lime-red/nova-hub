@@ -33,10 +33,20 @@ class UserResponse(BaseModel):
     id: int
     username: str
     is_admin: bool = False
+    email: Optional[str] = None
+    full_name: Optional[str] = None
+    has_password: bool = False  # can use the local login
+    sso_linked: bool = False  # can sign in through the identity provider
     created_at: Optional[str] = None
 
     class Config:
         from_attributes = True
+
+
+class AuthMethods(BaseModel):
+    """What the login page offers"""
+    password: bool
+    sso: bool
 
 
 class LoginResponse(BaseModel):

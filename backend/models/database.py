@@ -28,22 +28,35 @@ Base = declarative_base()
 
 
 class SysopUser(Base):
-    """Sysop users for web UI authentication"""
+    """A person who signs in to the console: an admin, or a sysop.
+
+    Sysops sign in through the identity provider and have no password here:
+    idp_subject is the provider's ID for them and email is as the provider
+    verified it. The local admin keeps a password (the break-glass login) and
+    may also be linked to a provider identity. See
+    backend/services/sysop_accounts.py.
+    """
 
     __tablename__ = "sysop_users"
 
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String(50), unique=True, nullable=False, index=True)
     email = Column(String(100), unique=True, nullable=True)
-    hashed_password = Column(String(255), nullable=False)
+    hashed_password = Column(String(255), nullable=True)  # None: provider sign-in only
+    idp_subject = Column(String(64), unique=True, nullable=True, index=True)
     full_name = Column(String(100), nullable=True)
     is_active = Column(Boolean, default=True)
     is_superuser = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login = Column(DateTime, nullable=True)
 
+    owned_clients = relationship("Client", secondary="client_owners", back_populates="owners",
+                                 order_by="Client.bbs_name")
+
     def verify_password(self, password: str) -> bool:
         """Verify password against hash using bcrypt directly"""
+        if not self.hashed_password:
+            return False
         return bcrypt.checkpw(password.encode('utf-8'), self.hashed_password.encode('utf-8'))
 
     @staticmethod
@@ -83,11 +96,53 @@ class Client(Base):
     ftn_addresses = relationship(
         "FtnAddress", back_populates="client", order_by="FtnAddress.address"
     )
+    owners = relationship("SysopUser", secondary="client_owners",
+                          back_populates="owned_clients", order_by="SysopUser.username")
 
     @staticmethod
     def generate_client_secret() -> str:
         """Generate a secure client secret"""
         return secrets.token_urlsafe(32)
+
+
+class ClientOwner(Base):
+    """A sysop who runs a BBS, and so sees it in the console.
+
+    A join rather than a column on clients: boards have co-sysops, and one
+    sysop can run two boards. Only admins add or remove owners.
+    """
+
+    __tablename__ = "client_owners"
+
+    sysop_user_id = Column(Integer, ForeignKey("sysop_users.id", ondelete="CASCADE"),
+                           primary_key=True)
+    client_id = Column(Integer, ForeignKey("clients.id", ondelete="CASCADE"),
+                       primary_key=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    created_by = Column(String(50), nullable=True)  # the admin's username
+
+
+class AuditEvent(Base):
+    """Who did what to whom, and when: approvals, links, owners, roles, secrets.
+
+    Append-only. The actor and target are kept as text as well as ids, so the
+    record still reads after either is deleted. See backend/services/audit.py.
+    """
+
+    __tablename__ = "audit_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+    actor_user_id = Column(Integer, nullable=True)  # None: the hub, or someone signed out
+    actor = Column(String(100), nullable=True)
+    action = Column(String(50), nullable=False, index=True)  # e.g. "owner.added"
+    target_type = Column(String(30), nullable=True)  # "client", "user", ...
+    target_id = Column(Integer, nullable=True)
+    target = Column(String(100), nullable=True)
+    detail = Column(Text, nullable=True)
+    ip = Column(String(45), nullable=True)
+
+    __table_args__ = (Index("ix_audit_events_target", "target_type", "target_id"),)
 
 
 class FtnAddress(Base):

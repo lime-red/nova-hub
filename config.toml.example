@@ -101,6 +101,15 @@ min_password_length = 12
 # Set cookie_secure = true when serving over HTTPS (recommended for production)
 cookie_secure = true
 
+[identity]
+# Sysop sign-in through WorkOS AuthKit. Leave provider empty to keep only the
+# local username/password login (which stays as a break-glass either way).
+# The sign-in callback is <server.public_url>/management/api/v1/auth/sso/callback,
+# and must be listed as a redirect URI in the WorkOS dashboard.
+provider = ""
+# client_id = "client_..."
+# api_key = "sk_..."
+
 [rate_limiting]
 enabled = true
 # Maximum authentication attempts per minute per IP before lockout

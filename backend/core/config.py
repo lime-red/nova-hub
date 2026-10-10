@@ -73,6 +73,19 @@ class SecurityConfig(BaseModel):
     cookie_secure: bool = True
 
 
+class IdentityConfig(BaseModel):
+    """Sysop sign-in through an identity provider. See backend/services/identity_provider.py.
+
+    Off unless provider is set. The local username/password login stays either
+    way, as the hub operator's break-glass.
+    """
+    provider: str = ""  # "" (off) or "workos"
+    client_id: str = ""
+    api_key: str = ""
+    # The WorkOS API. Tests point it at the local emulator (`workos emulate`).
+    api_base: str = "https://api.workos.com"
+
+
 class RateLimitingConfig(BaseModel):
     """Rate limiting configuration"""
     enabled: bool = True
@@ -118,6 +131,7 @@ class Config(BaseModel):
     database: DatabaseConfig = DatabaseConfig()
     security: SecurityConfig = SecurityConfig()
     rate_limiting: RateLimitingConfig = RateLimitingConfig()
+    identity: IdentityConfig = IdentityConfig()
     alerting: AlertingConfig = AlertingConfig()
 
     # Raw config for accessing per-league dosemu settings
@@ -166,6 +180,7 @@ def load_config(config_path: Optional[str] = None) -> Config:
         database=DatabaseConfig(**raw_config.get("database", {})),
         security=SecurityConfig(**raw_config.get("security", {})),
         rate_limiting=RateLimitingConfig(**raw_config.get("rate_limiting", {})),
+        identity=IdentityConfig(**raw_config.get("identity", {})),
         alerting=AlertingConfig(
             **alerting_base,
             email=EmailAlertConfig(**email_raw),

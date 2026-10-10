@@ -47,3 +47,11 @@ class ClaimResult(BaseModel):
     leagues: List[ClaimedLeague]
     config_toml: str  # Linux: the Python client
     config_psd1: str  # Windows: the PowerShell client
+
+
+class RelinkPageStatus(BaseModel):
+    """What the re-link page shows: which account the link connects a sign-in to"""
+    username: str
+    state: str  # ready | used | superseded | expired
+    expires_at: datetime
+    has_sign_in: bool  # the account already has one, which using the link replaces

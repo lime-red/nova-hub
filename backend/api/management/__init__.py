@@ -16,6 +16,7 @@ from .attacks import router as attacks_router
 from .traffic import router as traffic_router
 from .auth import router as auth_router
 from .claim import router as claim_router
+from .relink import router as relink_router
 from .dashboard import router as dashboard_router
 from .clients import router as clients_router
 from .leagues import router as leagues_router
@@ -44,6 +45,13 @@ management_router.include_router(
     audit_router,
     prefix="/audit",
     tags=["Management API - Audit Log"]
+)
+
+# Public: a re-link link is used by signing in through it. See relink.py.
+management_router.include_router(
+    relink_router,
+    prefix="/relink",
+    tags=["Management API - Claim Links"]
 )
 
 management_router.include_router(

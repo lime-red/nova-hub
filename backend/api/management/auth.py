@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from backend.api.management.claim import public_url
 from backend.core.config import get_config
 from backend.core.database import get_db
-from backend.core.rate_limiter import check_rate_limit, record_failed_attempt
+from backend.core.rate_limiter import _get_client_ip, check_rate_limit, record_failed_attempt
 from backend.core.security import (
     COOKIE_NAME,
     create_access_token,
@@ -39,7 +39,7 @@ from backend.schemas.auth import (
     OwnedClient,
     UserResponse,
 )
-from backend.services import sysop_accounts
+from backend.services import relink_links, sysop_accounts
 from backend.services.identity_provider import (
     IdentityError,
     IdentityProvider,
@@ -249,7 +249,10 @@ async def methods(provider: Optional[IdentityProvider] = Depends(get_identity_pr
 async def sso_start(
     request: Request,
     next: Optional[str] = Query(None, description="Console path to land on afterwards"),
+    relink: Optional[str] = Query(None, description="A re-link link's token: bind this "
+                                  "sign-in to the account it was issued for"),
     provider: Optional[IdentityProvider] = Depends(get_identity_provider),
+    db: Session = Depends(get_db),
 ):
     """Send the browser to the identity provider to sign in.
 
@@ -259,11 +262,18 @@ async def sso_start(
     """
     if provider is None:
         raise HTTPException(status_code=404, detail="Sign-in through a provider is not enabled.")
+    claims = {"type": "sso_state", "next": _safe_next(next)}
+    if relink:
+        check_rate_limit(request)
+        link = relink_links.find(db, relink)
+        if link is None:
+            record_failed_attempt(request)
+            return _to_login("relink_invalid")
+        if relink_links.state(link) != relink_links.READY:
+            return _to_login("relink_used")
+        claims["relink"] = relink
     state = secrets.token_urlsafe(24)
-    cookie = create_access_token(
-        {"type": "sso_state", "state": state, "next": _safe_next(next)},
-        expires_delta=SSO_STATE_TTL,
-    )
+    cookie = create_access_token({**claims, "state": state}, expires_delta=SSO_STATE_TTL)
     response = RedirectResponse(provider.authorization_url(_callback_url(request), state),
                                 status_code=302)
     response.set_cookie(
@@ -311,7 +321,13 @@ async def sso_callback(
         return _to_login("provider")
 
     try:
-        user = sysop_accounts.sign_in(db, identity, request)
+        if claims.get("relink"):
+            link = relink_links.find(db, claims["relink"])
+            if link is None:
+                return _to_login("relink_invalid")
+            user = sysop_accounts.link(db, identity, link, _get_client_ip(request), request)
+        else:
+            user = sysop_accounts.sign_in(db, identity, request)
     except sysop_accounts.SignInRefused as e:
         logger.info(f"Sign-in refused for {identity.email} ({identity.subject}): {e.code}")
         return _to_login(e.code)

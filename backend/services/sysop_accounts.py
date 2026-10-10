@@ -23,8 +23,8 @@ from fastapi import Request
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from backend.models.database import SysopUser
-from backend.services import audit
+from backend.models.database import RelinkLink, SysopUser
+from backend.services import audit, relink_links
 from backend.services.identity_provider import Identity
 
 
@@ -88,6 +88,48 @@ def sign_in(db: Session, identity: Identity, request: Request | None = None) -> 
             user.email = identity.email
 
     user.last_login = datetime.utcnow()
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def link(db: Session, identity: Identity, relink: RelinkLink, ip: str,
+         request: Request | None = None) -> SysopUser:
+    """Bind this identity to the account a re-link link was issued for. Commits.
+
+    Replaces any identity the account had: that is the point of re-linking
+    after a lost email. Refused if the identity already belongs to another
+    account, since one person's sign-in must lead to one account.
+    """
+    if not identity.email_verified:
+        raise SignInRefused("unverified_email",
+                            "Verify your email address with the sign-in provider first.")
+    user = relink.user
+    if not user.is_active:
+        raise SignInRefused("inactive", "This hub account has been disabled.")
+    holder = db.query(SysopUser).filter(SysopUser.idp_subject == identity.subject).first()
+    if holder is not None and holder.id != user.id:
+        raise SignInRefused(
+            "identity_in_use",
+            f"This sign-in already belongs to the hub account {holder.username}. "
+            "Ask the hub admin to remove that account first.",
+        )
+    try:
+        relink_links.use(db, relink, ip)
+    except relink_links.NotUsable:
+        db.rollback()
+        raise SignInRefused("relink_used", "This link has already been used or has expired.")
+
+    replaced = user.idp_subject is not None and user.idp_subject != identity.subject
+    user.idp_subject = identity.subject
+    other = _by_email(db, identity.email)
+    if other is None or other.id == user.id:
+        user.email = identity.email
+    user.last_login = datetime.utcnow()
+    audit.record(db, "account.linked", actor=user, target=user,
+                 detail=f"signs in as {identity.email}"
+                 + ("; replaced the previous sign-in" if replaced else ""),
+                 request=request)
     db.commit()
     db.refresh(user)
     return user

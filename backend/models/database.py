@@ -211,6 +211,34 @@ class ClaimLink(Base):
     client = relationship("Client")
 
 
+class RelinkLink(Base):
+    """A single-use link that connects a sign-in to an existing hub account.
+
+    The admin issues one for an account; whoever opens it and signs in through
+    the identity provider has that identity bound to the account. It is how an
+    account that predates provider sign-in (the admin's own, a sysop added by
+    hand) gets one, and how a sysop who lost their email gets back in: the new
+    identity replaces the old. Like a claim link: only the token's hash is
+    kept, it expires, and issuing another supersedes it. See
+    backend/services/relink_links.py.
+    """
+
+    __tablename__ = "relink_links"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("sysop_users.id", ondelete="CASCADE"), nullable=False,
+                     index=True)
+    token_hash = Column(String(64), nullable=False, unique=True, index=True)
+    issued_by = Column(String(50), nullable=True)
+    issued_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=False)
+    used_at = Column(DateTime, nullable=True)
+    used_ip = Column(String(45), nullable=True)
+    superseded_at = Column(DateTime, nullable=True)
+
+    user = relationship("SysopUser")
+
+
 class League(Base):
     """Game leagues (BRE or FE)"""
 

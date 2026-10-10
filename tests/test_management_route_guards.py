@@ -25,7 +25,7 @@ SELF = {
     ("GET", "/system/version"),
 }
 
-# No session at all: signing in, and claim links (the link is the credential).
+# No session at all: signing in, and claim and re-link links (the link is the credential).
 PUBLIC = {
     ("POST", "/auth/login"),
     ("POST", "/auth/logout"),
@@ -34,6 +34,7 @@ PUBLIC = {
     ("GET", "/auth/sso/callback"),
     ("GET", "/claim/{token}"),
     ("POST", "/claim/{token}"),
+    ("GET", "/relink/{token}"),
 }
 
 

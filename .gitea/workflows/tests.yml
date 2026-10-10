@@ -45,6 +45,15 @@ jobs:
             https://registry.npmjs.org/workos
           npm config get registry
           timeout 300 npm view workos@0.23.0 version --loglevel http
+          # Run 78: the download takes seconds, then the CLI itself never
+          # returns. Run its binary directly, traced, to see what it waits on.
+          npm install --no-save --prefix /tmp/wcli workos@0.23.0 --loglevel warn
+          bin=$(ls /tmp/wcli/node_modules/@workos/cli-linux-x64/bin/workos)
+          id; echo "HOME=$HOME"; ls -la "$HOME" | head
+          command -v strace || (apt-get update -qq && apt-get install -y -qq strace) >/dev/null
+          timeout 20 strace -f -tt -o /tmp/wcli.trace "$bin" --version; echo "direct rc=$?"
+          tail -60 /tmp/wcli.trace
+          HOME=$(mktemp -d) timeout 20 "$bin" --version; echo "fresh HOME rc=$?"
           time timeout 300 npx -y --loglevel http workos@0.23.0 --version
 
       - name: Install dependencies

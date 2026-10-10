@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, computed } from "vue";
+import { ref, computed, onMounted } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
+import { authApi } from "@/services/api";
 
 const isHttp = computed(() => window.location.protocol === "http:");
 
@@ -17,6 +18,42 @@ const username = ref("");
 const password = ref("");
 const isSubmitting = ref(false);
 
+// Sysops sign in through the identity provider; the password form is the hub
+// admin's break-glass. Until /auth/methods answers, assume password only.
+const ssoEnabled = ref(false);
+const showPassword = ref(false);
+
+onMounted(async () => {
+    try {
+        ssoEnabled.value = (await authApi.methods()).data.sso;
+    } catch {
+        ssoEnabled.value = false;
+    }
+});
+
+const redirectTo = computed(() => (route.query.redirect as string) || "/dashboard");
+const ssoUrl = computed(() => authApi.ssoStartUrl(redirectTo.value));
+
+// /auth/sso/callback sends the browser back here with ?sso_error=<code>.
+const SSO_ERRORS: Record<string, string> = {
+    cancelled: "Sign-in was cancelled.",
+    state: "That sign-in expired or was started in another browser. Please try again.",
+    provider: "The sign-in provider did not accept the sign-in. Please try again.",
+    disabled: "Sign-in through a provider is not enabled on this hub.",
+    unverified_email: "Verify your email address with the sign-in provider first, then try again.",
+    email_in_use:
+        "A hub account already uses this email address. Ask the hub admin for a link to connect your sign-in to it.",
+    inactive: "This hub account has been disabled. Ask the hub admin.",
+    identity_in_use:
+        "That sign-in already belongs to a different hub account. Ask the hub admin to sort it out.",
+    relink_used: "That link has already been used, replaced or has expired. Ask the hub admin for a new one.",
+    relink_invalid: "That link is not valid. Check you copied all of it.",
+};
+const ssoError = computed(() => {
+    const code = route.query.sso_error as string | undefined;
+    return code ? SSO_ERRORS[code] || "Sign-in failed. Please try again." : null;
+});
+
 async function handleLogin() {
     if (isSubmitting.value) return;
 
@@ -26,9 +63,7 @@ async function handleLogin() {
     const success = await authStore.login(username.value, password.value);
 
     if (success) {
-        // Redirect to original destination or dashboard
-        const redirect = (route.query.redirect as string) || "/dashboard";
-        router.push(redirect);
+        router.push(redirectTo.value);
     }
 
     isSubmitting.value = false;
@@ -44,7 +79,28 @@ async function handleLogin() {
                     <p class="text-muted">BBS Inter-League Routing System</p>
                 </div>
 
-                <form @submit.prevent="handleLogin" class="login-form">
+                <div v-if="ssoError" class="alert alert-error">{{ ssoError }}</div>
+
+                <div v-if="ssoEnabled" class="sso">
+                    <a :href="ssoUrl" class="btn btn-primary btn-lg w-full">Sign in</a>
+                    <p class="text-muted sso-hint">
+                        With an email code, a password, Discord or GitHub. New here? Signing in
+                        creates your account.
+                    </p>
+                    <button
+                        type="button"
+                        class="btn-link"
+                        @click="showPassword = !showPassword"
+                    >
+                        {{ showPassword ? "Hide" : "Hub admin: sign in with a password" }}
+                    </button>
+                </div>
+
+                <form
+                    v-if="!ssoEnabled || showPassword"
+                    @submit.prevent="handleLogin"
+                    class="login-form"
+                >
                     <div v-if="isHttp" class="alert alert-warning">
                         <strong>Insecure connection:</strong> Session cookies require HTTPS.
                         Login will appear to succeed but all pages will return 401 Unauthorized.
@@ -147,6 +203,28 @@ async function handleLogin() {
 .form-group label {
     font-weight: 500;
     font-size: 0.875rem;
+}
+
+.sso {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1.25rem;
+}
+
+.sso-hint {
+    font-size: 0.875rem;
+    text-align: center;
+}
+
+.btn-link {
+    background: none;
+    border: none;
+    color: var(--color-primary);
+    cursor: pointer;
+    font-size: 0.875rem;
+    padding: 0;
 }
 
 .login-footer {

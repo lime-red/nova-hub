@@ -2,12 +2,8 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { usersApi } from '@/services/api'
 
-export interface User {
-  id: number
-  username: string
-  is_admin: boolean
-  created_at?: string
-}
+export type { User } from '@/stores/auth'
+import type { User } from '@/stores/auth'
 
 export const useUsersStore = defineStore('users', () => {
   // State

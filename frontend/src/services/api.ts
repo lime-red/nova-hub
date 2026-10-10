@@ -16,7 +16,9 @@ api.interceptors.response.use(
     // Redirect to login on 401 (not authenticated)
     if (error.response?.status === 401) {
       // Only redirect if not already on a page that needs no login
-      const publicPage = ['/login', '/claim/'].some((p) => window.location.pathname.startsWith(p))
+      const publicPage = ['/login', '/claim/', '/relink/'].some((p) =>
+        window.location.pathname.startsWith(p)
+      )
       if (!publicPage) {
         window.location.href = '/login'
       }
@@ -31,6 +33,19 @@ export default api
 export const authApi = {
   login: (username: string, password: string) =>
     api.post('/auth/login', { username, password }),
+
+  // Which ways in the login page should offer: { password, sso }
+  methods: () =>
+    api.get('/auth/methods'),
+
+  // Not an XHR: the browser itself goes to the identity provider and back.
+  ssoStartUrl: (next?: string, relink?: string) => {
+    const params = new URLSearchParams()
+    if (next) params.set('next', next)
+    if (relink) params.set('relink', relink)
+    const query = params.toString()
+    return `/management/api/v1/auth/sso/start${query ? `?${query}` : ''}`
+  },
 
   logout: () =>
     api.post('/auth/logout'),
@@ -112,7 +127,13 @@ export const clientsApi = {
     api.post(`/clients/${id}/claim-link`),
 
   getClaimLink: (id: number) =>
-    api.get(`/clients/${id}/claim-link`)
+    api.get(`/clients/${id}/claim-link`),
+
+  addOwner: (id: number, userId: number) =>
+    api.post(`/clients/${id}/owners`, { user_id: userId }),
+
+  removeOwner: (id: number, userId: number) =>
+    api.delete(`/clients/${id}/owners/${userId}`)
 }
 
 // Every BBS against every league: index and address in each
@@ -128,6 +149,25 @@ export const claimApi = {
 
   claim: (token: string) =>
     api.post(`/claim/${token}`)
+}
+
+// Re-link links, the sysop's side. Public. Only looks: the link is used by
+// signing in through it (authApi.ssoStartUrl with the token).
+export const relinkApi = {
+  status: (token: string) =>
+    api.get(`/relink/${token}`)
+}
+
+// The audit log (admin only), newest first
+export const auditApi = {
+  list: (params: {
+    target_type?: string
+    target_id?: number
+    action?: string
+    before_id?: number
+    limit?: number
+  } = {}) =>
+    api.get('/audit', { params })
 }
 
 // Leagues API functions
@@ -418,7 +458,16 @@ export const usersApi = {
     api.put(`/users/${id}`, data),
 
   delete: (id: number) =>
-    api.delete(`/users/${id}`)
+    api.delete(`/users/${id}`),
+
+  issueRelinkLink: (id: number) =>
+    api.post(`/users/${id}/relink-link`),
+
+  getRelinkLink: (id: number) =>
+    api.get(`/users/${id}/relink-link`),
+
+  unlink: (id: number) =>
+    api.post(`/users/${id}/unlink`)
 }
 
 // System API functions — what build is running

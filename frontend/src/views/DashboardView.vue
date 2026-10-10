@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted } from 'vue'
 import { useDashboardStore } from '@/stores/dashboard'
+import { useAuthStore } from '@/stores/auth'
 import AppLayout from '@/components/AppLayout.vue'
 import ActivityChart from '@/components/ActivityChart.vue'
 import LeagueChart from '@/components/LeagueChart.vue'
 
 const dashboardStore = useDashboardStore()
+const authStore = useAuthStore()
 const POLL_INTERVAL_MS = 30_000
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
@@ -39,12 +41,22 @@ async function refresh() {
       <header class="page-header">
         <div>
           <h1>Dashboard</h1>
-          <p class="text-muted">Overview of Nova Hub activity</p>
+          <p class="text-muted">
+            {{ authStore.isAdmin ? 'Overview of Nova Hub activity' : 'Your BBS on Nova Hub' }}
+          </p>
         </div>
         <button class="btn btn-secondary" @click="refresh" :disabled="dashboardStore.loading">
           Refresh
         </button>
       </header>
+
+      <div
+        v-if="!authStore.isAdmin && !authStore.user?.owned_clients?.length"
+        class="alert alert-info"
+      >
+        Welcome, {{ authStore.username }}. Your account isn't linked to a BBS yet, so there is
+        nothing to show. Ask the hub admin to add you as your BBS's sysop.
+      </div>
 
       <!-- Loading State -->
       <div v-if="dashboardStore.loading && !dashboardStore.stats" class="loading-state">

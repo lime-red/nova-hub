@@ -2,10 +2,43 @@
 import { onMounted, ref } from 'vue'
 import { useUsersStore, type User } from '@/stores/users'
 import { useAuthStore } from '@/stores/auth'
+import { usersApi } from '@/services/api'
+import { useCopy } from '@/clipboard'
 import AppLayout from '@/components/AppLayout.vue'
 
 const usersStore = useUsersStore()
 const authStore = useAuthStore()
+const { copy, label: copyLabel } = useCopy()
+
+// Re-link links: connect a sign-in to an existing account (the admin's own,
+// one made here, or a sysop who lost their email). Shown once, like a claim link.
+const relinkFor = ref<User | null>(null)
+const relinkLink = ref<{ url: string; expires_at: string; superseded: number } | null>(null)
+const actionError = ref<string | null>(null)
+const unlinking = ref<User | null>(null)
+
+async function issueRelink(user: User) {
+  actionError.value = null
+  try {
+    relinkLink.value = (await usersApi.issueRelinkLink(user.id)).data
+    relinkFor.value = user
+  } catch (e: any) {
+    actionError.value = e.response?.data?.detail || 'Could not issue the link.'
+  }
+}
+
+async function handleUnlink() {
+  if (!unlinking.value) return
+  actionError.value = null
+  try {
+    await usersApi.unlink(unlinking.value.id)
+    await usersStore.loadUsers()
+  } catch (e: any) {
+    actionError.value = e.response?.data?.detail || 'Could not remove the sign-in.'
+  } finally {
+    unlinking.value = null
+  }
+}
 
 const showCreateModal = ref(false)
 const showEditModal = ref(false)
@@ -117,12 +150,16 @@ function canDelete(user: User): boolean {
       <header class="page-header">
         <div>
           <h1>User Management</h1>
-          <p class="text-muted">Manage sysop user accounts</p>
+          <p class="text-muted">
+            Sysops create their own account by signing in. Make one the owner of a BBS on its page.
+          </p>
         </div>
         <button class="btn btn-primary" @click="openCreateModal">
           Add User
         </button>
       </header>
+
+      <div v-if="actionError" class="alert alert-error mb-4">{{ actionError }}</div>
 
       <!-- Loading -->
       <div v-if="usersStore.loading && usersStore.users.length === 0" class="loading-state">
@@ -142,15 +179,17 @@ function canDelete(user: User): boolean {
           <table class="table">
             <thead>
               <tr>
-                <th>Username</th>
+                <th>User</th>
                 <th>Role</th>
-                <th>Created</th>
+                <th>Signs in with</th>
+                <th>Owns</th>
+                <th>Last sign-in</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="usersStore.users.length === 0">
-                <td colspan="4" class="text-center text-muted" style="padding: 2rem;">
+                <td colspan="6" class="text-center text-muted" style="padding: 2rem;">
                   No users found
                 </td>
               </tr>
@@ -162,16 +201,48 @@ function canDelete(user: User): boolean {
                 <td>
                   <span class="username">{{ user.username }}</span>
                   <span v-if="user.id === authStore.user?.id" class="badge badge-info ml-2">You</span>
+                  <div v-if="user.full_name || user.email" class="text-muted small">
+                    {{ [user.full_name, user.email].filter(Boolean).join(' · ') }}
+                  </div>
                 </td>
                 <td>
                   <span class="badge" :class="user.is_admin ? 'badge-warning' : 'badge-secondary'">
-                    {{ user.is_admin ? 'Admin' : 'User' }}
+                    {{ user.is_admin ? 'Admin' : 'Sysop' }}
                   </span>
                 </td>
-                <td class="text-muted">{{ user.created_at || '-' }}</td>
+                <td>
+                  <span v-if="user.sso_linked" class="badge badge-info">Provider</span>
+                  <span v-if="user.has_password" class="badge badge-secondary ml-2">Password</span>
+                  <span v-if="!user.sso_linked && !user.has_password" class="text-muted">Nothing</span>
+                </td>
+                <td>
+                  <template v-if="user.owned_clients?.length">
+                    <router-link
+                      v-for="(c, i) in user.owned_clients"
+                      :key="c.id"
+                      :to="`/clients/${c.id}`"
+                    >{{ c.bbs_name }}{{ i < user.owned_clients.length - 1 ? ', ' : '' }}</router-link>
+                  </template>
+                  <span v-else class="text-muted">-</span>
+                </td>
+                <td class="text-muted">{{ user.last_login || 'Never' }}</td>
                 <td class="actions">
                   <button class="btn btn-sm btn-secondary" @click="openEditModal(user)">
                     Edit
+                  </button>
+                  <button
+                    class="btn btn-sm btn-secondary"
+                    title="A single-use link: whoever signs in through it gets this account"
+                    @click="issueRelink(user)"
+                  >
+                    {{ user.sso_linked ? 'Replace sign-in' : 'Connect sign-in' }}
+                  </button>
+                  <button
+                    v-if="user.sso_linked && (user.id !== authStore.user?.id || user.has_password)"
+                    class="btn btn-sm btn-secondary"
+                    @click="unlinking = user"
+                  >
+                    Remove sign-in
                   </button>
                   <button
                     v-if="canDelete(user)"
@@ -196,6 +267,10 @@ function canDelete(user: User): boolean {
           </div>
           <form @submit.prevent="handleCreate">
             <div class="modal-body">
+              <p class="text-muted mb-4">
+                An account made here signs in with a password. Sysops don't need one: signing in
+                creates their account.
+              </p>
               <div v-if="usersStore.error" class="alert alert-error mb-4">
                 {{ usersStore.error }}
               </div>
@@ -305,6 +380,55 @@ function canDelete(user: User): boolean {
         </div>
       </div>
 
+      <!-- Re-link link, shown once -->
+      <div v-if="relinkLink" class="modal-overlay">
+        <div class="modal">
+          <div class="modal-header">
+            <h3>Sign-in link for {{ relinkFor?.username }}</h3>
+          </div>
+          <div class="modal-body">
+            <p class="mb-4">
+              Send this to the person who should sign in as <strong>{{ relinkFor?.username }}</strong>.
+              Whoever opens it and signs in gets this account<template v-if="relinkFor?.sso_linked">,
+              replacing the sign-in it has now</template>. It works once, until
+              {{ new Date(relinkLink.expires_at).toLocaleString() }}.
+            </p>
+            <div v-if="relinkLink.superseded" class="alert alert-warning mb-4">
+              The previous unused link for this account no longer works.
+            </div>
+            <div class="secret-display">
+              <input type="text" :value="relinkLink.url" readonly class="font-mono" />
+              <button type="button" class="btn btn-secondary" @click="copy('relink', relinkLink.url, $event)">
+                {{ copyLabel('relink') }}
+              </button>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-primary" @click="relinkLink = null">Done</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Remove sign-in -->
+      <div v-if="unlinking" class="modal-overlay" @click.self="unlinking = null">
+        <div class="modal">
+          <div class="modal-header">
+            <h3>Remove sign-in</h3>
+          </div>
+          <div class="modal-body">
+            <p>
+              <strong>{{ unlinking.username }}</strong> will no longer be able to sign in through the
+              provider<template v-if="unlinking.has_password">, only with their password</template>.
+              A sign-in link connects a new one.
+            </p>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" @click="unlinking = null">Cancel</button>
+            <button type="button" class="btn btn-danger" @click="handleUnlink">Remove sign-in</button>
+          </div>
+        </div>
+      </div>
+
       <!-- Delete Modal -->
       <div v-if="showDeleteModal" class="modal-overlay" @click.self="showDeleteModal = false">
         <div class="modal">
@@ -337,7 +461,7 @@ function canDelete(user: User): boolean {
 
 <style scoped>
 .page {
-  max-width: 1000px;
+  max-width: 1200px;
   margin: 0 auto;
 }
 
@@ -379,8 +503,22 @@ function canDelete(user: User): boolean {
 
 .actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
   justify-content: flex-end;
+}
+
+.small {
+  font-size: 0.8125rem;
+}
+
+.secret-display {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.secret-display input {
+  flex: 1;
 }
 
 .form-group {

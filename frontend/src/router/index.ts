@@ -18,6 +18,13 @@ const router = createRouter({
       meta: { requiresAuth: false }
     },
     {
+      // Connecting a sign-in to an existing account: the link names the account.
+      path: '/relink/:token',
+      name: 'relink',
+      component: () => import('@/views/RelinkView.vue'),
+      meta: { requiresAuth: false }
+    },
+    {
       path: '/',
       redirect: '/dashboard'
     },
@@ -73,13 +80,13 @@ const router = createRouter({
       path: '/movements',
       name: 'movements',
       component: () => import('@/views/MovementsView.vue'),
-      meta: { requiresAuth: true }
+      meta: { requiresAuth: true, requiresAdmin: true }
     },
     {
       path: '/attacks',
       name: 'attacks',
       component: () => import('@/views/AttacksView.vue'),
-      meta: { requiresAuth: true }
+      meta: { requiresAuth: true, requiresAdmin: true }
     },
     {
       path: '/traffic',
@@ -95,6 +102,12 @@ const router = createRouter({
       path: '/admin/users',
       name: 'admin-users',
       component: () => import('@/views/AdminUsersView.vue'),
+      meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
+      path: '/admin/audit',
+      name: 'admin-audit',
+      component: () => import('@/views/AuditView.vue'),
       meta: { requiresAuth: true, requiresAdmin: true }
     },
     {

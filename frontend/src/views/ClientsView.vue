@@ -90,7 +90,10 @@ async function toggleActive(clientId: number, currentActive: boolean) {
             <tbody>
               <tr v-if="clientsStore.clients.length === 0">
                 <td colspan="7" class="text-center text-muted" style="padding: 2rem;">
-                  No clients configured
+                  <template v-if="authStore.isAdmin">No clients configured</template>
+                  <template v-else>
+                    No BBS is linked to your account yet. Ask the hub admin to add you as its sysop.
+                  </template>
                 </td>
               </tr>
               <tr v-for="client in clientsStore.clients" :key="client.id">

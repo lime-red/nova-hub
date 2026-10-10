@@ -4,7 +4,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { useClientsStore, type FtnAddressInfo } from '@/stores/clients'
 import { useAuthStore } from '@/stores/auth'
 import AppLayout from '@/components/AppLayout.vue'
-import { clientsApi, leaguesApi } from '@/services/api'
+import { clientsApi, leaguesApi, usersApi } from '@/services/api'
+import type { User } from '@/stores/auth'
 import { useCopy } from '@/clipboard'
 
 const route = useRoute()
@@ -87,9 +88,50 @@ function claimStatusText(s: ClaimLinkStatus): string {
   }
 }
 
+// Owners: the sysops who see this BBS in the console. Admins add and remove them.
+const allUsers = ref<User[]>([])
+const newOwnerId = ref<number | ''>('')
+const ownerError = ref<string | null>(null)
+const ownerCandidates = computed(() => {
+  const owned = new Set((clientsStore.currentClient?.owners ?? []).map((o) => o.user_id))
+  return allUsers.value.filter((u) => !owned.has(u.id))
+})
+
+async function loadUsers() {
+  if (!authStore.isAdmin) return
+  try {
+    allUsers.value = (await usersApi.list()).data
+  } catch {
+    allUsers.value = []
+  }
+}
+
+async function handleAddOwner() {
+  if (newOwnerId.value === '' || !clientsStore.currentClient) return
+  ownerError.value = null
+  try {
+    clientsStore.currentClient.owners = (
+      await clientsApi.addOwner(clientId.value, Number(newOwnerId.value))
+    ).data
+    newOwnerId.value = ''
+  } catch (e: any) {
+    ownerError.value = e.response?.data?.detail || 'Could not add the owner'
+  }
+}
+
+async function handleRemoveOwner(userId: number) {
+  if (!clientsStore.currentClient) return
+  ownerError.value = null
+  try {
+    clientsStore.currentClient.owners = (await clientsApi.removeOwner(clientId.value, userId)).data
+  } catch (e: any) {
+    ownerError.value = e.response?.data?.detail || 'Could not remove the owner'
+  }
+}
+
 onMounted(async () => {
   await clientsStore.loadClient(clientId.value)
-  await loadClaimStatus()
+  await Promise.all([loadClaimStatus(), loadUsers()])
 })
 
 function openEditModal() {
@@ -290,6 +332,49 @@ async function handleRemoveAddress(address: FtnAddressInfo) {
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+
+        <!-- Owners -->
+        <div class="card mt-4">
+          <div class="card-header">
+            <h3>Sysops</h3>
+          </div>
+          <div class="card-body">
+            <div v-if="ownerError" class="alert alert-error mb-4">{{ ownerError }}</div>
+            <p v-if="!clientsStore.currentClient.owners?.length" class="text-muted">
+              No one yet. A sysop signs in to create their account; then make them an owner here.
+            </p>
+            <ul v-else class="owner-list">
+              <li v-for="owner in clientsStore.currentClient.owners" :key="owner.user_id">
+                <span class="owner-name">{{ owner.username }}</span>
+                <span v-if="owner.full_name || owner.email" class="text-muted">
+                  {{ [owner.full_name, owner.email].filter(Boolean).join(' · ') }}
+                </span>
+                <button
+                  v-if="authStore.isAdmin"
+                  class="btn btn-sm btn-secondary"
+                  @click="handleRemoveOwner(owner.user_id)"
+                >
+                  Remove
+                </button>
+              </li>
+            </ul>
+            <form v-if="authStore.isAdmin" class="address-form mt-2" @submit.prevent="handleAddOwner">
+              <select v-model="newOwnerId">
+                <option value="" disabled>Choose a user...</option>
+                <option v-for="u in ownerCandidates" :key="u.id" :value="u.id">
+                  {{ u.username }}{{ u.email ? ` (${u.email})` : '' }}
+                </option>
+              </select>
+              <button type="submit" class="btn btn-sm btn-primary" :disabled="newOwnerId === ''">
+                Add Owner
+              </button>
+            </form>
+            <p v-if="authStore.isAdmin" class="form-hint mt-2">
+              Owners see this BBS, its leagues, its packets and its runs. They can't change anything
+              the admin manages.
+            </p>
           </div>
         </div>
 
@@ -821,5 +906,24 @@ table .actions {
   gap: 0.75rem;
   padding: 1rem 1.5rem;
   border-top: 1px solid var(--color-border);
+}
+
+.owner-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.owner-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.owner-name {
+  font-weight: 500;
 }
 </style>

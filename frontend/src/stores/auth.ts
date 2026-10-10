@@ -6,7 +6,13 @@ export interface User {
   id: number
   username: string
   is_admin: boolean
-  created_at?: string
+  email?: string | null
+  full_name?: string | null
+  has_password?: boolean // can use the local login
+  sso_linked?: boolean // can sign in through the identity provider
+  owned_clients?: { id: number; bbs_name: string }[]
+  created_at?: string | null
+  last_login?: string | null
 }
 
 export const useAuthStore = defineStore('auth', () => {
@@ -20,6 +26,12 @@ export const useAuthStore = defineStore('auth', () => {
   const isAuthenticated = computed(() => user.value !== null)
   const isAdmin = computed(() => user.value?.is_admin ?? false)
   const username = computed(() => user.value?.username ?? '')
+  // Whether this user can open a BBS's page: admins any, a sysop their own.
+  // (The server enforces it; this only avoids links that lead to a 404.)
+  const ownedClientIds = computed(() => new Set((user.value?.owned_clients ?? []).map((c) => c.id)))
+  function canSeeClient(clientId: number): boolean {
+    return isAdmin.value || ownedClientIds.value.has(clientId)
+  }
 
   // Actions
   async function login(usernameInput: string, password: string): Promise<boolean> {
@@ -97,6 +109,7 @@ export const useAuthStore = defineStore('auth', () => {
     isAuthenticated,
     isAdmin,
     username,
+    canSeeClient,
     // Actions
     login,
     logout,

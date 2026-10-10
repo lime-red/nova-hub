@@ -357,7 +357,8 @@ async function handleDelete() {
                 <tr v-for="member in leaguesStore.currentLeague.members" :key="member.membership_id">
                   <td class="font-mono">{{ formatBbsIndex(member.bbs_index) }}</td>
                   <td>
-                    <router-link :to="`/clients/${member.client_id}`">{{ member.bbs_name }}</router-link>
+                    <router-link v-if="authStore.canSeeClient(member.client_id)" :to="`/clients/${member.client_id}`">{{ member.bbs_name }}</router-link>
+                    <template v-else>{{ member.bbs_name }}</template>
                   </td>
                   <td class="font-mono">{{ member.fidonet_address || '-' }}</td>
                   <td>

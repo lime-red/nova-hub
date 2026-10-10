@@ -2,6 +2,9 @@
 import { computed, onMounted, ref } from 'vue'
 import AppLayout from '@/components/AppLayout.vue'
 import { addressBookApi } from '@/services/api'
+import { useAuthStore } from '@/stores/auth'
+
+const authStore = useAuthStore()
 
 // Every BBS against every league: its index and address in each. A BBS keeps
 // one index across leagues, so a row whose indices differ is flagged.
@@ -101,7 +104,8 @@ onMounted(load)
                 </tr>
                 <tr v-for="bbs in bbses" :key="bbs.id" :class="{ 'row-flagged': bbs.index_differs }">
                   <td>
-                    <router-link :to="`/clients/${bbs.id}`">{{ bbs.bbs_name }}</router-link>
+                    <router-link v-if="authStore.canSeeClient(bbs.id)" :to="`/clients/${bbs.id}`">{{ bbs.bbs_name }}</router-link>
+                    <template v-else>{{ bbs.bbs_name }}</template>
                     <span v-if="!bbs.is_active" class="badge badge-danger ml-2">Inactive</span>
                     <span v-if="bbs.index_differs" class="badge badge-warning ml-2">Index differs</span>
                   </td>

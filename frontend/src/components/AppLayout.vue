@@ -44,19 +44,24 @@ const buildTitle = computed(() => {
   return parts.join(' — ')
 })
 
-const navigation = computed(() => [
-  { name: 'Dashboard', path: '/dashboard', icon: 'dashboard' },
-  { name: 'Clients', path: '/clients', icon: 'clients' },
-  { name: 'Leagues', path: '/leagues', icon: 'leagues' },
-  { name: 'Address Book', path: '/address-book', icon: 'address' },
-  { name: 'Processing', path: '/processing', icon: 'processing' },
-  { name: 'Movements', path: '/movements', icon: 'movements' },
-  { name: 'Attacks & Traffic', path: '/attacks', icon: 'transit' },
-  { name: 'Alerts', path: '/alerts', icon: 'alerts' },
-])
+// A sysop sees only their own BBSes and leagues on these pages (the server
+// decides). Movements and attacks are game intelligence across BBSes: admins only.
+const navigation = computed(() =>
+  [
+    { name: 'Dashboard', path: '/dashboard', icon: 'dashboard' },
+    { name: authStore.isAdmin ? 'Clients' : 'My BBS', path: '/clients', icon: 'clients' },
+    { name: 'Leagues', path: '/leagues', icon: 'leagues' },
+    { name: 'Address Book', path: '/address-book', icon: 'address' },
+    { name: 'Processing', path: '/processing', icon: 'processing' },
+    { name: 'Movements', path: '/movements', icon: 'movements', adminOnly: true },
+    { name: 'Attacks & Traffic', path: '/attacks', icon: 'transit', adminOnly: true },
+    { name: 'Alerts', path: '/alerts', icon: 'alerts' },
+  ].filter((item) => authStore.isAdmin || !item.adminOnly)
+)
 
 const adminNavigation = computed(() => [
   { name: 'Users', path: '/admin/users', icon: 'users' },
+  { name: 'Audit Log', path: '/admin/audit', icon: 'log' },
 ])
 
 function isActive(path: string): boolean {
@@ -119,7 +124,7 @@ function toggleSidebar() {
         <div class="sidebar-footer-row">
           <div class="user-info" v-if="isSidebarOpen">
             <span class="user-name">{{ authStore.username }}</span>
-            <span class="user-role">{{ authStore.isAdmin ? 'Admin' : 'User' }}</span>
+            <span class="user-role">{{ authStore.isAdmin ? 'Admin' : 'Sysop' }}</span>
           </div>
           <button class="btn btn-secondary btn-sm" @click="handleLogout">
             {{ isSidebarOpen ? 'Logout' : 'X' }}

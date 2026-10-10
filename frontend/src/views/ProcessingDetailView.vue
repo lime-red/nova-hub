@@ -2,6 +2,7 @@
 import { onMounted, ref, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useProcessingStore } from '@/stores/processing'
+import { useAuthStore } from '@/stores/auth'
 import AppLayout from '@/components/AppLayout.vue'
 import { movementsApi, type Movement } from '@/services/api'
 
@@ -16,9 +17,13 @@ const selectedFile = ref<number | null>(null)
 // output. Runs processed before movements were recorded simply have none, which
 // is why an empty list is a normal result rather than an error.
 const movements = ref<Movement[]>([])
+// Movements and the dosemu transcript are admin-only; a sysop sees the scores
+// and their own packets.
+const authStore = useAuthStore()
 
 onMounted(async () => {
   await processingStore.loadRun(runId.value)
+  if (!authStore.isAdmin) return
   try {
     const { data } = await movementsApi.forRun(runId.value)
     movements.value = data
@@ -120,6 +125,7 @@ function getSelectedFileContent() {
             What Moved ({{ movements.length }})
           </button>
           <button
+            v-if="authStore.isAdmin"
             class="tab"
             :class="{ active: activeTab === 'logs' }"
             @click="activeTab = 'logs'"

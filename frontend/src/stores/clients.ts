@@ -34,9 +34,18 @@ export interface ClientDetail {
   packets: PacketHistoryItem[]
   league_memberships: LeagueMembershipInfo[]
   ftn_addresses: FtnAddressInfo[]
+  owners?: OwnerInfo[]
 }
 
 // An FTN address this BBS holds, and the leagues whose membership uses it.
+// A sysop who runs this BBS. email is only filled in for admins.
+export interface OwnerInfo {
+  user_id: number
+  username: string
+  full_name?: string | null
+  email?: string | null
+}
+
 export interface FtnAddressInfo {
   id: number
   address: string

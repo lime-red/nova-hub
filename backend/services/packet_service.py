@@ -1,43 +1,30 @@
 # backend/services/packet_service.py
 
 import hashlib
-import re
 from datetime import datetime
 from typing import Optional, Tuple
 
 from sqlalchemy.orm import Session
 
 from backend.models.database import Client, League, LeagueMembership, Packet
-from backend.services.games import GAME_LETTERS, game_for_letter
+from backend.services.games import GAMES, game_for_letter
 
 
 def parse_packet_filename(filename: str) -> Optional[dict]:
     """
-    Parse packet filename into components
+    Parse packet filename into components, for any game the hub serves
 
-    Format: <league><game><source><dest>.<seq>
-    Example: 555B0201.001
+    Example: 555B0201.001 (BRE), L555-2-0000000000001-1.BRP (IB)
 
     Returns:
         dict with keys: league_id, game_type, source_bbs_index, dest_bbs_index, sequence_number
         or None if invalid
     """
-    # Pattern: 3 digits + 1 letter + 2 hex + 2 hex + . + 3 digits
-    pattern = rf"^(\d{{3}})([{GAME_LETTERS}])([0-9A-F]{{2}})([0-9A-F]{{2}})\.(\d{{3}})$"
-    match = re.match(pattern, filename.upper())
-
-    if not match:
-        return None
-
-    league_id, game_type, source_bbs, dest_bbs, sequence = match.groups()
-
-    return {
-        "league_id": league_id,
-        "game_type": game_type,
-        "source_bbs_index": source_bbs,
-        "dest_bbs_index": dest_bbs,
-        "sequence_number": int(sequence),
-    }
+    for game in GAMES:
+        parsed = game.parse_packet_name(filename)
+        if parsed:
+            return parsed
+    return None
 
 
 def calculate_checksum(data: bytes) -> str:

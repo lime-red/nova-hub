@@ -45,6 +45,7 @@ from backend.models.database import (
     SysopUser,
 )
 from backend.services import audit, claim_links
+from backend.services.games import MAX_BBS_INDEX
 
 JOIN, LEAGUES = "join", "leagues"
 PENDING, APPROVED, REJECTED, WITHDRAWN = "pending", "approved", "rejected", "withdrawn"
@@ -316,8 +317,8 @@ def _grant(db: Session, client: Client, grant: Grant) -> LeagueMembership:
     league = db.get(League, grant.league_id)
     if league is None:
         raise Refused("One of the granted leagues no longer exists.")
-    if not (1 <= grant.bbs_index <= 255):
-        raise Refused("A BBS index is between 1 and 255.")
+    if not (1 <= grant.bbs_index <= MAX_BBS_INDEX):
+        raise Refused(f"A BBS index is between 1 and {MAX_BBS_INDEX}.")
     holder = (
         db.query(LeagueMembership)
         .filter(LeagueMembership.league_id == league.id,

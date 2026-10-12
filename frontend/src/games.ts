@@ -8,7 +8,8 @@ export interface Game {
 
 export const GAMES: Game[] = [
   { letter: 'B', code: 'BRE', name: 'Barren Realms Elite' },
-  { letter: 'F', code: 'FE', name: "Falcon's Eye" }
+  { letter: 'F', code: 'FE', name: "Falcon's Eye" },
+  { letter: 'I', code: 'IB', name: 'Immortal Barons' }
 ]
 
 export function gameForLetter(letter: string): Game | undefined {

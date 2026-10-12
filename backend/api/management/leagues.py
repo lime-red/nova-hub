@@ -14,7 +14,7 @@ from backend.core.scope import Scope, get_scope
 from backend.core.security import require_admin
 from backend.logging_config import get_logger
 from backend.services import audit
-from backend.services.games import game_for_letter
+from backend.services.games import MAX_BBS_INDEX, game_for_letter
 from backend.models.database import (
     Client,
     FtnAddress,
@@ -211,7 +211,7 @@ async def create_league(
 
     **Request Body:**
     - `league_id`: 3-digit league number (e.g., "555")
-    - `game_type`: "B" for BRE or "F" for Falcon's Eye
+    - `game_type`: "B" for BRE, "F" for Falcon's Eye or "I" for Immortal Barons
     - `name`: Display name for the league
     - `description`: Optional description
     - `dosemu_path`: Path to DOSemu installation (optional)
@@ -476,8 +476,8 @@ def _check_hub_address_is_free(db: Session, address: Optional[str]) -> None:
 def _check_bbs_index(db: Session, league_id: int, bbs_index: int,
                      exclude_membership_id: Optional[int] = None) -> None:
     """Raise 400 unless bbs_index is in range and free in this league."""
-    if not (1 <= bbs_index <= 255):
-        raise HTTPException(status_code=400, detail="BBS ID must be between 1 and 255")
+    if not (1 <= bbs_index <= MAX_BBS_INDEX):
+        raise HTTPException(status_code=400, detail=f"BBS ID must be between 1 and {MAX_BBS_INDEX}")
     query = db.query(LeagueMembership).filter(
         LeagueMembership.league_id == league_id,
         LeagueMembership.bbs_index == bbs_index,

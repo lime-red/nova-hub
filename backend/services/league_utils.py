@@ -14,7 +14,7 @@ def parse_league_id(league_id: str) -> Tuple[str, str]:
     Parse league_id from URL into components.
 
     Args:
-        league_id: Combined league ID (e.g., "555B", "555F")
+        league_id: Combined league ID (e.g., "555B", "555F", "555I")
 
     Returns:
         Tuple of (league_number, game_type)
@@ -36,7 +36,7 @@ def parse_league_id(league_id: str) -> Tuple[str, str]:
             status_code=400,
             detail=(
                 f"Invalid league_id format: '{league_id}'. "
-                f"Expected format: <3-digit-number><{'|'.join(GAME_LETTERS)}> (e.g., '555B' for BRE, '555F' for FE)"
+                f"Expected format: <3-digit-number><{'|'.join(GAME_LETTERS)}> (e.g., '555B' for BRE, '555F' for FE, '555I' for IB)"
             )
         )
     return match.groups()

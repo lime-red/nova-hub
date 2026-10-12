@@ -36,6 +36,10 @@ class TestLookups:
         assert (g.code, g.key, g.nodes_file) == ("FE", "fe", "fenodes.dat")
         assert g.nodelist_filename("013") == "FENODES.013"
 
+    def test_ib_names(self):
+        g = game_for_letter("I")
+        assert (g.code, g.key, g.nodes_file) == ("IB", "ib", "ibnodes.dat")
+
     def test_unknown_game_is_an_error_not_fe(self):
         with pytest.raises(KeyError):
             game_for_letter("X")
@@ -55,12 +59,23 @@ class TestNodelistGame:
     def test_packets_are_not_nodelists(self):
         assert nodelist_game("555B0201.001") is None
         assert nodelist_game("BRNODES") is None
+        assert nodelist_game("L555-2-0000000000001-1.BRP") is None
+
+
+class TestPacketNames:
+    def test_each_game_reads_only_its_own_packets(self):
+        bre, fe, ib = (game_for_letter(x) for x in "BFI")
+        assert bre.parse_packet_name("555B0201.001")["game_type"] == "B"
+        assert fe.parse_packet_name("555B0201.001") is None
+        assert ib.parse_packet_name("555B0201.001") is None
+        assert bre.parse_packet_name("L555-2-0000000000001-1.BRP") is None
 
 
 class TestLeagueIdRegex:
     def test_matches_known_games_only(self):
         assert re.match(LEAGUE_ID_REGEX, "555B")
         assert re.match(LEAGUE_ID_REGEX, "555F")
+        assert re.match(LEAGUE_ID_REGEX, "555I")
         assert not re.match(LEAGUE_ID_REGEX, "555X")
         assert not re.match(LEAGUE_ID_REGEX, "55B")
 

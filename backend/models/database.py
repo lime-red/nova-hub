@@ -303,7 +303,7 @@ class League(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     league_id = Column(String(10), nullable=False, index=True)  # e.g., "555"
-    game_type = Column(String(1), nullable=False)  # 'B' for BRE, 'F' for FE
+    game_type = Column(String(1), nullable=False)  # 'B' BRE, 'F' FE, 'I' IB
     name = Column(String(100), nullable=False)
     description = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True)
@@ -371,7 +371,7 @@ class Packet(Base):
     league_id = Column(Integer, ForeignKey("leagues.id"), nullable=False)
     source_bbs_index = Column(String(2), nullable=False)  # Hex (e.g., "02")
     dest_bbs_index = Column(String(2), nullable=False)  # Hex (e.g., "01")
-    sequence_number = Column(Integer, nullable=False)  # 0-999
+    sequence_number = Column(Integer, nullable=False)  # 0-999; IB: a counter
 
     # Client references
     source_client_id = Column(Integer, ForeignKey("clients.id"), nullable=True)

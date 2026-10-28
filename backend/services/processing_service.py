@@ -136,12 +136,23 @@ class ProcessingService:
             config = {}
         self.config = config
 
-        # DosemuRunner expects the full config
-        self.dosemu_runner = DosemuRunner(config)
+        self._dosemu_runner = None
 
         # Packets handed to a game that it never ingested, accumulated across the
         # league groups of one batch. See step 6 of process_game_batch().
         self._unconsumed_count = 0
+
+    @property
+    def dosemu_runner(self) -> DosemuRunner:
+        """Built when a dosemu game first needs it, so a hub that runs only
+        native games needs no [dosemu] section."""
+        if self._dosemu_runner is None:
+            self._dosemu_runner = DosemuRunner(self.config)
+        return self._dosemu_runner
+
+    @dosemu_runner.setter
+    def dosemu_runner(self, runner: DosemuRunner):
+        self._dosemu_runner = runner
 
     async def process_batch(self, also: tuple = ()) -> Optional[ProcessingRun]:
         """Process all unprocessed packets, and return the run (None if there

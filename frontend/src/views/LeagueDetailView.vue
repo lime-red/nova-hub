@@ -323,7 +323,26 @@ async function handleDelete() {
                     <span v-else class="badge badge-warning">Not generated yet</span>
                   </dd>
                 </div>
+                <div v-if="isImmortalBarons" class="info-item">
+                  <dt>Coordinator Key</dt>
+                  <dd>
+                    <span
+                      v-if="leaguesStore.currentLeague.coordinator_key"
+                      class="font-mono"
+                      :title="leaguesStore.currentLeague.coordinator_key"
+                    >{{ leaguesStore.currentLeague.coordinator_key.slice(0, 12) }}…</span>
+                    <span v-else class="badge badge-warning">None yet</span>
+                  </dd>
+                </div>
               </dl>
+              <p v-if="isImmortalBarons && leaguesStore.currentLeague.coordinator_key" class="form-hint mt-2">
+                Members' clients fetch the Coordinator key from the hub and record it themselves.
+                A board without a client records it by hand:
+                <code>immortal-barons -coord-key {{ leaguesStore.currentLeague.coordinator_key }}</code>
+              </p>
+              <p v-else-if="leaguesStore.currentLeague.coordinator_key_problem" class="form-hint mt-2">
+                {{ leaguesStore.currentLeague.coordinator_key_problem }}
+              </p>
               <p v-if="!leaguesStore.currentLeague.hub_fidonet_address" class="form-hint mt-2">
                 Nodelist generation is blocked for this league until the hub's
                 FidoNet address is set. The previous nodelist is left untouched.

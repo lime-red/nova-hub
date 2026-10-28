@@ -58,6 +58,12 @@ All notable changes to Nova Hub will be documented in this file.
     `IBNODES.<league>`. A member's key is set on the league page.
   - No sequence-gap checks, and no reset editor (404). IB packet names never
     repeat, so their files expire after `retention_days`, like logs.
+  - The Coordinator's public key, which every member needs before it will
+    accept the league's signed rules and roster, is served to members at
+    `GET /service/api/v1/leagues/<id>I/coordinator-key`, read from the hub
+    game's `coord.pub`. The league page shows it, or why there is none.
+    IB will not take the key from a packet; this is the client's own
+    authenticated connection instead.
 - **Disable an account** without deleting it (Admin > Users > Edit). A
   disabled account can't sign in by either route, and its session stops
   working. Password sign-in now records the last sign-in, as the provider

@@ -86,6 +86,12 @@ class NodelistInfo(BaseModel):
     modified_at: datetime
 
 
+class CoordinatorKeyResponse(BaseModel):
+    """An Immortal Barons league's Coordinator public key (Service API)"""
+    league_id: str      # e.g. "555I"
+    public_key: str     # 64 lower-case hex, what -coord-key takes
+
+
 class MemberResponse(BaseModel):
     """League member response"""
     membership_id: int
@@ -127,6 +133,10 @@ class LeagueDetailResponse(BaseModel):
     available_clients: List[Dict[str, Any]] = []
     stats: LeagueStats
     nodelist: Optional[NodelistInfo] = None  # None until one has been generated
+    # Immortal Barons: what members record with -coord-key. The problem is for
+    # an admin, and names hub paths.
+    coordinator_key: Optional[str] = None
+    coordinator_key_problem: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

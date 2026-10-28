@@ -2571,6 +2571,28 @@
             "title": "Available Clients",
             "type": "array"
           },
+          "coordinator_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coordinator Key"
+          },
+          "coordinator_key_problem": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coordinator Key Problem"
+          },
           "description": {
             "anyOf": [
               {

@@ -100,6 +100,11 @@ scores_command = "FE.EXE SCORES"
 # member in the league's page. The roster is written to data_dir/ibnodes.dat,
 # and published to members as IBNODES.<league>.
 #
+# The hub is the League Coordinator, so its game holds the Coordinator key.
+# Create it once, as the hub's user, before members join:
+#   immortal-barons -gen-coord-key -data <data_dir>
+# Members' clients fetch the public half (data_dir/coord.pub) from the hub.
+#
 # IB never reuses a packet name, so the hub deletes its IB packet files after
 # [processing] retention_days, as it does logs; sequence gaps are not checked.
 #[ib.555]

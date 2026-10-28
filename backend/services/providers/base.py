@@ -70,6 +70,11 @@ class GameProvider:
     # read item movements from.
     reads_transcripts: bool = False
 
+    def coordinator_key(self, config: dict, league: League) -> tuple[Optional[str], Optional[str]]:
+        """The public key members check the league's signed orders against, or
+        None and why not. Only a game whose Coordinator signs has one."""
+        return None, f"{league.full_id} has no Coordinator key: its game does not sign league orders"
+
     def recipients(self, db, league: League, packet_info: dict, hub: str) -> list[str]:
         """The boards (hex indices) a packet goes to: one packet row each.
 

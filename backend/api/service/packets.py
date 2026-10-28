@@ -313,7 +313,9 @@ async def list_packets(
         for lid, bbs_hex in bbs_filters
     ]
 
-    query = db.query(Packet).filter(or_(*filters))
+    # A row is deliverable once processing has put its file in hub outbound;
+    # before that a download of it is a 404.
+    query = db.query(Packet).filter(or_(*filters), Packet.processed_at != None)
 
     if unread:
         query = query.filter(Packet.downloaded_at == None)

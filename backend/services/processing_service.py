@@ -9,7 +9,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from backend.core.clock import utcnow
-from backend.core.config import default_config_path
+from backend.core.config import ProcessingConfig, default_config_path
 from backend.models.database import League, Packet, ProcessingRun
 from backend.core.database import get_session
 from backend.logging_config import get_logger
@@ -98,6 +98,9 @@ async def process_batch():
         return
 
     try:
+        # A client uploads one packet per request, so a sync of several would
+        # otherwise start a run per packet. Uploads in the pause join this run.
+        await asyncio.sleep(_settle_seconds())
         while True:
             _rerun = False
             await _process_once()
@@ -106,6 +109,16 @@ async def process_batch():
             logger.info("Packets arrived during the run; processing again")
     finally:
         _processing_lock.release()
+
+
+def _settle_seconds() -> int:
+    default = ProcessingConfig().settle_seconds
+    try:
+        section = toml.load(default_config_path()).get("processing", {})
+        return max(0, int(section.get("settle_seconds", default)))
+    except Exception as e:
+        logger.warning(f"Could not read [processing] settle_seconds, using {default}: {e}")
+        return default
 
 
 async def _process_once():

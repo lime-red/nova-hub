@@ -538,6 +538,70 @@ async def test_an_idle_league_emits_sparsely_but_never_stops(pristine):
     )
 
 
+def _plant_a_stale_alert(hub, tag):
+    """Deliver a gapless route, then plant an alert at a number inside it.
+
+    This is the shape of the rows production carries: an alert at a sequence
+    number the game never handed out, on a route where nothing is actually
+    missing. Auto-resolve should retire it.
+
+    It plays until exactly ONE packet rather than for a fixed three days, and
+    that is load-bearing. Both tests that use this used to play DAY1..DAY3 and
+    plant at `first_packet + 1`, which made the result depend on how many
+    packets those three dates happened to emit:
+
+      - one packet  -> find_gaps() reports nothing, the planted number is not a
+                       gap, auto-resolve retires it as never issued. Passes.
+      - two packets -> there is now a real gap between them, the planted number
+                       falls INSIDE it, the detector still considers it missing
+                       and declines to resolve it. Fails.
+
+    Which of those you got depended on the calendar. Both tests passed on
+    2026-10-27 (DAY1-3 = Oct 28-30, one packet) and both failed on 2026-10-28
+    (DAY1-3 = Oct 29-31, two packets, because Oct 31 is a Saturday and BRE emits
+    every Saturday -- see test_emission_schedule.py). Nothing about the hub
+    changed in between; it was the date. One packet makes the precondition
+    deterministic, and it is asserted below so that it cannot drift back.
+
+    Returns the planted SequenceAlert, unsaved refreshes included.
+    """
+    from backend.models.database import SequenceAlert
+    from backend.services.sequence_validator import SequenceValidator
+
+    _, packets = _play_until(NODE02, ROUTE_02, 1, tag)
+    for name, payload in packets:
+        hub.deliver(name, payload)
+
+    # source/dest are stored as the two-character hex text from the filename.
+    rows = hub.db.query(Packet).filter(
+        Packet.source_bbs_index == "02", Packet.dest_bbs_index == "01"
+    ).order_by(Packet.sequence_number).all()
+    assert len(rows) == 1, (
+        f"this needs a route with exactly one packet, so that nothing on it is "
+        f"genuinely missing; got {[r.sequence_number for r in rows]}"
+    )
+
+    numbers = [r.sequence_number for r in rows]
+    assert SequenceValidator(hub.db).find_gaps(numbers) == [], (
+        f"precondition failed: the detector already considers something missing "
+        f"on this route ({numbers}), so an alert planted here would be a real "
+        f"gap rather than a stale one and auto-resolve is right to keep it"
+    )
+
+    alert = SequenceAlert(
+        league_id=rows[0].league_id,
+        source_bbs_index=rows[0].source_bbs_index,
+        dest_bbs_index=rows[0].dest_bbs_index,
+        expected_sequence=rows[0].sequence_number + 1,
+        received_sequence=rows[0].sequence_number + 2,
+        gap_size=1,
+        description="planted: the shape of the rows in production",
+    )
+    hub.db.add(alert)
+    hub.db.commit()
+    return alert
+
+
 async def test_a_stale_false_alert_resolves_itself(pristine, hub):
     """Production carries 705 of these. Nobody is going to close them by hand.
 
@@ -546,35 +610,12 @@ async def test_a_stale_false_alert_resolves_itself(pristine, hub):
     it with a note saying why, rather than leaving it for an operator to tell
     apart from a real one.
     """
-    from backend.models.database import SequenceAlert
     from backend.services.sequence_validator import SequenceValidator
 
     pristine("900B")
     hub.seed(["900B"])
 
-    for tag, date in (("s1", DAY1), ("s2", DAY2), ("s3", DAY3)):
-        node_rig.run(LEAGUE, NODE02, "PLANETARY", tag=tag, date=date)
-        for name, payload in node_rig.take_outbound(LEAGUE, NODE02):
-            if name.lower().startswith("900b0201."):
-                hub.deliver(name, payload)
-
-    # source/dest are stored as the two-character hex text from the filename.
-    packet = hub.db.query(Packet).filter(
-        Packet.source_bbs_index == "02", Packet.dest_bbs_index == "01"
-    ).order_by(Packet.sequence_number).first()
-    assert packet is not None, "no packet reached the hub"
-
-    stale = SequenceAlert(
-        league_id=packet.league_id,
-        source_bbs_index=packet.source_bbs_index,
-        dest_bbs_index=packet.dest_bbs_index,
-        expected_sequence=packet.sequence_number + 1,
-        received_sequence=packet.sequence_number + 2,
-        gap_size=1,
-        description="planted: the shape of the rows in production",
-    )
-    hub.db.add(stale)
-    hub.db.commit()
+    stale = _plant_a_stale_alert(hub, "s")
 
     assert SequenceValidator(hub.db).auto_resolve_alerts() == 1
     hub.db.refresh(stale)
@@ -589,33 +630,10 @@ async def test_a_processing_run_resolves_stale_alerts_by_itself(pristine, hub):
     months earlier: nothing ever asked. Resolving is now part of a processing
     run, so this asserts the wiring and not just the function.
     """
-    from backend.models.database import SequenceAlert
-
     pristine("900B")
     hub.seed(["900B"])
 
-    for tag, date in (("w1", DAY1), ("w2", DAY2), ("w3", DAY3)):
-        node_rig.run(LEAGUE, NODE02, "PLANETARY", tag=tag, date=date)
-        for name, payload in node_rig.take_outbound(LEAGUE, NODE02):
-            if name.lower().startswith("900b0201."):
-                hub.deliver(name, payload)
-
-    packet = hub.db.query(Packet).filter(
-        Packet.source_bbs_index == "02", Packet.dest_bbs_index == "01"
-    ).order_by(Packet.sequence_number).first()
-    assert packet is not None, "no packet reached the hub"
-
-    stale = SequenceAlert(
-        league_id=packet.league_id,
-        source_bbs_index=packet.source_bbs_index,
-        dest_bbs_index=packet.dest_bbs_index,
-        expected_sequence=packet.sequence_number + 1,
-        received_sequence=packet.sequence_number + 2,
-        gap_size=1,
-        description="planted: the shape of the rows in production",
-    )
-    hub.db.add(stale)
-    hub.db.commit()
+    stale = _plant_a_stale_alert(hub, "w")
 
     await hub.process()
 

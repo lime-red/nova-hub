@@ -18,7 +18,8 @@ REDATE = SRV / "media" / "REDATE.COM"
 DOSEMU_CONF = SRV / "conf" / "vgaterm.conf"
 FIXTURES = SRV / "fixtures"
 LOGS = SRV / "logs"
-REPO = SRV / "nova-hub"
+# The tree this file is in: the rig checkout, or a run.sh --try tree beside it.
+REPO = Path(__file__).resolve().parents[3]
 VENV_PYTHON = SRV / "venv" / "bin" / "python"
 
 HUB_INDEX = 1

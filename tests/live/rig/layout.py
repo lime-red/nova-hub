@@ -21,6 +21,12 @@ LOGS = SRV / "logs"
 REPO = SRV / "nova-hub"
 VENV_PYTHON = SRV / "venv" / "bin" / "python"
 
+# Immortal Barons, a native Go binary: no dosemu, no install tree, no fixtures.
+# Built from trunk rather than a release because the test clock (IB_GAME_DATE,
+# IB's REDATE.COM) is not in v0.2.6. linux/amd64, CGO_ENABLED=0, -trimpath.
+IB_COMMIT = "e9d34f2"
+IB_BINARY = SRV / "media" / "ib" / IB_COMMIT / "immortal-barons"
+
 HUB_INDEX = 1
 HUB_PORT = 8900
 

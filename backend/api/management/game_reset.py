@@ -37,6 +37,13 @@ def _league(db: Session, league_id: int) -> League:
     league = db.query(League).filter(League.id == league_id).first()
     if league is None:
         raise HTTPException(status_code=404, detail="League not found")
+    try:
+        fields_for(league.game_type)
+    except ValueError:
+        # Immortal Barons resets through its own Coordinator orders, not BRE's
+        # and FE's RESET editor.
+        raise HTTPException(status_code=404,
+                            detail=f"League {league.full_id} has no reset editor")
     return league
 
 

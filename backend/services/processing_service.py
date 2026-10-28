@@ -1,10 +1,7 @@
 # backend/services/processing_service.py - Complete with database
 
 import asyncio
-import hashlib
-import shutil
 import threading
-import time
 import toml
 from pathlib import Path
 from typing import Optional
@@ -13,13 +10,13 @@ from sqlalchemy.orm import Session
 
 from backend.core.clock import utcnow
 from backend.core.config import default_config_path
-from backend.models.database import League, LeagueMembership, Packet, ProcessingRun, ProcessingRunFile
+from backend.models.database import League, Packet, ProcessingRun
 from backend.core.database import get_session
 from backend.logging_config import get_logger
-from backend.services.attack_trace import record_safely
 from backend.services.dosemu_runner import DosemuRunner
-from backend.services.games import game_for_code, game_for_letter, nodelist_game
-from backend.services.packet_service import parse_packet_filename
+from backend.services.games import game_for_code, game_for_letter
+from backend.services.providers import provider_for
+from backend.services.providers.sr_games import SRGamesProvider
 from backend.services.sequence_validator import (
     DEFAULT_ALERT_MAX_AGE_DAYS,
     DEFAULT_ALERTS_ENABLED,
@@ -27,6 +24,8 @@ from backend.services.sequence_validator import (
 )
 
 logger = get_logger(context="processing")
+
+_SR = SRGamesProvider()
 
 # Global lock for processing
 _processing_lock = threading.Lock()
@@ -287,22 +286,10 @@ class ProcessingService:
         logger.info("Batch complete")
 
         # Regenerate hub-side nodelists for all processed leagues
-        from backend.services.nodelist_generator import NodelistGenerator
-        data_dir = self.config.get("server", {}).get("data_dir", "./data")
-        nodelist_gen = NodelistGenerator(
-            self.db, data_dir, self.config.get("hub", {}), self.config.get("dosemu", {})
-        )
         for (game_type_str, league_id_str) in groups.keys():
-            league_obj = (
-                self.db.query(League)
-                .filter(
-                    League.league_id == league_id_str,
-                    League.game_type == game_for_code(game_type_str).letter,
-                )
-                .first()
-            )
+            league_obj = self._league(game_type_str, league_id_str)
             if league_obj:
-                nodelist_gen.generate(league_obj.id)
+                provider_for(league_obj.game_type).generate_nodelist(self.db, self.config, league_obj)
 
         # Always scan outbound folders for nodelists
         await self.scan_outbound_folders()
@@ -321,34 +308,19 @@ class ProcessingService:
         # Get all active leagues
         leagues = self.db.query(League).filter(League.is_active == True).all()
 
-        data_dir = self.config.get("server", {}).get("data_dir", "./data")
-
         for league in leagues:
             try:
-                game_type_str = game_for_letter(league.game_type).code
+                provider = provider_for(league.game_type)
             except KeyError:
                 logger.warning(f"Skipping league {league.league_id}: unknown game type '{league.game_type}'")
                 continue
-            league_id = league.league_id
 
-            # Get outbound folder path from config or use default
-            try:
-                league_config = self.config.get("dosemu", {}).get(league_id, {}).get(game_type_str.lower(), {})
-                game_outbound_folder = league_config.get("outbound_folder")
-
-                if game_outbound_folder:
-                    game_outbound_dir = Path(game_outbound_folder)
-                else:
-                    # Fallback to default path
-                    game_outbound_dir = Path(data_dir) / "dosemu" / league_id / game_type_str.lower() / "outbound"
-            except Exception as e:
-                logger.warning(f"Error getting outbound folder for league {league_id}: {e}")
-                game_outbound_dir = Path(data_dir) / "dosemu" / league_id / game_type_str.lower() / "outbound"
+            game_outbound_dir = provider.outbound_dir(self, league)
 
             # Check if directory exists and has files
-            if game_outbound_dir.exists() and any(game_outbound_dir.iterdir()):
-                logger.info(f"Checking outbound folder for league {league_id}{league.game_type}: {game_outbound_dir}")
-                await self.collect_outbound_packets(game_type_str, 0, game_outbound_dir)
+            if game_outbound_dir and game_outbound_dir.exists() and any(game_outbound_dir.iterdir()):
+                logger.info(f"Checking outbound folder for league {league.full_id}: {game_outbound_dir}")
+                await provider.collect_outbound(self, league, 0, game_outbound_dir)
 
     def _record_movements(self, run, results, league_of_group):
         """Store what the games said moved between nodes in this run.
@@ -374,6 +346,9 @@ class ProcessingService:
             output = (result or {}).get("output") or ""
             if not output:
                 continue
+            league = self.db.get(League, league_of_group.get(key)) if league_of_group.get(key) else None
+            if league is not None and not provider_for(league.game_type).reads_transcripts:
+                continue  # not a DOS game's transcript
             try:
                 records, _ = parse(output.encode("utf-8", errors="replace"))
             except Exception as exc:  # pragma: no cover - defensive
@@ -412,6 +387,7 @@ class ProcessingService:
 
         With `league_number` the game runs even when `packets` is empty (see
         process_batch's `also`); without it, the league is the packets' own.
+        What running the game means is the league's provider's business.
         """
         if league_number is not None:
             league = self._league(game_type, league_number)
@@ -425,531 +401,19 @@ class ProcessingService:
             if not league:
                 return {"status": "error", "error": f"League not found for packet {first_packet.filename}"}
 
-        league_id = league.league_id  # This is the string league ID like "555"
+        return await provider_for(league.game_type).process_league(self, league, packets, run_id)
 
-        # Get directory paths
-        data_dir = self.config.get("server", {}).get("data_dir", "./data")
-
-        # Hub packet directories (where packets arrive/depart for the hub)
-        hub_inbound_dir = Path(data_dir) / "packets" / "inbound"
-        hub_outbound_dir = Path(data_dir) / "packets" / "outbound"
-
-        # Game processing directories (where BRE/FE looks for packets)
-        # Get from DOSEMU league config or fallback to default
-        try:
-            league_config = self.config.get("dosemu", {}).get(league_id, {}).get(game_type.lower(), {})
-            game_inbound_folder = league_config.get("inbound_folder")
-            game_outbound_folder = league_config.get("outbound_folder")
-
-            if game_inbound_folder and game_outbound_folder:
-                game_inbound_dir = Path(game_inbound_folder)
-                game_outbound_dir = Path(game_outbound_folder)
-                logger.debug(f"Using game folders from config: {game_inbound_dir}, {game_outbound_dir}")
-            else:
-                # Fallback to default paths
-                drive_path = Path(data_dir) / "dosemu" / league_id / game_type.lower()
-                game_inbound_dir = drive_path / "inbound"
-                game_outbound_dir = drive_path / "outbound"
-                logger.debug(f"Using default game folders: {game_inbound_dir}, {game_outbound_dir}")
-        except Exception as e:
-            logger.warning(f"Error getting game folders from config: {e}, using defaults")
-            drive_path = Path(data_dir) / "dosemu" / league_id / game_type.lower()
-            game_inbound_dir = drive_path / "inbound"
-            game_outbound_dir = drive_path / "outbound"
-
-        game_inbound_dir.mkdir(parents=True, exist_ok=True)
-        game_outbound_dir.mkdir(parents=True, exist_ok=True)
-
-        try:
-            # Step 1: Copy packets from hub inbound to game inbound (case-insensitive)
-            # Remember what we handed the game, so step 6 can tell whether it took it.
-            delivered = []
-            for packet in packets:
-                src = find_file_case_insensitive(hub_inbound_dir, packet.filename)
-
-                if src:
-                    dst = game_inbound_dir / packet.filename
-                    shutil.copy2(src, dst)
-                    delivered.append(dst)
-                    logger.debug(f"Copied: {src.name} -> {dst}")
-                else:
-                    logger.warning(f"Source file not found in hub inbound: {packet.filename}")
-
-            # Step 2: Run dosemu
-            logger.info(f"Running {game_type} for league {league_id} via Dosemu...")
-            dosemu_result = await self.dosemu_runner.run_game_process(game_type, league_id)
-
-            if dosemu_result["status"] != "success":
-                logger.error(
-                    f"Dosemu error: {dosemu_result.get('error', 'Unknown')}"
-                )
-                return dosemu_result
-
-            # Step 3: Mark packets as processed and archive (case-insensitive)
-            hub_processed_dir = Path(data_dir) / "packets" / "processed"
-            hub_outbound_dir = Path(data_dir) / "packets" / "outbound"
-            hub_processed_dir.mkdir(parents=True, exist_ok=True)
-            hub_outbound_dir.mkdir(parents=True, exist_ok=True)
-
-            hub_index = self.config["hub"]["bbs_index"]
-
-            for packet in packets:
-                packet.processed_at = utcnow()
-                packet.is_processed = True
-
-                # Archive - move from hub inbound to hub processed
-                src = find_file_case_insensitive(hub_inbound_dir, packet.filename)
-
-                if src:
-                    # If direct routed (not for hub), copy to outbound first
-                    if packet.dest_bbs_index != hub_index:
-                        dst_outbound = hub_outbound_dir / src.name
-                        shutil.copy2(src, dst_outbound)
-                        logger.info(f"Direct routed packet {src.name} copied to outbound for BBS {packet.dest_bbs_index}")
-
-
-                    dst = hub_processed_dir / src.name
-                    src.rename(dst)
-                    logger.info(f"Archived to hub processed: {src.name}")
-                else:
-                    logger.warning(f"Could not find file in hub inbound to archive: {packet.filename}")
-
-            self.db.commit()
-
-            # Step 4: Collect outbound packets from game outbound directory
-            await self.collect_outbound_packets(game_type, run_id, game_outbound_dir)
-
-            # Step 5: Run additional commands and ingest files
-            await self.ingest_processing_files(game_type, league_id, league.id, run_id, league_config)
-
-            # Step 6: Check what the game actually took.
-            #
-            # A healthy run consumes every packet handed to it -- the game deletes
-            # each file as it ingests it. Anything still sitting here means the game
-            # never saw it: a wrong or untraversable inbound path in BBS.CFG, or a
-            # crash part-way through.
-            #
-            # Leave those files exactly where they are. The game's inbound folder is
-            # where a packet legitimately waits until the game takes it, so once the
-            # fault is fixed the next run picks it up with no operator action. This
-            # used to unlink the whole directory, which threw away both the evidence
-            # and the retry, and made a silently-ignored packet look identical to a
-            # processed one. Re-offering a packet that *was* consumed is harmless:
-            # both games detect duplicates.
-            unconsumed = [f for f in delivered if f.exists()]
-            if unconsumed:
-                names = ", ".join(f.name for f in unconsumed)
-                logger.warning(
-                    f"{len(unconsumed)} packet(s) left unconsumed by {game_type} "
-                    f"league {league_id}: {names}. The game did not ingest them - "
-                    f"check the inbound path in BBS.CFG. They stay in "
-                    f"{game_inbound_dir} and will be retried on the next run."
-                )
-            self._unconsumed_count += len(unconsumed)
-
-            return dosemu_result
-
-        except Exception as e:
-            logger.error(f"Error processing {game_type}: {e}")
-            return {"status": "error", "error": str(e)}
-
-    @staticmethod
-    def _report_listing_command(
-        label: str, result: dict, game_dir: Path | None, filename: str, started: float
-    ):
-        """Log the outcome of a command whose real product is a listing file.
-
-        A run counts as good when the file was written during it, whatever the
-        exit code. Only a run that left the file untouched is a failure, and
-        then the warning says so - the stale copy is still ingested below.
-        """
-        listing = find_file_case_insensitive(game_dir, filename) if game_dir else None
-        # 2 s of slack: DOS file times have 2-second resolution.
-        fresh = listing is not None and listing.stat().st_mtime >= started - 2
-
-        if result["status"] == "success" and (fresh or game_dir is None):
-            return
-        if fresh:
-            logger.debug(
-                f"{label} command exited {result.get('returncode')} "
-                f"but wrote {listing.name}; treating as success"
-            )
-            return
-
-        cause = result.get("error") or f"status {result['status']}"
-        if game_dir is None:
-            logger.warning(f"{label} command failed: {cause}")
-        elif listing is None:
-            logger.warning(f"{label} command failed, no {filename} in {game_dir}: {cause}")
-        else:
-            logger.warning(
-                f"{label} command did not refresh {listing.name}; "
-                f"the previous copy will be ingested: {cause}"
-            )
+    # The SR games' steps, kept here by name: the SR provider calls them through
+    # the service, so a caller (or test) can drive or replace one step at a time.
 
     async def ingest_processing_files(
         self, game_type: str, league_id: str, league_db_id: int, run_id: int, league_config: dict
     ):
-        """
-        Run scores, routes, and bbsinfo commands, then ingest their output files
-        """
-        logger.info(f"Running additional commands for {game_type} league {league_id}...")
+        """Run scores, routes, and bbsinfo commands, then ingest their output files"""
+        await _SR.ingest_processing_files(
+            self, game_type, league_id, league_db_id, run_id, league_config)
 
-        # Run scores command
-        logger.info("Running scores command...")
-        scores_result = await self.dosemu_runner.run_scores_command(game_type, league_id)
-        if scores_result["status"] != "success":
-            logger.warning(f"Scores command failed: {scores_result.get('error', 'Unknown error')}")
-
-        # Run routes and bbsinfo commands.
-        #
-        # These are judged by the file they write, not by exit code: BRE and FE
-        # end ROUTEINFO and BBSINFO with DOS errorlevel 1 even when they succeed
-        # (every production transcript does), so since `script -e` began passing
-        # the real exit code through, a working run logged two "failed" warnings.
-        game_folder = league_config.get("game_folder")
-        game_dir = Path(game_folder) if game_folder else None
-
-        logger.info("Running routes command...")
-        started = time.time()
-        routes_result = await self.dosemu_runner.run_routes_command(game_type, league_id)
-        self._report_listing_command("Routes", routes_result, game_dir, "routes.lst", started)
-
-        logger.info("Running bbsinfo command...")
-        started = time.time()
-        bbsinfo_result = await self.dosemu_runner.run_bbsinfo_command(game_type, league_id)
-        self._report_listing_command("BBS info", bbsinfo_result, game_dir, "bbsinfo.lst", started)
-
-        # Now ingest the files
-        logger.info("Ingesting output files...")
-
-        # Get scores_folder and game_dos_path from config
-        scores_folder = league_config.get("scores_folder")
-        game_dos_path = league_config.get("game_dos_path", "C:\\")
-
-        # Convert DOS path to Linux path
-        # game_dos_path is like "C:\\bbs\\doors\\bre_013"
-        # We need to convert this to the actual filesystem path
-        game_folder = league_config.get("game_folder")
-
-        # Ingest score files
-        if scores_folder:
-            scores_dir = Path(scores_folder)
-            score_filenames = [
-                "BBSLAND.ANS",
-                "BBSSCORE.ANS",
-                "BBSWLAND.ANS",
-                "BBSWORTH.ANS",
-                "PLYLAND.ANS",
-                "PLYSCORE.ANS",
-                "PLYWLAND.ANS",
-                "PLYWORTH.ANS",
-                "SCORES.ANS",
-                "YESNEWS.ANS",
-                "tdynews.ans",
-            ]
-
-            for filename in score_filenames:
-                file_path = find_file_case_insensitive(scores_dir, filename)
-                if file_path:
-                    try:
-                        file_data = file_path.read_text(errors="replace")
-                        file_size = len(file_data)
-
-                        # Store in database
-                        run_file = ProcessingRunFile(
-                            processing_run_id=run_id,
-                            league_id=league_db_id,
-                            file_type="score",
-                            filename=file_path.name,  # Use actual filename found
-                            file_data=file_data,
-                            file_size=file_size,
-                        )
-                        self.db.add(run_file)
-                        logger.info(f"Ingested score file: {file_path.name}")
-                    except Exception as e:
-                        logger.error(f"Error ingesting score file {filename}: {e}")
-                else:
-                    logger.debug(f"Score file not found: {filename}")
-
-        # Ingest routes.lst
-        if game_folder:
-            game_dir = Path(game_folder)
-            routes_file = find_file_case_insensitive(game_dir, "routes.lst")
-            if routes_file:
-                try:
-                    file_data = routes_file.read_text(errors="replace")
-                    file_size = len(file_data)
-
-                    run_file = ProcessingRunFile(
-                        processing_run_id=run_id,
-                        league_id=league_db_id,
-                        file_type="routes",
-                        filename=routes_file.name,
-                        file_data=file_data,
-                        file_size=file_size,
-                    )
-                    self.db.add(run_file)
-                    logger.info(f"Ingested routes file: {routes_file.name}")
-                except Exception as e:
-                    logger.error(f"Error ingesting routes file: {e}")
-            else:
-                logger.debug("Routes file not found: routes.lst")
-
-        # Ingest bbsinfo.lst
-        if game_folder:
-            game_dir = Path(game_folder)
-            bbsinfo_file = find_file_case_insensitive(game_dir, "bbsinfo.lst")
-            if bbsinfo_file:
-                try:
-                    file_data = bbsinfo_file.read_text(errors="replace")
-                    file_size = len(file_data)
-
-                    run_file = ProcessingRunFile(
-                        processing_run_id=run_id,
-                        league_id=league_db_id,
-                        file_type="bbsinfo",
-                        filename=bbsinfo_file.name,
-                        file_data=file_data,
-                        file_size=file_size,
-                    )
-                    self.db.add(run_file)
-                    logger.info(f"Ingested bbsinfo file: {bbsinfo_file.name}")
-                except Exception as e:
-                    logger.error(f"Error ingesting bbsinfo file: {e}")
-            else:
-                logger.debug("BBS info file not found: bbsinfo.lst")
-
-        self.db.commit()
-        logger.info("File ingestion complete")
-
-    async def collect_outbound_packets(
-        self, game_type: str, run_id: int, outbound_dir: Path
-    ):
-        """Collect packets generated by the game"""
-        hub_index = self.config["hub"]["bbs_index"]
-
-        game_type_letter = game_for_code(game_type).letter
-
-        for packet_file in outbound_dir.glob("*"):
-            if not packet_file.is_file():
-                continue
-
-            if nodelist_game(packet_file.name):
-                await self.handle_nodelist_file(packet_file, game_type)
-                continue
-
-            try:
-                packet_info = parse_packet_filename(packet_file.name)
-                if not packet_info:
-                    logger.warning(f"Not collecting {packet_file.name}: not a packet's name")
-                    continue
-
-                # The game's own (it is the hub): nothing to route
-                if packet_info["dest_bbs_index"] == hub_index:
-                    continue
-
-                # Get or create league (game_type stored as single letter in DB)
-                league = (
-                    self.db.query(League)
-                    .filter(
-                        League.league_id == packet_info["league_id"],
-                        League.game_type == game_type_letter,
-                    )
-                    .first()
-                )
-
-                if not league:
-                    league = League(
-                        league_id=packet_info["league_id"],
-                        game_type=game_type_letter,
-                        name=f"{game_type} League {packet_info['league_id']}",
-                        is_active=True,
-                    )
-                    self.db.add(league)
-                    self.db.commit()
-                    self.db.refresh(league)
-
-                # Read file
-                content = packet_file.read_bytes()
-                file_hash = hashlib.sha256(content).hexdigest()
-
-                # Normalize filename to uppercase (DOS convention)
-                normalized_filename = packet_file.name.upper()
-
-                # Move to hub outbound directory
-                data_dir = self.config.get("server", {}).get("data_dir", "./data")
-                hub_outbound_dir = Path(data_dir) / "packets" / "outbound"
-                hub_outbound_dir.mkdir(parents=True, exist_ok=True)
-
-                # Check for case-insensitive duplicate in destination
-                existing_file = find_file_case_insensitive(hub_outbound_dir, normalized_filename)
-                if existing_file:
-                    # Overwrite old file (sequence wraparound case)
-                    existing_file.unlink()
-                    logger.debug(f"Overwriting old outbound file: {existing_file.name}")
-
-                dest = hub_outbound_dir / normalized_filename
-                # shutil.move, not Path.rename: the game folder and the hub's
-                # data dir are separate paths in config and need not share a
-                # filesystem. rename() raises EXDEV when they don't.
-                shutil.move(str(packet_file), str(dest))
-
-                # The newest row under this name. Still pending: BRE has rewritten
-                # that same packet in place (it grows under a stable name), so
-                # update it. Already downloaded: the sequence number has wrapped and
-                # this is a new packet -- give it its own row, as uploads get, so
-                # the old one's history (when it was written and taken) survives.
-                existing = (
-                    self.db.query(Packet)
-                    .filter(Packet.filename == normalized_filename)
-                    .order_by(Packet.id.desc())
-                    .first()
-                )
-                # downloaded_at too: rows from January 2026 have it set with
-                # is_downloaded still false, and must not take a new packet's place.
-                if existing is not None and (existing.is_downloaded
-                                             or existing.downloaded_at is not None):
-                    existing = None
-
-                if existing:
-                    # Update the pending packet with its rewritten contents
-                    existing.source_bbs_index = packet_info["source_bbs_index"]
-                    existing.dest_bbs_index = packet_info["dest_bbs_index"]
-                    existing.sequence_number = packet_info["sequence_number"]
-                    existing.file_size = len(content)
-                    existing.checksum = file_hash
-                    existing.processing_run_id = run_id
-                    existing.processed_at = utcnow()
-                    existing.is_processed = True
-                    existing.file_data = None  # the file on disk is the packet now
-                    logger.info(f"Updated pending outbound packet: {normalized_filename} (seq: {packet_info['sequence_number']})")
-                else:
-                    # Create new packet record (file stored on disk at hub_outbound_dir)
-                    packet = Packet(
-                        filename=normalized_filename,
-                        league_id=league.id,
-                        source_bbs_index=packet_info["source_bbs_index"],
-                        dest_bbs_index=packet_info["dest_bbs_index"],
-                        sequence_number=packet_info["sequence_number"],
-                        file_size=len(content),
-                        checksum=file_hash,
-                        processing_run_id=run_id,
-                        processed_at=utcnow(),
-                        is_processed=True,
-                    )
-                    self.db.add(packet)
-                    logger.info(f"Collected outbound: {normalized_filename}")
-
-                self.db.commit()
-                # A relayed attack is repacked here; this is the hop to its target.
-                record_safely(self.db, existing or packet, content)
-
-            except Exception as e:
-                logger.error(f"Error collecting {packet_file.name}: {e}")
-
-    async def handle_nodelist_file(self, nodelist_file: Path, game_type: str):
-        """
-        Handle nodelist files (BRNODES.<league> or FENODES.<league>)
-        These are hub-generated files that all clients should download
-        """
-        # Extract league ID from filename (e.g., BRNODES.013 -> 013)
-        # Always normalize to uppercase for consistency
-        filename_upper = nodelist_file.name.upper()
-        nodelist_owner = nodelist_game(filename_upper)
-        if not nodelist_owner:
-            logger.warning(f"Invalid nodelist filename: {nodelist_file.name}")
-            return
-        league_number = nodelist_owner.nodelist_league(filename_upper)
-
-        # Create nodelists directory structure: data_dir/nodelists/<game_type>/<league_id>/
-        data_dir = self.config.get("server", {}).get("data_dir", "./data")
-        nodelists_dir = Path(data_dir) / "nodelists" / game_type.lower() / league_number
-        nodelists_dir.mkdir(parents=True, exist_ok=True)
-
-        # Always use uppercase filename for consistency
-        dest = nodelists_dir / filename_upper
-
-        # Check for case-insensitive duplicate in destination
-        existing_file = find_file_case_insensitive(nodelists_dir, filename_upper)
-        if existing_file and existing_file != dest:
-            # Remove old version with different case
-            existing_file.unlink()
-            logger.info(f"Removed old nodelist: {existing_file.name}")
-
-        # Move and rename to uppercase. shutil.move for the same reason as the
-        # outbound collector: this crosses from the game folder into the hub's
-        # data dir, which may be a different filesystem.
-        shutil.move(str(nodelist_file), str(dest))
-        logger.info(f"Updated nodelist: {dest.name} for league {league_number}")
-
-        # Read the nodelist file to compute metadata (file stored on disk, not in DB)
-        with open(dest, 'rb') as f:
-            file_content = f.read()
-        file_size = len(file_content)
-        checksum = hashlib.sha256(file_content).hexdigest()
-
-        # Find the league in the database
-        game_type_letter = game_for_code(game_type).letter
-        league = self.db.query(League).filter(
-            League.league_id == league_number,
-            League.game_type == game_type_letter
-        ).first()
-
-        if not league:
-            logger.warning(f"League {league_number}{game_type_letter} not found in database, skipping packet creation")
-        else:
-            # Get all active members of this league
-            memberships = self.db.query(LeagueMembership).filter(
-                LeagueMembership.league_id == league.id,
-                LeagueMembership.is_active == True
-            ).all()
-
-            # Create a packet record for each league member
-            for membership in memberships:
-                if membership.bbs_index is None:
-                    continue
-
-                # Convert BBS index to 2-char hex
-                dest_bbs_hex = f"{membership.bbs_index:02X}"
-
-                # Check if packet already exists for this member (avoid duplicates)
-                # Use uppercase filename for consistency
-                existing = self.db.query(Packet).filter(
-                    Packet.filename == filename_upper,
-                    Packet.league_id == league.id,
-                    Packet.dest_bbs_index == dest_bbs_hex
-                ).first()
-
-                if existing:
-                    # Update existing packet with new metadata (file on disk)
-                    existing.file_size = file_size
-                    existing.checksum = checksum
-                    existing.uploaded_at = utcnow()
-                    existing.processed_at = utcnow()  # Mark as processed
-                    existing.is_processed = True
-                    existing.is_downloaded = False
-                    existing.downloaded_at = None
-                    logger.debug(f"Updated existing nodelist packet for BBS {dest_bbs_hex}")
-                else:
-                    # Create new packet record (file stored on disk at nodelists_dir)
-                    packet = Packet(
-                        filename=filename_upper,
-                        league_id=league.id,
-                        source_bbs_index="00",  # Hub/system source
-                        dest_bbs_index=dest_bbs_hex,
-                        sequence_number=0,  # Nodelists don't use sequence numbers
-                        source_client_id=None,  # Hub-generated
-                        dest_client_id=membership.client_id,
-                        file_size=file_size,
-                        checksum=checksum,
-                        is_processed=True,  # Nodelists don't need processing
-                        processed_at=utcnow(),  # Mark as processed immediately
-                        is_downloaded=False
-                    )
-                    self.db.add(packet)
-                    logger.debug(f"Created nodelist packet for BBS {dest_bbs_hex}")
-
-            self.db.commit()
-            logger.info(f"Created/updated {len(memberships)} nodelist packet records")
-
+    async def collect_outbound_packets(self, game_type: str, run_id: int, outbound_dir: Path):
+        """Collect the packets an SR game wrote into outbound_dir, for whichever
+        of its leagues each one names."""
+        await _SR.collect_game_outbound(self, game_for_code(game_type), run_id, outbound_dir)

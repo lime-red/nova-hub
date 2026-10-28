@@ -43,6 +43,21 @@ All notable changes to Nova Hub will be documented in this file.
   input bcrypt refuses counts as a failed attempt rather than an error. (#87)
 
 ### Added
+- **Immortal Barons leagues** (game letter `I`), from andy5995's PR. IB is a
+  native Go binary, so it gets its own game provider rather than the BRE/FE
+  code paths (#100):
+  - The hub is the league's Coordinator, node 1, and runs IB natively
+    (`[ib.<league>]` in config.toml; logs in `logs/native/`). A run that
+    exits non-zero still delivers what IB wrote and is marked failed.
+  - A broadcast (destination 00) is a row per receiving board. A re-upload of
+    the same bytes is the same packet; a different file under a used name is
+    a 409. The hub never renames or overwrites an IB packet, since IB reads
+    only `*.brp` and would miss an FTN-style `.br1`.
+  - Generate Nodelist writes the roster, with each board's signing key as the
+    optional seventh line, to the hub's IB and publishes it to members as
+    `IBNODES.<league>`. A member's key is set on the league page.
+  - No sequence-gap checks, and no reset editor (404). IB packet names never
+    repeat, so their files expire after `retention_days`, like logs.
 - **Disable an account** without deleting it (Admin > Users > Edit). A
   disabled account can't sign in by either route, and its session stops
   working. Password sign-in now records the last sign-in, as the provider
@@ -58,6 +73,9 @@ All notable changes to Nova Hub will be documented in this file.
 - League ids in Service API paths may use a lowercase game letter (`555b`). (#89)
 
 ### Changed
+- The per-game work (processing, outbound collection, nodelists, client
+  config) moved from `ProcessingService` into game providers,
+  `backend/services/providers/`. BRE and FE behave as before. (#100)
 - **The database enforces its references.** SQLite ignores foreign keys
   unless asked on every connection, so every reference and `ON DELETE` in the
   schema was decoration. The hub's engine now turns them on, runs in WAL mode
@@ -143,6 +161,8 @@ All notable changes to Nova Hub will be documented in this file.
   longer a dependency. (#90)
 
 ### Upgrading
+- One migration (`f1c6b2a8d407`) adds `league_memberships.board_key`;
+  nothing is rebuilt. (#100)
 - One migration (`e7a2c4d9b153`), indexes only, so no table is rebuilt: the
   client poll's index, the run lookups, and unique indexes for one league
   per number and game, one membership per BBS per league, and one reset

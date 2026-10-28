@@ -29,6 +29,7 @@ export interface LeagueMember {
   fidonet_address?: string
   client_ftn_addresses: FtnAddressRef[]
   client_oauth_id: string
+  board_key?: string | null  // Immortal Barons: the board's public signing key
   joined_at?: string
   is_active: boolean
 }
@@ -209,6 +210,7 @@ export const useLeaguesStore = defineStore('leagues', () => {
   async function updateMember(leagueId: number, membershipId: number, data: {
     bbs_index?: number
     ftn_address_id?: number
+    board_key?: string
   }): Promise<boolean> {
     loading.value = true
     error.value = null

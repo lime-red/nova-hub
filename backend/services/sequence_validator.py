@@ -140,9 +140,21 @@ class SequenceValidator:
         self.alerts_enabled = alerts_enabled
 
     def _routes(self):
-        return self.db.execute(text("""
-            SELECT DISTINCT league_id, source_bbs_index, dest_bbs_index
-            FROM packets
+        """Every route of a game whose sequence numbers can show a gap.
+
+        Immortal Barons is left out: its sequence is one counter per sender
+        across all destinations, so a route sees only a slice of it (#100).
+        """
+        from backend.services.providers import letters_where
+
+        # Game letters are the code's own constants, one capital each; checked
+        # anyway, since they are written into the statement.
+        letters = [g for g in letters_where("checks_sequences") if g.isalpha() and len(g) == 1]
+        games = ", ".join(f"'{g}'" for g in letters) or "NULL"
+        return self.db.execute(text(f"""
+            SELECT DISTINCT p.league_id, p.source_bbs_index, p.dest_bbs_index
+            FROM packets p JOIN leagues l ON l.id = p.league_id
+            WHERE l.game_type IN ({games})
         """)).fetchall()
 
     def _sequences_for(self, route) -> list[int]:

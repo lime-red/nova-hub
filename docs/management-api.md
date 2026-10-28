@@ -2282,7 +2282,8 @@ Validation Error
 
 **Generate Nodelist**
 
-Generate a BRNODES/FENODES nodelist file from the current league membership (admin only).
+Generate the league's nodelist from the current membership (admin only):
+BRNODES/FENODES for the SR games, IBNODES (ibnodes.dat) for Immortal Barons.
 
 The file is written to the nodelists directory, where the console and the
 service API's bootstrap download serve it, and into the hub's own game as
@@ -2383,6 +2384,8 @@ change up at its next regeneration.
 **Request Body** (at least one):
 - `bbs_index`: New BBS index (1-255)
 - `ftn_address_id`: One of the client's own FTN addresses
+- `board_key`: Immortal Barons leagues only. The board's public signing key,
+  the 64 hex characters its `-gen-board-key` printed; `""` removes it
 
 **Returns:** The updated membership
 

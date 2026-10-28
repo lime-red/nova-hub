@@ -35,7 +35,7 @@ from sqlalchemy.orm import Session
 from backend.core.clock import utcnow
 from backend.models.database import ClaimLink, Client, LeagueMembership, SysopUser
 from backend.services import client_secrets
-from backend.services.games import game_for_letter
+from backend.services.games import game_for_code, game_for_letter
 
 LINK_TTL = timedelta(hours=72)
 
@@ -166,6 +166,12 @@ class LeagueEntry:
     code: str  # "BRE"
     number: str  # "015"
     bbs_index: int
+    letter: str = ""  # "B", the league's game; found from code when left out
+
+    @property
+    def provider(self):
+        from backend.services.providers import provider_for
+        return provider_for(self.letter or game_for_code(self.code).letter)
 
     @property
     def folder(self) -> str:
@@ -187,7 +193,7 @@ def league_entries(db: Session, client: Client) -> list[LeagueEntry]:
             game = game_for_letter(m.league.game_type)
         except KeyError:
             continue  # a league of an unknown game has nothing a client can run
-        entries.append(LeagueEntry(game.code, m.league.league_id, m.bbs_index))
+        entries.append(LeagueEntry(game.code, m.league.league_id, m.bbs_index, game.letter))
     return sorted(entries, key=lambda e: (e.code, e.number))
 
 
@@ -282,21 +288,7 @@ def render_config_toml(client: Client, secret: str | None, hub_url: str, leagues
     if not leagues:
         lines += ["", "# No league memberships yet. The hub admin will tell you your", "# league and BBS index."]
     for e in leagues:
-        host = f"/CHANGE-ME/.dosemu/drive_c/doors/{e.folder.lower()}"
-        dos = "C:\\CHANGE-ME\\DOORS\\" + e.folder
-        lines += [
-            "",
-            f"[leagues.{e.code}.{e.number}]",
-            "enabled = true",
-            f"bbs_index = {e.bbs_index}  # assigned by the hub; do not change",
-            f"outbound_dir = {_toml_str(host + '/OUTBOUND')}",
-            f"inbound_dir = {_toml_str(host + '/INBOUND')}",
-            "# The game's folder as Linux sees it, and the same folder as DOS sees it.",
-            f"game_folder = {_toml_str(host)}",
-            f"game_dos_path = {_toml_str(dos)}",
-            f"game_command = {_toml_str(e.code)}",
-            'maintenance_args = "PLANETARY"',
-        ]
+        lines += [""] + e.provider.config_toml_league(e)
     return "\n".join(lines) + "\n"
 
 
@@ -349,20 +341,6 @@ def render_config_psd1(client: Client, secret: str | None, hub_url: str, leagues
     if not leagues:
         lines += ["        # No league memberships yet. The hub admin will tell you your", "        # league and BBS index."]
     for e in leagues:
-        folder = "C:\\CHANGE-ME\\DOORS\\" + e.folder
-        outbound, inbound = folder + "\\OUTBOUND", folder + "\\INBOUND"
-        lines += [
-            "        @{",
-            f"            Game            = {_psd1_str(e.code)}",
-            f"            Number          = {_psd1_str(e.number)}",
-            "            Enabled         = $true",
-            f"            BbsIndex        = {e.bbs_index}  # assigned by the hub; do not change",
-            f"            OutboundDir     = {_psd1_str(outbound)}",
-            f"            InboundDir      = {_psd1_str(inbound)}",
-            f"            GameFolder      = {_psd1_str(folder)}",
-            f"            GameCommand     = {_psd1_str(e.code)}",
-            "            MaintenanceArgs = 'PLANETARY'",
-            "        }",
-        ]
+        lines += e.provider.config_psd1_league(e)
     lines += ["    )", "}"]
     return "\r\n".join(lines) + "\r\n"

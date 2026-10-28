@@ -86,6 +86,27 @@ outbound_folder = "/home/novahub/.dosemu/drive_c/bbs/doors/fe_555/OUTBOUND"
 processing_command = "FE.EXE PLANETARY /DETAILED"
 scores_command = "FE.EXE SCORES"
 
+# Immortal Barons leagues (game letter I) run a native binary, not dosemu, so
+# they have their own section, keyed by league number. The hub is the league's
+# Coordinator, node 1: [hub] bbs_index must be 01.
+#
+# binary and data_dir are required. inbound_dir and outbound_dir default to the
+# game's own, inbound/ and outbound/ inside data_dir; set them to what the hub's
+# bbs.cfg gives for GameInbound and GameOutbound. args defaults to ["-maint"];
+# "-data <data_dir>" is always added. timeout defaults to [dosemu] timeout.
+#
+# hub_board_key is the public half of the hub's signing key (64 hex characters),
+# written into the roster as node 1's seventh line. Members' keys are set per
+# member in the league's page. The roster is written to data_dir/ibnodes.dat,
+# and published to members as IBNODES.<league>.
+#
+# IB never reuses a packet name, so the hub deletes its IB packet files after
+# [processing] retention_days, as it does logs; sequence gaps are not checked.
+#[ib.555]
+#binary = "/opt/immortal-barons/immortal-barons"
+#data_dir = "/home/novahub/ib_555"
+#hub_board_key = "<64 hex characters>"
+
 [database]
 path = "./data/nova-hub.db"
 

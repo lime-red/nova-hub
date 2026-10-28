@@ -15,6 +15,7 @@ from backend.core.security import require_admin
 from backend.logging_config import get_logger
 from backend.services import audit
 from backend.services.games import MAX_BBS_INDEX, game_for_letter
+from backend.services.providers.immortal_barons import valid_board_key
 from backend.models.database import (
     Client,
     FtnAddress,
@@ -562,6 +563,7 @@ def _member_response(membership: LeagueMembership) -> MemberResponse:
         fidonet_address=membership.fidonet_address,
         client_ftn_addresses=_address_refs(client),
         client_oauth_id=client.client_id,
+        board_key=membership.board_key,
         joined_at=membership.joined_at.strftime("%Y-%m-%d %H:%M") if membership.joined_at else None,
         is_active=membership.is_active,
     )
@@ -702,7 +704,8 @@ async def generate_nodelist(
     db: Session = Depends(get_db),
 ):
     """
-    Generate a BRNODES/FENODES nodelist file from the current league membership (admin only).
+    Generate the league's nodelist from the current membership (admin only):
+    BRNODES/FENODES for the SR games, IBNODES (ibnodes.dat) for Immortal Barons.
 
     The file is written to the nodelists directory, where the console and the
     service API's bootstrap download serve it, and into the hub's own game as
@@ -717,39 +720,23 @@ async def generate_nodelist(
     say), so the members will not receive it.
     """
     from backend.core.config import get_config
-    from backend.services.nodelist_generator import NodelistGenerator
+    from backend.services.providers import provider_for
 
     league = db.query(League).filter(League.id == league_id).first()
     if not league:
         raise HTTPException(status_code=404, detail="League not found")
 
     try:
-        game_for_letter(league.game_type)
+        provider = provider_for(league.game_type)
     except KeyError:
         raise HTTPException(
             status_code=422,
             detail=f"League has unknown game type '{league.game_type}' — nodelist not generated",
         )
 
-    config = get_config()
-    data_dir = config.get("server", {}).get("data_dir", "./data")
-    generator = NodelistGenerator(db, data_dir, config.get("hub", {}), config.get("dosemu", {}))
-    dest = generator.generate(league_id)
-
+    dest, problems = provider.generate_nodelist(db, get_config(), league)
     if dest is None:
-        if not (league.hub_fidonet_address or "").strip():
-            raise HTTPException(
-                status_code=422,
-                detail=(
-                    "League has no hub_fidonet_address, so the hub's own node entry "
-                    "and its HOST routing line cannot be written. Set it first; the "
-                    "existing nodelist has been left untouched."
-                ),
-            )
-        raise HTTPException(
-            status_code=422,
-            detail="No active members with a BBS index assigned — nodelist not generated",
-        )
+        raise HTTPException(status_code=422, detail="; ".join(problems) or "Nodelist not generated")
 
     member_count = (
         db.query(LeagueMembership)
@@ -763,7 +750,7 @@ async def generate_nodelist(
 
     logger.info(f"Generated nodelist {dest.name} for league {league.full_id} by {current_user.username}")
 
-    return {"filename": dest.name, "members": member_count, "warnings": generator.problems}
+    return {"filename": dest.name, "members": member_count, "warnings": problems}
 
 
 @router.delete("/{league_id}/members/{member_id}", summary="Remove Member")
@@ -830,6 +817,8 @@ async def update_member(
     **Request Body** (at least one):
     - `bbs_index`: New BBS index (1-255)
     - `ftn_address_id`: One of the client's own FTN addresses
+    - `board_key`: Immortal Barons leagues only. The board's public signing key,
+      the 64 hex characters its `-gen-board-key` printed; `""` removes it
 
     **Returns:** The updated membership
 
@@ -852,27 +841,42 @@ async def update_member(
     if not membership:
         raise HTTPException(status_code=404, detail="Membership not found")
 
-    if request.bbs_index is None and request.ftn_address_id is None:
-        raise HTTPException(status_code=400, detail="Nothing to change: give bbs_index and/or ftn_address_id")
+    if request.bbs_index is None and request.ftn_address_id is None and request.board_key is None:
+        raise HTTPException(status_code=400,
+                            detail="Nothing to change: give bbs_index, ftn_address_id and/or board_key")
 
     address = None
     if request.bbs_index is not None:
         _check_bbs_index(db, league_id, request.bbs_index, exclude_membership_id=membership_id)
     if request.ftn_address_id is not None:
         address = _check_ftn_address(db, membership.client, request.ftn_address_id)
+    board_key = None
+    if request.board_key is not None:
+        if membership.league.game_type != "I":
+            raise HTTPException(status_code=400,
+                                detail="Only an Immortal Barons board has a signing key")
+        try:
+            board_key = valid_board_key(request.board_key)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
 
-    before = (membership.bbs_index, membership.fidonet_address)
+    before = (membership.bbs_index, membership.fidonet_address, membership.board_key)
     if request.bbs_index is not None:
         membership.bbs_index = request.bbs_index
     if address is not None:
         membership.ftn_address = address
+    if request.board_key is not None:
+        membership.board_key = board_key
     db.commit()
     db.refresh(membership)
 
     logger.info(
         f"Edited {membership.client.bbs_name} in league {membership.league.full_id}: "
         f"index {before[0]} -> {membership.bbs_index}, "
-        f"address {before[1]} -> {membership.fidonet_address} by {current_user.username}"
+        f"address {before[1]} -> {membership.fidonet_address}"
+        + (f", board key {'set' if membership.board_key else 'removed'}"
+           if before[2] != membership.board_key else "")
+        + f" by {current_user.username}"
     )
 
     return _member_response(membership)

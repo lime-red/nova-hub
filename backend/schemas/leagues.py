@@ -96,6 +96,7 @@ class MemberResponse(BaseModel):
     fidonet_address: Optional[str] = None  # the address's text, for display
     client_ftn_addresses: List[FtnAddressRef] = []  # what an edit may choose from
     client_oauth_id: Optional[str] = None  # The client's OAuth client_id; admins only
+    board_key: Optional[str] = None  # Immortal Barons: the board's public signing key
     joined_at: Optional[str] = None
     is_active: bool
 
@@ -141,6 +142,9 @@ class UpdateMemberRequest(BaseModel):
     """Edit a membership; a field left out is left as it is"""
     bbs_index: Optional[int] = None
     ftn_address_id: Optional[int] = None
+    # Immortal Barons leagues only: the 64-hex key -gen-board-key printed, or
+    # "" to remove it.
+    board_key: Optional[str] = None
 
 
 class LeagueDeleteRequest(BaseModel):

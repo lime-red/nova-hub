@@ -334,6 +334,7 @@ export const leaguesApi = {
   updateMember: (leagueId: number, membershipId: number, data: {
     bbs_index?: number
     ftn_address_id?: number
+    board_key?: string
   }) =>
     api.patch(`/leagues/${leagueId}/members/${membershipId}`, data)
 }

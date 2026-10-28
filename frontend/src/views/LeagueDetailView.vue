@@ -33,6 +33,10 @@ const newFtnAddressId = ref<number | null>(null)
 const editingMember = ref<LeagueMember | null>(null)
 const editMemberIndex = ref('')
 const editMemberFtnAddressId = ref<number | null>(null)
+const editMemberBoardKey = ref('')
+// Immortal Barons: no FTN address needed, and each board has a signing key
+const isImmortalBarons = computed(() => leaguesStore.currentLeague?.game_type === 'I')
+const boardKeyValid = computed(() => /^[0-9a-fA-F]{64}$/.test(editMemberBoardKey.value.trim()) || editMemberBoardKey.value.trim() === '')
 
 const selectedClientAddresses = computed(() => {
   const client = leaguesStore.currentLeague?.available_clients.find(
@@ -168,6 +172,7 @@ function openEditMemberModal(member: LeagueMember) {
   editingMember.value = member
   editMemberIndex.value = String(member.bbs_index)
   editMemberFtnAddressId.value = member.ftn_address_id ?? null
+  editMemberBoardKey.value = member.board_key ?? ''
   leaguesStore.clearError()
 }
 
@@ -176,12 +181,15 @@ function closeEditMemberModal() {
 }
 
 async function handleEditMember() {
-  if (!editingMember.value || !editMemberIndex.value || !editMemberFtnAddressId.value) return
+  if (!editingMember.value || !editMemberIndex.value) return
+  if (!editMemberFtnAddressId.value && !isImmortalBarons.value) return
 
-  const success = await leaguesStore.updateMember(leagueId.value, editingMember.value.membership_id, {
-    bbs_index: parseInt(editMemberIndex.value),
-    ftn_address_id: editMemberFtnAddressId.value
-  })
+  const change: { bbs_index: number, ftn_address_id?: number, board_key?: string } = {
+    bbs_index: parseInt(editMemberIndex.value)
+  }
+  if (editMemberFtnAddressId.value) change.ftn_address_id = editMemberFtnAddressId.value
+  if (isImmortalBarons.value) change.board_key = editMemberBoardKey.value.trim()
+  const success = await leaguesStore.updateMember(leagueId.value, editingMember.value.membership_id, change)
   if (success) {
     closeEditMemberModal()
   }
@@ -370,6 +378,7 @@ async function handleDelete() {
                   <th>BBS Index</th>
                   <th>BBS Name</th>
                   <th>Fidonet Address</th>
+                  <th v-if="isImmortalBarons">Signing Key</th>
                   <th>Status</th>
                   <th>Joined</th>
                   <th v-if="authStore.isAdmin"></th>
@@ -377,7 +386,7 @@ async function handleDelete() {
               </thead>
               <tbody>
                 <tr v-if="leaguesStore.currentLeague.members.length === 0">
-                  <td :colspan="authStore.isAdmin ? 6 : 5" class="text-center text-muted" style="padding: 2rem;">
+                  <td :colspan="(authStore.isAdmin ? 6 : 5) + (isImmortalBarons ? 1 : 0)" class="text-center text-muted" style="padding: 2rem;">
                     No members in this league
                   </td>
                 </tr>
@@ -388,6 +397,9 @@ async function handleDelete() {
                     <template v-else>{{ member.bbs_name }}</template>
                   </td>
                   <td class="font-mono">{{ member.fidonet_address || '-' }}</td>
+                  <td v-if="isImmortalBarons" class="font-mono" :title="member.board_key || 'No key: this board\'s packets are not checked'">
+                    {{ member.board_key ? member.board_key.slice(0, 12) + '…' : '-' }}
+                  </td>
                   <td>
                     <span class="badge" :class="member.is_active ? 'badge-success' : 'badge-danger'">
                       {{ member.is_active ? 'Active' : 'Inactive' }}
@@ -625,7 +637,7 @@ async function handleDelete() {
                   id="editMemberFtnAddress"
                   v-model="editMemberFtnAddressId"
                   class="font-mono"
-                  required
+                  :required="!isImmortalBarons"
                 >
                   <option :value="null" disabled>Choose an address...</option>
                   <option v-for="a in editingMember.client_ftn_addresses" :key="a.id" :value="a.id">
@@ -635,6 +647,22 @@ async function handleDelete() {
                 <small class="form-hint">
                   Only this BBS's own addresses.
                   <router-link :to="`/clients/${editingMember.client_id}`">Assign or renumber them on its page</router-link>.
+                  <template v-if="isImmortalBarons">Optional in an Immortal Barons league.</template>
+                </small>
+              </div>
+              <div v-if="isImmortalBarons" class="form-group">
+                <label for="editMemberBoardKey">Signing Key</label>
+                <input
+                  id="editMemberBoardKey"
+                  v-model="editMemberBoardKey"
+                  class="font-mono"
+                  maxlength="64"
+                  placeholder="64 hex characters"
+                />
+                <small class="form-hint">
+                  The line the board's <code>immortal-barons -gen-board-key</code> printed.
+                  With it, the other boards refuse packets that only claim to be from
+                  this one. Leave empty for none.
                 </small>
               </div>
               <div v-if="inUse.length" class="in-use">
@@ -660,7 +688,8 @@ async function handleDelete() {
               <button
                 type="submit"
                 class="btn btn-primary"
-                :disabled="leaguesStore.loading || !editMemberIndex || !editMemberFtnAddressId"
+                :disabled="leaguesStore.loading || !editMemberIndex
+                  || (!editMemberFtnAddressId && !isImmortalBarons) || !boardKeyValid"
               >
                 Save Changes
               </button>

@@ -166,7 +166,7 @@ def test_purge_retention_reaches_the_dosemu_logs(tmp_path, monkeypatch, capsys):
     finally:
         config_module._config, config_module.config = saved
     assert built["data_dir"] == str(data)
-    assert "dosemu logs" in capsys.readouterr().out
+    assert "run logs" in capsys.readouterr().out
 
 
 def test_run_hands_its_config_to_the_app(tmp_path, monkeypatch):

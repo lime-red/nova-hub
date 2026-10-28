@@ -15,9 +15,9 @@ from loguru import logger
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from backend.services.processing_service import ProcessingService
+from backend.services.providers.sr_games import SRGamesProvider
 
-report = ProcessingService._report_listing_command
+report = SRGamesProvider._report_listing_command
 
 ERRORLEVEL_1 = {"status": "error", "returncode": 1, "error": "dosemu exited 1 (transcript: x.log)"}
 

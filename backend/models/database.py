@@ -360,6 +360,9 @@ class LeagueMembership(Base):
     bbs_index = Column(Integer, nullable=True, index=True)  # BBS ID (1-255)
     # One of this client's own addresses; see FtnAddress.
     ftn_address_id = Column(Integer, ForeignKey("ftn_addresses.id"), nullable=True, index=True)
+    # Immortal Barons: the board's packet-signing public key, from its
+    # -gen-board-key (64 hex). The seventh line of its ibnodes.dat entry.
+    board_key = Column(String(64), nullable=True)
 
     # Relationships
     client = relationship("Client", back_populates="league_memberships")

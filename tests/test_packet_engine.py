@@ -30,6 +30,7 @@ from backend.models.database import (
     Base, Client, League, LeagueMembership, Packet, SequenceAlert, SysopUser,
 )
 from backend.services import processing_service
+from backend.services.providers import sr_games
 from backend.services.dosemu_runner import DosemuRunner
 from backend.services.game_reset.perform import backup, restore
 from backend.services.processing_service import ProcessingService
@@ -273,7 +274,7 @@ def test_a_stray_file_in_the_games_outbound_is_passed_over(tmp_path, monkeypatch
                                      "server": {"data_dir": str(tmp_path / "data")},
                                      "dosemu": {"dosemu_path": "/usr/bin/dosemu", "timeout": 60}})
     log = _Log()
-    monkeypatch.setattr(processing_service, "logger", log)
+    monkeypatch.setattr(sr_games, "logger", log)
 
     asyncio.run(service.collect_outbound_packets("BRE", run_id=None, outbound_dir=game_out))
     assert [lvl for lvl, _ in log.lines if lvl in ("error", "exception")] == []

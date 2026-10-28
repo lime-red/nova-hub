@@ -43,8 +43,11 @@ def _report(result: dict, verb: str) -> None:
     print(f"  {'TOTAL':<32} {result['rows']:>8} rows  {_mb(result['bytes']):>10}"
           f"   {verb}")
     if "log_files" in result:
-        print(f"  {'dosemu logs':<32} {result['log_files']:>8} files {_mb(result['log_bytes']):>10}"
+        print(f"  {'run logs':<32} {result['log_files']:>8} files {_mb(result['log_bytes']):>10}"
               f"   {verb.replace('cleared', 'deleted')}")
+    if "packet_files" in result:
+        print(f"  {'Immortal Barons packet files':<32} {result['packet_files']:>8} files "
+              f"{_mb(result['packet_bytes']):>10}   {verb.replace('cleared', 'deleted')}")
 
 
 def main() -> int:

@@ -305,6 +305,38 @@ class HubValidator:
         except (TypeError, ValueError):
             return None
 
+    def validate_immortal_barons(self) -> int:
+        """Check each [ib.<league>]: the hub's own copy of Immortal Barons.
+
+        The roster in its data_dir is the hub's to write, so it is not compared
+        against the database here; the hub regenerates it every run. Returns the
+        number of IB leagues configured.
+        """
+        sections = (self.config or {}).get("ib") or {}
+        count = 0
+        for league_id, settings in sections.items():
+            if not isinstance(settings, dict):
+                continue
+            count += 1
+            league_key = f"ib.{league_id}"
+            binary = settings.get("binary")
+            if not binary:
+                self.errors.append(ValidationError("Config", f"{league_key}: binary not configured"))
+            elif not (Path(binary).is_file() and os.access(binary, os.X_OK)):
+                self.errors.append(ValidationError(
+                    "Config", f"{league_key}: binary {binary} is not an executable file"))
+            data_dir = settings.get("data_dir")
+            if not data_dir:
+                self.errors.append(ValidationError("Config", f"{league_key}: data_dir not configured"))
+            else:
+                self.validate_directory(data_dir, "data_dir", league_key)
+            if self._hub_index() != 1:
+                self.errors.append(ValidationError(
+                    "Config", f"{league_key}: Immortal Barons needs the hub at node 1, the "
+                              f"League Coordinator, and [hub] bbs_index is "
+                              f"{(self.config or {}).get('hub', {}).get('bbs_index')!r}"))
+        return count
+
     def validate(self) -> bool:
         """
         Run all validations.
@@ -388,6 +420,8 @@ class HubValidator:
 
                 # Validate nodes file against database
                 self.validate_nodes_file_against_db(game_type, league_id, league_settings)
+
+        league_count += self.validate_immortal_barons()
 
         if league_count == 0:
             self.warnings.append(

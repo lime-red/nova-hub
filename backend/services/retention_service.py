@@ -61,12 +61,20 @@ _TIMESTAMP = {
     ProcessingRunFile: "created_at",
 }
 
-# The one directory on disk this service will touch, relative to data_dir, and
-# the only suffix it will remove from it. Both are deliberately narrow: this is
-# the single place in the codebase that deletes operator files, so it should be
-# impossible to point somewhere else by accident.
+# The directories on disk this service will touch, relative to data_dir, and
+# the only suffix it will remove from them. Both are deliberately narrow: this
+# is the single place in the codebase that deletes operator files, so it should
+# be impossible to point somewhere else by accident. logs/native is where a game
+# that is not a DOS door (Immortal Barons) leaves its run logs.
 LOG_SUBDIR = ("logs", "dosemu")
+LOG_SUBDIRS = (LOG_SUBDIR, ("logs", "native"))
 LOG_SUFFIX = ".log"
+
+# Packet files of a game whose names never repeat (Immortal Barons, #100). A
+# BRE or FE name wraps at 000-999 and overwrites itself, which bounds those
+# directories; these grow by one file per packet for ever. Only names that
+# parse as such a game's packet are ever touched.
+PACKET_SUBDIRS = (("packets", "outbound"), ("packets", "processed"))
 
 
 class RetentionService:
@@ -102,6 +110,13 @@ class RetentionService:
             return None
         return self.data_dir.joinpath(*LOG_SUBDIR)
 
+    @property
+    def log_dirs(self) -> list[Path]:
+        """Every directory of run logs: dosemu's transcripts and native games' logs."""
+        if self.data_dir is None:
+            return []
+        return [self.data_dir.joinpath(*sub) for sub in LOG_SUBDIRS]
+
     def cutoff(self, now: datetime | None = None) -> datetime:
         # Rows are stamped with utcnow(), so compare in the same frame.
         return (now or utcnow()) - timedelta(days=self.retention_days)
@@ -129,6 +144,7 @@ class RetentionService:
             total_bytes += int(size or 0)
 
         files, file_bytes = self._aged_logs(cutoff)
+        packets, packet_bytes = self._aged_packet_files(cutoff)
         return {
             "enabled": True,
             "retention_days": self.retention_days,
@@ -138,6 +154,8 @@ class RetentionService:
             "bytes": total_bytes,
             "log_files": len(files),
             "log_bytes": file_bytes,
+            "packet_files": len(packets),
+            "packet_bytes": packet_bytes,
         }
 
     def purge(self) -> dict:
@@ -156,12 +174,14 @@ class RetentionService:
             total_bytes += freed
 
         log_files, log_bytes = self.purge_logs(cutoff)
+        packet_files, packet_bytes = self.purge_packet_files(cutoff)
 
-        if total_rows or log_files:
+        if total_rows or log_files or packet_files:
             logger.info(
                 f"retention: cleared {total_rows} aged value(s), "
                 f"{total_bytes / 1_048_576:.1f} MB, and deleted {log_files} aged "
-                f"log file(s), {log_bytes / 1_048_576:.1f} MB, "
+                f"log file(s), {log_bytes / 1_048_576:.1f} MB, and {packet_files} "
+                f"packet file(s), {packet_bytes / 1_048_576:.1f} MB, "
                 f"older than {cutoff.isoformat()}"
             )
         return {
@@ -173,6 +193,8 @@ class RetentionService:
             "bytes": total_bytes,
             "log_files": log_files,
             "log_bytes": log_bytes,
+            "packet_files": packet_files,
+            "packet_bytes": packet_bytes,
         }
 
     def _purge_column(self, model, column: str, cutoff: datetime) -> tuple[int, int]:
@@ -205,6 +227,14 @@ class RetentionService:
 
         return rows_done, bytes_done
 
+    @staticmethod
+    def _cutoff_ts(cutoff: datetime) -> float:
+        # cutoff comes from utcnow(), which is naive -- .timestamp() on a naive
+        # datetime reads it as *local* time, which would shift the window by the
+        # host's UTC offset. Say the frame explicitly so the comparison against
+        # st_mtime (epoch seconds, UTC) is right wherever this runs.
+        return cutoff.replace(tzinfo=timezone.utc).timestamp()
+
     def _aged_logs(self, cutoff: datetime) -> tuple[list[Path], int]:
         """Log files older than the cutoff, and their total size.
 
@@ -212,29 +242,82 @@ class RetentionService:
         do carry a timestamp, but a name is a claim and a stat is a fact, and a
         file whose name will not parse should not therefore become immortal.
         """
-        log_dir = self.log_dir
-        if log_dir is None or not log_dir.is_dir():
-            return [], 0
-
-        # cutoff comes from utcnow(), which is naive -- .timestamp() on a naive
-        # datetime reads it as *local* time, which would shift the window by the
-        # host's UTC offset. Say the frame explicitly so the comparison against
-        # st_mtime (epoch seconds, UTC) is right wherever this runs.
-        cutoff_ts = cutoff.replace(tzinfo=timezone.utc).timestamp()
+        cutoff_ts = self._cutoff_ts(cutoff)
         aged, total = [], 0
-        for entry in log_dir.iterdir():
-            # No recursion, no symlink following, nothing but plain .log files
-            # directly in this directory.
-            if entry.suffix != LOG_SUFFIX or entry.is_symlink() or not entry.is_file():
+        for log_dir in self.log_dirs:
+            if not log_dir.is_dir():
                 continue
-            try:
-                stat = entry.stat()
-            except OSError:
+            for entry in log_dir.iterdir():
+                # No recursion, no symlink following, nothing but plain .log files
+                # directly in this directory.
+                if entry.suffix != LOG_SUFFIX or entry.is_symlink() or not entry.is_file():
+                    continue
+                try:
+                    stat = entry.stat()
+                except OSError:
+                    continue
+                if stat.st_mtime < cutoff_ts:
+                    aged.append(entry)
+                    total += stat.st_size
+        return aged, total
+
+    def _aged_packet_files(self, cutoff: datetime) -> tuple[list[Path], int]:
+        """Packet files of a never-repeating game, older than the cutoff.
+
+        One still waiting in outbound for a board that has not downloaded it
+        stays, however old: deleting it would lose the packet, not an archive
+        copy of it.
+        """
+        if self.data_dir is None:
+            return [], 0
+        from backend.models.database import Packet
+        from backend.services.games import GAMES
+        from backend.services.providers import provider_for
+
+        expiring = [g for g in GAMES if provider_for(g.letter).expire_packet_files]
+        if not expiring:
+            return [], 0
+        cutoff_ts = self._cutoff_ts(cutoff)
+        aged, total = [], 0
+        for sub in PACKET_SUBDIRS:
+            directory = self.data_dir.joinpath(*sub)
+            if not directory.is_dir():
                 continue
-            if stat.st_mtime < cutoff_ts:
+            for entry in directory.iterdir():
+                if entry.is_symlink() or not entry.is_file():
+                    continue
+                if not any(g.parse_packet_name(entry.name) for g in expiring):
+                    continue
+                try:
+                    stat = entry.stat()
+                except OSError:
+                    continue
+                if stat.st_mtime >= cutoff_ts:
+                    continue
+                if sub == ("packets", "outbound") and self.db.query(Packet.id).filter(
+                        Packet.filename == entry.name.upper(),
+                        Packet.downloaded_at.is_(None)).first():
+                    continue
                 aged.append(entry)
                 total += stat.st_size
         return aged, total
+
+    def purge_packet_files(self, cutoff: datetime | None = None) -> tuple[int, int]:
+        """Delete aged packet files of never-repeating games. The rows stay."""
+        if not self.enabled:
+            return 0, 0
+        aged, _ = self._aged_packet_files(cutoff or self.cutoff())
+        deleted, freed = 0, 0
+        for entry in aged:
+            try:
+                size = entry.stat().st_size
+                entry.unlink()
+            except OSError as e:
+                logger.warning(f"retention: could not delete {entry.name}: {e}")
+                continue
+            deleted += 1
+            freed += size
+        return deleted, freed
 
     def purge_logs(self, cutoff: datetime | None = None) -> tuple[int, int]:
         """Delete aged dosemu transcripts from disk.
@@ -243,7 +326,7 @@ class RetentionService:
         removed is a permissions problem for an operator, and it must not be able
         to abort a retention pass that has real database work left to do.
         """
-        if not self.enabled or self.log_dir is None:
+        if not self.enabled or not self.log_dirs:
             return 0, 0
 
         aged, _ = self._aged_logs(cutoff or self.cutoff())

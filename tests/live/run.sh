@@ -38,14 +38,12 @@ for arg in "$@"; do
 done
 
 if (( setup )); then
-    # Only the rig's own additions. The base environment is deliberately left
-    # alone -- see the note in tests/live/requirements.txt about the aiohttp pin.
+    # nova-hub's own pins plus the rig's additions: see tests/live/requirements.txt
     "$PYTHON" -m pip install -r "$LIVE_DIR/requirements.txt"
 fi
 
 # sr_harness drives the games (and brings pyte, its screen emulator), and
-# bre_agent is what player.py asks for decisions. Neither is in nova-hub's own
-# requirements: they belong to the rig, and the rig venv is built once per
+# bre_agent is what player.py asks for decisions. The rig venv is built once per
 # machine, so a rebuilt or fresh host is exactly where they go missing.
 missing=$("$PYTHON" - <<'EOF'
 import importlib.util

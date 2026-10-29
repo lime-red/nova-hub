@@ -129,8 +129,11 @@ def _play(node, prefix, days, tag):
     return out
 
 
-def _play_until(node, prefix, want, tag, max_days=15):
+def _play_until(node, prefix, want, tag, max_days=15, enough=None):
     """Play game days until `want` packets have been emitted.
+
+    Or, given `enough`, until `enough(packets)` is true as well, for a test that
+    needs traffic of a particular shape and not just a quantity of it.
 
     Bounded-length rather than fixed-length ON PURPOSE. Which game day emits is
     a property of the calendar the faked dates land on, not of the game day's
@@ -140,7 +143,7 @@ def _play_until(node, prefix, want, tag, max_days=15):
     Returns (days, packets): one entry per day played, and the flat list.
     """
     days, packets = [], []
-    while len(packets) < want:
+    while len(packets) < want or (enough and not enough(packets)):
         if len(days) >= max_days:
             raise AssertionError(
                 f"only {len(packets)} packet(s) in {max_days} game days "
@@ -401,11 +404,20 @@ async def test_the_gap_detector_stays_quiet_when_nothing_was_lost(pristine, hub)
 async def test_a_route_below_the_minimum_sample_is_left_noisy(pristine, hub):
     """The other half of the trade, asserted so it cannot be tuned away quietly.
 
-    A young route is NOT exempted. Three packets from an idle league read
-    [2, 7, 9] -- a real density of 0.286, far below DENSITY_THRESHOLD -- and the
-    detector still alerts on all five unused numbers, because
+    A young route is NOT exempted. A handful of packets from an idle league,
+    say [2, 7, 9] -- a real density of 0.286, far below DENSITY_THRESHOLD --
+    and the detector still alerts on every unused number, because
     MIN_PACKETS_FOR_DENSITY has not been reached and it will not excuse a route
     on that little evidence.
+
+    It has to be a route whose stride is unproven, which is a property of the
+    calendar and not of the hub, so the test plays until it has one. Every game
+    day uses one sequence number and every packet one more, so a route's deltas
+    are "days since the last packet, plus one". Three packets on three
+    consecutive days read [2, 4, 6]: route_stride() learns a stride of 2 from
+    that, as designed (MIN_DELTAS_FOR_STRIDE), nothing is a gap, and the route
+    is quiet for a reason that has nothing to do with the density gate. That is
+    what DAY1 = 2026-10-30 dealt, and this test failed on it.
 
     This is the deliberate cost of the gate above, and it is the knob someone
     would reach for first if these alerts became annoying. Lowering
@@ -422,17 +434,24 @@ async def test_a_route_below_the_minimum_sample_is_left_noisy(pristine, hub):
     pristine("900B")
     hub.seed(["900B"])
 
-    _, packets = _play_until(NODE02, ROUTE_02, 3, "n")
+    validator = SequenceValidator(hub.db)
+
+    # Up to 7 packets over 16 game days, measured from DAY1 = 2026-10-30.
+    _, packets = _play_until(
+        NODE02, ROUTE_02, 3, "n", max_days=40,
+        enough=lambda p: validator.route_stride(_numbers(p)) == 1,
+    )
     for name, payload in packets:
         hub.deliver(name, payload)
 
     numbers = _numbers(packets)
     assert len(numbers) < MIN_PACKETS_FOR_DENSITY, (
         f"this test is about the below-minimum case and the route now has "
-        f"{len(numbers)} packets"
+        f"{len(numbers)} packets: it took that many for the stride to stop "
+        f"looking regular ({numbers})"
     )
+    assert validator.route_stride(numbers) == 1, numbers
 
-    validator = SequenceValidator(hub.db)
     assert validator.numbers_densely(numbers) is True, (
         f"a {len(numbers)}-packet route should be treated as dense regardless "
         f"of its apparent density ({numbers}), so that it stays noisy"

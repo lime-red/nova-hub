@@ -20,7 +20,11 @@ What each one proves, and what a regression would look like if it failed:
 - a packet signed with another key is refused by the board it reaches, however
   faithfully the hub carried it;
 - with nothing to say, the league is quiet: a sync with nothing in it starts no
-  run (the eqx-hl loop of 2026-10-29 was the opposite).
+  run (the eqx-hl loop of 2026-10-29 was the opposite);
+- a new day rolled over by -maint while barons are in the game, one at a menu
+  and one part-way through a turn, gives both the day's turns and costs neither
+  a save (broken: a session fails its save and drops the caller, or the turn in
+  hand is lost or charged to the day that ended).
 
 A new league is noisy before it is quiet: until a board plays the league's
 rules, the Coordinator and the other members hold its packets and say so, and
@@ -31,8 +35,11 @@ after that.
 """
 import json
 import shutil
+import time
+from datetime import datetime, timedelta
 
 from rig.ib_league import TURNS_PER_DAY, _new_game, ib, parse_name
+from rig.ib_player import Player
 
 # What the Coordinator's run says about a board that has not adopted the
 # league's rules yet: its packets are held, and the run exits 1.
@@ -228,3 +235,92 @@ def test_a_league_with_nothing_to_say_is_quiet(ib_league):
     for board in league.boards.values():
         board.sync()
     assert len(league.runs()) == runs, league.runs()
+
+
+def _clock_before_midnight(lead: int):
+    """An IB_CLOCK_OFFSET that puts the game `lead` seconds before the end of
+    tomorrow, and the time.monotonic() at which its clock reaches midnight.
+
+    Tomorrow rather than today, so the shift is forwards whatever the hour (IB
+    makes a backwards one be asked for twice), and the first -maint under it
+    starts a fresh game day of its own. One offset for every process: each one
+    reads the real clock plus the same shift, so they pass midnight together,
+    as a BBS's door and its maintenance do.
+    """
+    now = datetime.now()
+    end_of_tomorrow = datetime.combine(now.date() + timedelta(days=2), datetime.min.time())
+    shift = int((end_of_tomorrow - now).total_seconds()) - lead
+    midnight_in = (end_of_tomorrow - now).total_seconds() - shift
+    return f"{shift}s", time.monotonic() + midnight_in, (now + timedelta(seconds=shift)).date()
+
+
+def _ours(board) -> dict:
+    return {k: v for k, v in board.turns_left().items() if k in ("Idleton", "Busyburg")}
+
+
+# Time before the game's midnight for both barons to make realms and play a turn.
+LEAD = 90
+
+
+def test_a_new_day_while_barons_are_playing(ib_league):
+    """-maint rolls the day over under two barons in the game on board 02.
+
+    On a BBS, the client's daemon runs -maint on its schedule, whoever is
+    playing; the first run after midnight is the one that starts a new day:
+    fresh turns for every realm, and any turn left uncommitted abandoned (IB
+    #10). A caller can be anywhere in the game when it happens. Here one sits
+    at the Entry menu and one is in the middle of a turn, with a turn behind
+    each of them, when the game clock passes midnight and -maint runs.
+    """
+    league = ib_league
+    league.settle(SETTLES_WITHIN)
+    board = league.boards[2]
+    binary = league.build.binary
+    clock, midnight, day = _clock_before_midnight(LEAD)
+    new_day = (day + timedelta(days=1)).isoformat()
+
+    opened = board.maint(clock)
+    assert "Daily maintenance ran" in opened.stdout, opened.stdout + opened.stderr
+
+    idle = Player(binary, board.data, "Idler", clock)
+    busy = Player(binary, board.data, "Busy", clock)
+    try:
+        for player, realm in ((idle, "Idleton"), (busy, "Busyburg")):
+            player.create_realm(realm)
+            # The menus count the turn in hand as spent; the save, not until it ends.
+            assert player.play() == TURNS_PER_DAY - 1, player.tail()
+            player.finish_turn()
+        idle.stop_playing()  # at the Entry menu
+        busy.next_turn()  # in the buy menu, a turn under way
+        assert _ours(board) == {"Idleton": TURNS_PER_DAY - 1,
+                                      "Busyburg": TURNS_PER_DAY - 1}
+        assert time.monotonic() < midnight, (
+            f"the barons took longer than LEAD ({LEAD}s) to be in place before midnight")
+
+        time.sleep(max(0.0, midnight - time.monotonic()) + 2)
+        rolled = board.maint(clock)
+        output = rolled.stdout + rolled.stderr
+        assert "advanced 1 day(s)" in rolled.stdout, output
+        assert rolled.returncode == 0, output
+        assert board.world()["LastMaintDate"] == new_day, output
+        # Every realm has the new day's turns, the one mid-turn included.
+        assert _ours(board) == {"Idleton": TURNS_PER_DAY, "Busyburg": TURNS_PER_DAY}
+
+        # The turn in hand finishes, and is charged to the new day, once.
+        busy.finish_turn()
+        busy.stop_playing()
+        # The baron at the menu plays on into the new day.
+        assert idle.play() == TURNS_PER_DAY - 1, idle.tail()
+        idle.finish_turn()
+        idle.stop_playing()
+        statuses = {"Idler": idle.quit(), "Busy": busy.quit()}
+    finally:
+        idle.kill()
+        busy.kill()
+
+    # A failed save ends a session with an error; both left as callers do.
+    assert statuses == {"Idler": 0, "Busy": 0}, f"{idle.tail()}\n---\n{busy.tail()}"
+    world = board.world()
+    assert world["LastMaintDate"] == new_day
+    assert _ours(board) == {"Idleton": TURNS_PER_DAY - 1,
+                                  "Busyburg": TURNS_PER_DAY - 1}, busy.tail()

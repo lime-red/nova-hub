@@ -18,7 +18,9 @@ state = "QLD"
 country = "AUS"
 
 [processing]
-poll_interval = 60
+# Seconds to wait after an upload before processing, so the rest of a
+# client's sync joins the same run.
+settle_seconds = 5
 # Days of bulk content to keep. Dosemu transcripts and the bodies of generated
 # files older than this are dropped; the run rows, their counts and their
 # per-league attribution are kept. 0 disables the pass entirely.

@@ -276,3 +276,11 @@ class TestRunStatus:
 
 async def _noop(*args, **kwargs):
     return None
+
+
+def test_a_hub_with_no_dosemu_section_can_be_built(db_session, tmp_path):
+    """A hub that runs only native games has no [dosemu]; the runner is built
+    only when a dosemu game needs it."""
+    service = ProcessingService(db_session, {"server": {"data_dir": str(tmp_path)},
+                                             "hub": {"bbs_index": "01"}})
+    assert service._dosemu_runner is None

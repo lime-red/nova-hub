@@ -26,6 +26,10 @@ import shutil
 
 from rig.ib_league import TURNS_PER_DAY, _new_game, parse_name
 
+# What the Coordinator's run says about a board that has not adopted the
+# league's rules yet: its packets are held, and the run exits 1.
+HELD = "are being held: the rules it is playing by are not the league's"
+
 
 def _by_name(paths):
     return {p.name.upper(): p for p in paths}
@@ -51,9 +55,13 @@ def test_boards_join_and_play_the_league_rules(ib_league):
         assert board.outbound(), f"board {board.index:02d} wrote nothing on its first -maint"
         board.sync()
         assert board.outbound() == [], f"board {board.index:02d} left {board.outbound()}"
+    # A newcomer is not yet playing the league's rules, so the Coordinator holds
+    # what it sends until it is, and its run exits 1 to say so: the hub reports
+    # that run failed, once per board that joins. Anything else is a real fault.
     runs = league.runs()
     assert runs, f"the hub never ran its game:\n{league.hub_log()[-3000:]}"
-    assert all(r["status"] == "completed" for r in runs), runs
+    for run in runs:
+        assert run["status"] == "completed" or HELD in (run["error_message"] or ""), runs
 
     # 3. Each takes the answer, and plays the Coordinator's rules from then on.
     for board in boards:
@@ -64,6 +72,13 @@ def test_boards_join_and_play_the_league_rules(ib_league):
         assert "verified orders" in log, f"board {board.index:02d}:\n{log}\n{result.stdout}"
         assert "refused" not in log.lower(), log
         assert board.rules()["TurnsPerDay"] == TURNS_PER_DAY
+
+    # 4. Once they play by the rules, the Coordinator takes their mail cleanly.
+    seen = len(runs)
+    for board in boards:
+        board.sync()
+    later = league.runs()[seen:]
+    assert later and all(r["status"] == "completed" for r in later), later
 
     # A Coordinator broadcast is a row per member, each fetched once; never the hub.
     broadcasts = {}

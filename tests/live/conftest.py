@@ -145,3 +145,55 @@ def hub_factory(tmp_path, rig_available):
     yield _make
     for ctx in created:
         ctx.__exit__(None, None, None)
+
+
+# -- Immortal Barons -------------------------------------------------------------
+
+def pytest_generate_tests(metafunc):
+    """Every IB scenario runs once per build rig.ib_builds chose: release and trunk.
+
+    The ids name what was played (release-v0.2.6, trunk-75058b5), so a report
+    says which build a failure belongs to without opening current.json.
+    """
+    if "ib_build" not in metafunc.fixturenames:
+        return
+    from rig.ib_league import builds
+    from rig.layout import IB_KINDS
+
+    chosen = builds()
+    params, ids = [], []
+    for kind in IB_KINDS:
+        entry = chosen.get(kind)
+        params.append((kind, entry))
+        if entry and "binary" in entry:
+            ids.append(f"{kind}-{entry['ref'] if kind == 'release' else entry['commit'][:7]}")
+        else:
+            ids.append(kind)
+    metafunc.parametrize("ib_build", params, ids=ids, indirect=True)
+
+
+@pytest.fixture
+def ib_build(request, rig_available):
+    """The IB this run plays. A build that failed is a failure, not a skip: trunk
+    no longer building is exactly what a nightly run is there to say."""
+    from rig.ib_league import Build
+
+    kind, entry = request.param
+    if not entry:
+        pytest.skip(f"no IB {kind} build recorded; run.sh makes them (python -m rig.ib_builds)")
+    if "error" in entry:
+        pytest.fail(f"IB {kind} {entry.get('ref', '')}: {entry['error']}", pytrace=False)
+    return Build(kind=kind, ref=entry["ref"], commit=entry.get("commit", ""),
+                 binary=Path(entry["binary"]), version=entry["version"])
+
+
+@pytest.fixture
+def ib_league(tmp_path, ib_build):
+    """League 900I, started: the hub serving, boards 02 and 03 set up but not synced."""
+    from rig.ib_league import IbLeague
+
+    league = IbLeague(tmp_path, ib_build)
+    try:
+        yield league.start()
+    finally:
+        league.stop()

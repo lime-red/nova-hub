@@ -5,6 +5,7 @@
 #   ssh novatest-hl 'sudo -u novahub-t /srv/novatest/nova-hub/tests/live/run.sh --build'
 #   ssh novatest-hl 'sudo -u novahub-t /srv/novatest/nova-hub/tests/live/run.sh --setup'
 #   ssh novatest-hl 'sudo -u novahub-t /srv/novatest/nova-hub/tests/live/run.sh --try my-branch -k ib'
+#   ssh novatest-hl 'sudo -u novahub-t /srv/novatest/nova-hub/tests/live/run.sh --client my-branch -k ib'
 #
 # --build provisions all six installs and captures pristine fixtures. It is a
 # once-per-machine step; every run after that restores from those fixtures.
@@ -23,6 +24,11 @@
 # whose requirements differ from this checkout's gets a warning, not its own.
 # Remove a finished one with: git -C /srv/novatest/nova-hub worktree remove <dir>
 #
+# Every run also readies what the Immortal Barons scenarios play: the latest IB
+# release and IB trunk (rig.ib_builds, which downloads or builds them), and
+# nova-client at --client REF, default main (rig.nova_client). Pin IB with
+# IB_RELEASE=<tag> or IB_TRUNK=<commit> in the environment.
+#
 # Everything here is leagues 900B and 901B on novatest-hl. Nothing in this tree
 # touches a production host or a production league number.
 set -euo pipefail
@@ -39,6 +45,7 @@ fi
 build=0
 setup=0
 try_ref=""
+client_ref=main
 args=()
 while (( $# )); do
     case "$1" in
@@ -47,6 +54,9 @@ while (( $# )); do
         --try)
             [[ $# -ge 2 ]] || { echo "--try needs a branch, tag or commit" >&2; exit 2; }
             try_ref="$2"; shift ;;
+        --client)
+            [[ $# -ge 2 ]] || { echo "--client needs a branch, tag or commit" >&2; exit 2; }
+            client_ref="$2"; shift ;;
         *) args+=("$1") ;;
     esac
     shift
@@ -89,6 +99,7 @@ if [[ -n "$try_ref" ]]; then
     echo "trying $try_ref at $(git -C "$tree" log -1 --format='%h %s') in $tree" >&2
     if (( build )); then args=(--build "${args[@]}"); fi
     if (( setup )); then args=(--setup "${args[@]}"); fi
+    args=(--client "$client_ref" "${args[@]}")
     exec "$tree/tests/live/run.sh" "${args[@]}"
 fi
 
@@ -144,6 +155,12 @@ if (( build )); then
     # processed a packet.
     ( cd "$LIVE_DIR" && "$PYTHON" -m rig.build )
 fi
+
+# Immortal Barons: both builds, and the client that syncs the boards. A build
+# that cannot be had is recorded, and its scenarios fail saying why, so neither
+# step stops the BRE and FE scenarios from running.
+( cd "$LIVE_DIR" && "$PYTHON" -m rig.ib_builds ) || echo "WARNING: rig.ib_builds failed; the IB scenarios will say why" >&2
+( cd "$LIVE_DIR" && "$PYTHON" -m rig.nova_client "$client_ref" ) || echo "WARNING: rig.nova_client failed; the IB scenarios cannot sync" >&2
 
 # pytest is run from /tmp: the repo is read-only to the node users and pytest
 # wants somewhere to write its cache.

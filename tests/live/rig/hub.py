@@ -64,7 +64,7 @@ def hub_config(data_dir: Path, term: str = "linux", leagues=None,
     return {
         "server": {"host": "127.0.0.1", "port": 8900, "data_dir": str(data_dir)},
         "hub": {"bbs_name": hub.name, "bbs_index": f"{HUB_INDEX:02d}"},
-        "processing": {"poll_interval": 3600, "retention_days": 30},
+        "processing": {"retention_days": 30},
         "dosemu": dosemu,
         "database": {"path": str(data_dir / "nova-hub.db")},
         "security": {

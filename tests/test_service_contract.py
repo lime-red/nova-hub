@@ -137,7 +137,8 @@ def test_a_download_is_stamped_in_utc_and_said_so(hub, far_from_utc):
     (data_dir / "packets" / "outbound" / "555B0102.001").write_bytes(b"packet")
     db.add(Packet(filename="555B0102.001", league_id=league.id, source_bbs_index="01",
                   dest_bbs_index="02", sequence_number=1, file_size=6,
-                  uploaded_at=utcnow() - timedelta(minutes=5)))
+                  uploaded_at=utcnow() - timedelta(minutes=5),
+                  processed_at=utcnow() - timedelta(minutes=4)))
     db.commit()
     headers = _bearer(client)
 
@@ -232,3 +233,24 @@ def test_the_spec_says_the_packet_endpoints_carry_bytes():
     assert "application/octet-stream" in nodelist["responses"]["200"]["content"]
     assert "304" in nodelist["responses"]
     assert {"If-None-Match", "If-Modified-Since"} <= {p["name"] for p in nodelist["parameters"]}
+
+
+def test_a_packet_is_listed_only_once_it_can_be_downloaded(hub):
+    """Uploads land in hub inbound; processing puts them in outbound. A row
+    listed before that is a download that 404s."""
+    client, db, league, data_dir = hub
+    db.add(Packet(filename="555B0302.001", league_id=league.id, source_bbs_index="03",
+                  dest_bbs_index="02", sequence_number=1, file_size=6))
+    db.commit()
+    headers = _bearer(client)
+
+    assert client.get(PACKETS, headers=headers).json()["packets"] == []
+
+    (data_dir / "packets" / "outbound").mkdir(parents=True)
+    (data_dir / "packets" / "outbound" / "555B0302.001").write_bytes(b"packet")
+    db.query(Packet).one().processed_at = utcnow()
+    db.commit()
+
+    listed = client.get(PACKETS, headers=headers).json()["packets"]
+    assert [p["filename"] for p in listed] == ["555B0302.001"]
+    assert client.get(f"{PACKETS}/555B0302.001", headers=headers).status_code == 200

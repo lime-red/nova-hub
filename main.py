@@ -70,6 +70,17 @@ async def lifespan(app: FastAPI):
     # blanks bulk columns instead of deleting rows.
     app.state.retention_task = asyncio.create_task(_retention_loop(config))
 
+    # Processing starts on an upload, so packets left unprocessed when the hub
+    # stopped would otherwise wait for the next one.
+    from backend.models.database import Packet
+    from backend.services.processing_service import trigger_processing
+    pending_db = get_session()
+    try:
+        if pending_db.query(Packet.id).filter(Packet.processed_at == None).first():
+            trigger_processing()
+    finally:
+        pending_db.close()
+
     logger.info("Nova Hub started successfully")
 
     yield

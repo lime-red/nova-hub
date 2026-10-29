@@ -41,7 +41,7 @@ def build_config(data_dir: Path, port: int, public_url: str) -> dict:
     config["server"]["port"] = port
     # Claim links and the configs they hand out carry this address.
     config["server"]["public_url"] = public_url
-    config["processing"]["poll_interval"] = 0
+    config["processing"]["settle_seconds"] = 0
     return config
 
 

@@ -9,7 +9,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from backend.core.clock import utcnow
-from backend.core.config import default_config_path
+from backend.core.config import ProcessingConfig, default_config_path
 from backend.models.database import League, Packet, ProcessingRun
 from backend.core.database import get_session
 from backend.logging_config import get_logger
@@ -98,6 +98,9 @@ async def process_batch():
         return
 
     try:
+        # A client uploads one packet per request, so a sync of several would
+        # otherwise start a run per packet. Uploads in the pause join this run.
+        await asyncio.sleep(_settle_seconds())
         while True:
             _rerun = False
             await _process_once()
@@ -106,6 +109,16 @@ async def process_batch():
             logger.info("Packets arrived during the run; processing again")
     finally:
         _processing_lock.release()
+
+
+def _settle_seconds() -> int:
+    default = ProcessingConfig().settle_seconds
+    try:
+        section = toml.load(default_config_path()).get("processing", {})
+        return max(0, int(section.get("settle_seconds", default)))
+    except Exception as e:
+        logger.warning(f"Could not read [processing] settle_seconds, using {default}: {e}")
+        return default
 
 
 async def _process_once():
@@ -136,12 +149,23 @@ class ProcessingService:
             config = {}
         self.config = config
 
-        # DosemuRunner expects the full config
-        self.dosemu_runner = DosemuRunner(config)
+        self._dosemu_runner = None
 
         # Packets handed to a game that it never ingested, accumulated across the
         # league groups of one batch. See step 6 of process_game_batch().
         self._unconsumed_count = 0
+
+    @property
+    def dosemu_runner(self) -> DosemuRunner:
+        """Built when a dosemu game first needs it, so a hub that runs only
+        native games needs no [dosemu] section."""
+        if self._dosemu_runner is None:
+            self._dosemu_runner = DosemuRunner(self.config)
+        return self._dosemu_runner
+
+    @dosemu_runner.setter
+    def dosemu_runner(self, runner: DosemuRunner):
+        self._dosemu_runner = runner
 
     async def process_batch(self, also: tuple = ()) -> Optional[ProcessingRun]:
         """Process all unprocessed packets, and return the run (None if there

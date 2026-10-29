@@ -40,7 +40,9 @@ class HubConfig(BaseModel):
 
 class ProcessingConfig(BaseModel):
     """Packet processing configuration"""
-    poll_interval: int = 60
+    # Seconds to wait after an upload before processing, so the rest of a
+    # client's sync joins the same run. See processing_service.process_batch.
+    settle_seconds: int = 5
     # Days of bulk content to keep. Dosemu transcripts and generated file bodies
     # older than this are dropped; the rows themselves, and every count on them,
     # are kept. 0 disables the pass. See backend/services/retention_service.py.

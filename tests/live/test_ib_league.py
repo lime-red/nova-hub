@@ -73,7 +73,12 @@ def test_boards_join_and_settle_into_the_league_rules(ib_league):
         assert run["status"] == "completed" or HELD in (run["error_message"] or ""), runs
 
     # 3. Within a few exchanges every board plays the Coordinator's rules, has
-    #    taken its signed orders, and nothing is held anywhere.
+    #    taken its signed orders, and nothing is held anywhere. Both boards wrote
+    #    to each other before either had the rules, as two boards joining at once
+    #    do, so each holds the other's opening packets until the sender is back
+    #    in step. (IB trunk 514557a, 2026-10-27, keeps re-reporting such a hold
+    #    on every run until the packet expires: the check that should stop it
+    #    reads a ruleset fingerprint the report itself has just reset.)
     rounds = league.settle(SETTLES_WITHIN)
     print(f"{league.build.version}: quiet after {rounds} round(s)")
     for board in boards:
@@ -82,6 +87,9 @@ def test_boards_join_and_settle_into_the_league_rules(ib_league):
         assert board.inbound() == [], f"board {board.index:02d} left {board.inbound()}"
 
     # A Coordinator broadcast is a row per member, each fetched once; never the hub.
+    # settle() ends on an upload, so the hub's answer to it is fetched first.
+    for board in boards:
+        board.sync()
     broadcasts = {}
     for p in league.packets():
         name = parse_name(p["filename"])

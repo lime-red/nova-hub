@@ -180,11 +180,7 @@ class Board:
 
     def roster_boards(self) -> list:
         """The node numbers in this board's ibnodes.dat, as the game would read them."""
-        path = self.data / "ibnodes.dat"
-        if not path.exists():
-            return []
-        entries = path.read_text().replace("\r\n", "\n").strip().split("\n\n")
-        return sorted(int(e.split("\n")[0].split()[0]) for e in entries if e.strip())
+        return roster_numbers(self.data / "ibnodes.dat")
 
     def league_check(self) -> str:
         result = ib(self.league.build.binary, self.data, "-league-check")
@@ -326,7 +322,15 @@ class IbLeague:
         answer packets already in flight. A round with none on any board, and no
         failed hub run, is the steady state; measured on the rig 2026-10-29, a new
         two-board league reaches it on round 4 on v0.2.6 and round 3 on trunk.
+
+        Quiet is not enough on its own: a board that goes first in a round can be
+        quiet and still a roster behind, because the broadcast that carries the
+        new one comes from a hub run later in the same round. So the league is
+        settled when a round is quiet and every board holds the hub's roster and
+        plays its rules.
         """
+        hub_roster = roster_numbers(self.game / "ibnodes.dat")
+        hub_rules = json.loads((self.game / "config.json").read_text())["TurnsPerDay"]
         for rounds in range(1, max_rounds + 1):
             marks = {i: b.log_mark() for i, b in self.boards.items()}
             first_run = len(self.runs())
@@ -336,12 +340,16 @@ class IbLeague:
                 board.sync()
             noisy = {i: b.faults_since(marks[i]) for i, b in self.boards.items()}
             failed = [r for r in self.runs()[first_run:] if r["status"] != "completed"]
-            if not any(noisy.values()) and not failed:
+            behind = {i: (b.roster_boards(), b.rules().get("TurnsPerDay"))
+                      for i, b in self.boards.items()
+                      if b.roster_boards() != hub_roster or b.rules().get("TurnsPerDay") != hub_rules}
+            if not any(noisy.values()) and not failed and not behind:
                 return rounds
         raise AssertionError(
             f"league 900I still not quiet after {max_rounds} rounds:\n"
             + "\n".join(f"board {i:02d}: {lines}" for i, lines in noisy.items() if lines)
-            + (f"\nhub runs: {failed}" if failed else ""))
+            + (f"\nhub runs: {failed}" if failed else "")
+            + (f"\nbehind the hub's roster {hub_roster} or rules: {behind}" if behind else ""))
 
     def wait_idle(self, timeout: float = 120) -> None:
         """Until every packet the hub holds has been processed and no run is going.
@@ -391,6 +399,14 @@ class IbLeague:
 
     def game_file(self, name: str) -> Path:
         return self.game / name
+
+
+def roster_numbers(path: Path) -> list:
+    """The node numbers in an ibnodes.dat: the first word of each blank-line block."""
+    if not path.exists():
+        return []
+    entries = path.read_text().replace("\r\n", "\n").strip().split("\n\n")
+    return sorted(int(e.split("\n")[0].split()[0]) for e in entries if e.strip())
 
 
 def _free_port() -> int:

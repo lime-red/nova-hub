@@ -4,6 +4,8 @@ All notable changes to Nova Hub will be documented in this file.
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-30
+
 ### Security
 - **A member can no longer speak for the coordinator.** League settings and
   the reset history came from any uploaded packet's Configupdate or Game

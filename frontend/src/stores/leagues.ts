@@ -65,6 +65,9 @@ export interface LeagueDetail {
   available_clients: AvailableClient[]
   stats: LeagueStats
   nodelist?: NodelistInfo | null  // null until one has been generated
+  // Immortal Barons: what members record with -coord-key; the problem is admin-only
+  coordinator_key?: string | null
+  coordinator_key_problem?: string | null
 }
 
 export interface NodelistInfo {

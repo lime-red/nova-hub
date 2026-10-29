@@ -262,6 +262,63 @@ Validation Error
 
 ---
 
+### GET `/service/api/v1/leagues/{league_id}/coordinator-key`
+
+**Get Coordinator Key**
+
+The League Coordinator's public key, for an Immortal Barons league
+
+**Path Parameters:**
+- `league_id`: League identifier with game type, e.g. "555I"
+
+**Returns:** `public_key`, the 64 hex characters a board records with
+`immortal-barons -coord-key <key> -data <its data directory>`.
+
+**Description:**
+The hub is node 1, the League Coordinator: its game signs the league's
+rules and roster, and a board refuses them until it holds this key. The
+game will not take the key from a packet, since a key that arrived in one
+would prove nothing, so it comes from here instead, over the client's own
+authenticated connection. It is a public key; it lets a board check the
+Coordinator's orders, not issue them.
+
+Fetch it once, when the board joins. It changes only if the league changes
+Coordinator.
+
+**Authentication:** Requires Bearer token and league membership
+
+**Errors:** 404 if the league is not an Immortal Barons league, or the
+hub has no Coordinator key for it yet.
+
+#### Parameters
+
+**league_id**
+  - Type: `string`
+  - Location: path *(required)*
+  - Pattern: `^(\d{3})([BFIbfi])$`
+
+#### Responses
+
+#### 200
+
+Successful Response
+
+
+**Content-Type:** `application/json`
+
+#### 422
+
+Validation Error
+
+
+**Content-Type:** `application/json`
+
+#### Security
+
+- **OAuth2PasswordBearer**
+
+---
+
 ## Service API - Packets
 
 ### PUT `/service/api/v1/leagues/{league_id}/packets/{filename}`

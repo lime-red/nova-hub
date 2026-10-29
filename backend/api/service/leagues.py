@@ -1,4 +1,4 @@
-"""Service API league operations (nodelist download)"""
+"""Service API league operations (nodelist and Coordinator key download)"""
 
 import hashlib
 from email.utils import formatdate, parsedate_to_datetime
@@ -14,10 +14,12 @@ from backend.core.database import get_db
 from backend.core.security import get_current_client
 from backend.logging_config import get_logger
 from backend.models.database import Client, League, LeagueMembership, Packet
+from backend.schemas.leagues import CoordinatorKeyResponse
 from backend.schemas.packets import BINARY
 from backend.services.games import LEAGUE_ID_REGEX, game_for_letter
 from backend.services.league_utils import board_hex, parse_league_id
 from backend.services.processing_service import find_file_case_insensitive
+from backend.services.providers import provider_for
 
 logger = get_logger(context="service_leagues")
 
@@ -57,6 +59,35 @@ def _is_not_modified(request: Request, etag: str, mtime: float) -> bool:
         return int(mtime) <= int(since.timestamp())
 
     return False
+
+
+def _member_league(db: Session, client: Client, league_id: str) -> tuple[League, LeagueMembership]:
+    """The league league_id names and the client's active membership of it:
+    404 if there is no such league, 403 if the client is not in it."""
+    league_number, league_game_type = parse_league_id(league_id)
+    league = (
+        db.query(League)
+        .filter(League.league_id == league_number, League.game_type == league_game_type)
+        .first()
+    )
+    if not league:
+        raise HTTPException(status_code=404, detail=f"League {league_id} not found")
+
+    membership = (
+        db.query(LeagueMembership)
+        .filter(
+            LeagueMembership.client_id == client.id,
+            LeagueMembership.league_id == league.id,
+            LeagueMembership.is_active == True,  # noqa: E712
+        )
+        .first()
+    )
+    if not membership:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Client {client.client_id} is not a member of league {league_id}",
+        )
+    return league, membership
 
 
 @router.get(
@@ -117,38 +148,8 @@ async def download_nodelist(
       -o BRNODES.555
     ```
     """
-    # Parse league_id from URL
-    league_number, league_game_type = parse_league_id(league_id)
-
-    # Get league
-    league = (
-        db.query(League)
-        .filter(
-            League.league_id == league_number,
-            League.game_type == league_game_type
-        )
-        .first()
-    )
-
-    if not league:
-        raise HTTPException(status_code=404, detail=f"League {league_id} not found")
-
-    # Check if client is a member
-    membership = (
-        db.query(LeagueMembership)
-        .filter(
-            LeagueMembership.client_id == client.id,
-            LeagueMembership.league_id == league.id,
-            LeagueMembership.is_active == True,
-        )
-        .first()
-    )
-
-    if not membership:
-        raise HTTPException(
-            status_code=403,
-            detail=f"Client {client.client_id} is not a member of league {league_id}",
-        )
+    league, membership = _member_league(db, client, league_id)
+    league_number = league.league_id
 
     game = game_for_letter(league.game_type)
     nodelist_filename = game.nodelist_filename(league_number)
@@ -210,3 +211,45 @@ async def download_nodelist(
         filename=nodelist_path.name,
         media_type="application/octet-stream",
     )
+
+
+@router.get(
+    "/{league_id}/coordinator-key", response_model=CoordinatorKeyResponse,
+    summary="Get Coordinator Key",
+)
+async def coordinator_key(
+    league_id: str = PathParam(..., pattern=LEAGUE_ID_REGEX),
+    client: Client = Depends(get_current_client),
+    db: Session = Depends(get_db),
+):
+    """
+    The League Coordinator's public key, for an Immortal Barons league
+
+    **Path Parameters:**
+    - `league_id`: League identifier with game type, e.g. "555I"
+
+    **Returns:** `public_key`, the 64 hex characters a board records with
+    `immortal-barons -coord-key <key> -data <its data directory>`.
+
+    **Description:**
+    The hub is node 1, the League Coordinator: its game signs the league's
+    rules and roster, and a board refuses them until it holds this key. The
+    game will not take the key from a packet, since a key that arrived in one
+    would prove nothing, so it comes from here instead, over the client's own
+    authenticated connection. It is a public key; it lets a board check the
+    Coordinator's orders, not issue them.
+
+    Fetch it once, when the board joins. It changes only if the league changes
+    Coordinator.
+
+    **Authentication:** Requires Bearer token and league membership
+
+    **Errors:** 404 if the league is not an Immortal Barons league, or the
+    hub has no Coordinator key for it yet.
+    """
+    league, _ = _member_league(db, client, league_id)
+    key, why_not = provider_for(league.game_type).coordinator_key(get_config(), league)
+    if key is None:
+        logger.warning(f"Client {client.client_id} asked for {league.full_id}'s Coordinator key: {why_not}")
+        raise HTTPException(status_code=404, detail=f"The hub has no Coordinator key for league {league_id}")
+    return CoordinatorKeyResponse(league_id=league.full_id, public_key=key)

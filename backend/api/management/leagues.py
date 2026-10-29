@@ -192,6 +192,8 @@ async def get_league(
         .count(),
     )
 
+    coordinator_key, coordinator_key_problem = _coordinator_key(league)
+
     return LeagueDetailResponse(
         id=league.id,
         league_id=league.league_id,
@@ -208,7 +210,19 @@ async def get_league(
         available_clients=available_list if scope.is_admin else [],
         stats=stats,
         nodelist=_nodelist_info(league),
+        coordinator_key=coordinator_key,
+        coordinator_key_problem=coordinator_key_problem if scope.is_admin else None,
     )
+
+
+def _coordinator_key(league: League) -> tuple[Optional[str], Optional[str]]:
+    """An Immortal Barons league's Coordinator key and, if there is none, why.
+    (None, None) for a game that has no such key."""
+    if league.game_type != "I":
+        return None, None
+    from backend.core.config import get_config
+    from backend.services.providers import provider_for
+    return provider_for(league.game_type).coordinator_key(get_config(), league)
 
 
 @router.post("", response_model=LeagueResponse, summary="Create League")

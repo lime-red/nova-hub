@@ -35,6 +35,7 @@ from backend.services.sequence_validator import SequenceValidator
 
 KEY_C = "4e1b9c07a3f25d81c6b40e9fa27d3358e1c0b7429dd6a85f3b1e64c0927af8d3"
 KEY_HUB = "a" * 64
+KEY_COORD = "c0" * 32
 IB = provider_for("I")
 
 FAKE_GAME = """#!/bin/sh
@@ -93,6 +94,8 @@ def hub(tmp_path, monkeypatch):
     game = tmp_path / "ib555"
     for sub in ("inbound", "outbound", "to_send"):
         (game / sub).mkdir(parents=True)
+    # What -gen-coord-key leaves beside coord.key: the public half, and a newline
+    (game / "coord.pub").write_text(KEY_COORD + "\n")
     script = tmp_path / "immortal-barons"
     script.write_text(FAKE_GAME)
     script.chmod(script.stat().st_mode | stat.S_IEXEC)
@@ -119,9 +122,10 @@ def hub(tmp_path, monkeypatch):
         a.dependency_overrides[require_admin] = lambda: Session().get(SysopUser, admin.id)
 
     real = get_config()
-    saved_raw = {k: real._raw.get(k) for k in ("server", "hub")}
+    saved_raw = {k: real._raw.get(k) for k in ("server", "hub", "ib")}
     real._raw["server"] = dict(real._raw.get("server") or {}, data_dir=str(data))
     real._raw["hub"] = dict(real._raw.get("hub") or {}, bbs_index="01")
+    real._raw["ib"] = config["ib"]
     monkeypatch.setattr(processing_service, "trigger_processing", lambda: None)
 
     yield {
@@ -358,6 +362,64 @@ def test_the_roster_goes_into_the_hubs_game_and_out_to_the_members(hub):
                    db.query(Packet).filter(Packet.filename == "IBNODES.555"))
     finally:
         db.close()
+
+
+def coordinator_key(hub, board: str, league: str = "555I"):
+    token = create_service_token(hub["boards"][board].client_id)
+    return hub["http"].get(f"/service/api/v1/leagues/{league}/coordinator-key",
+                           headers={"Authorization": f"Bearer {token}"})
+
+
+def test_a_member_gets_the_coordinator_key_from_the_hubs_game(hub):
+    r = coordinator_key(hub, "A")
+    assert r.status_code == 200, r.text
+    assert r.json() == {"league_id": "555I", "public_key": KEY_COORD}
+
+
+def test_the_coordinator_key_is_for_members_only(hub):
+    hub["db"].add(Client(client_id="outsider", client_secret="x", bbs_name="Outsider",
+                         is_active=True))
+    hub["db"].commit()
+    token = create_service_token("outsider")
+    r = hub["http"].get("/service/api/v1/leagues/555I/coordinator-key",
+                        headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 403
+    assert coordinator_key(hub, "A", league="556I").status_code == 404
+
+
+def test_no_coordinator_key_is_a_404_that_names_no_path(hub):
+    (hub["game"] / "coord.pub").unlink()
+    r = coordinator_key(hub, "A")
+    assert r.status_code == 404
+    assert str(hub["game"]) not in r.text
+    key, why_not = IB.coordinator_key(hub["config"], hub["league"])
+    assert key is None and "-gen-coord-key" in why_not
+
+
+def test_a_coordinator_key_that_is_not_a_key_is_refused(hub):
+    (hub["game"] / "coord.pub").write_text("not a key\n")
+    assert coordinator_key(hub, "A").status_code == 404
+    assert "64-character" in IB.coordinator_key(hub["config"], hub["league"])[1]
+
+
+def test_the_sr_games_have_no_coordinator_key(hub):
+    bre = League(league_id="555", game_type="B", name="BRE 555")
+    key, why_not = provider_for("B").coordinator_key(hub["config"], bre)
+    assert key is None and "does not sign" in why_not
+
+
+def test_nodelist_generation_says_when_there_is_no_coordinator_key(hub):
+    (hub["game"] / "coord.pub").unlink()
+    published, problems = IB.generate_nodelist(hub["db"], hub["config"], hub["league"])
+    assert published is not None
+    assert any("-gen-coord-key" in p for p in problems)
+
+
+def test_the_league_page_shows_the_coordinator_key(hub):
+    r = hub["http"].get(f"/management/api/v1/leagues/{hub['league'].id}")
+    assert r.status_code == 200, r.text
+    assert r.json()["coordinator_key"] == KEY_COORD
+    assert r.json()["coordinator_key_problem"] is None
 
 
 def test_a_board_key_is_64_hex_or_nothing():

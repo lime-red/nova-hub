@@ -19,6 +19,11 @@ A native Go binary, not a DOS door. What differs from the SR games, and why:
 - **Only `*.brp` is a packet** (in any case). A file renamed the FTN way on a
   duplicate, `.br1`, is never read, so nothing here renames on a collision.
   A file is staged under a non-`.brp` name and renamed into place.
+- **Members get the Coordinator's public key from the hub.** The hub's game
+  keeps it in coord.pub, beside coord.key, and a board refuses league orders
+  until it has it (-coord-key). The game will not take it from a packet, since
+  a key that arrived in one would prove nothing; the service API is a separate
+  channel, the client's own credentials over HTTPS, so it is served there.
 - **The nodelist is ibnodes.dat**: BRNODES.DAT's six lines per board, plus an
   optional seventh, the board's ed25519 public key. The hub writes it into its
   own game, which signs it and broadcasts it on every run, and also publishes
@@ -50,6 +55,8 @@ from backend.services.providers.base import (
 )
 
 BOARD_KEY = re.compile(r"[0-9a-f]{64}")
+# Written by -gen-coord-key beside coord.key (store.CoordPubFile in the game).
+COORD_PUB = "coord.pub"
 DEFAULT_ARGS = ("-maint",)
 PACKET_EXT = ".brp"
 
@@ -117,6 +124,28 @@ class ImmortalBaronsProvider(GameProvider):
         if not outbound.is_absolute():
             outbound = data / outbound
         return data, inbound, outbound
+
+    def coordinator_key(self, config: dict, league: League) -> tuple[Optional[str], Optional[str]]:
+        """coord.pub from the hub's game, as 64 lower-case hex, or None and why not.
+
+        The reason names paths, so it is for the hub's admin and log, not for a
+        client.
+        """
+        paths = self._paths(config, league)
+        if paths is None:
+            return None, f"{league.full_id}: [ib.{league.league_id}] data_dir is not set"
+        data = paths[0]
+        path = data / COORD_PUB
+        try:
+            key = path.read_text(encoding="ascii").strip().lower()
+        except FileNotFoundError:
+            return None, (f"{league.full_id}: the hub's game has no Coordinator key; run "
+                          f"immortal-barons -gen-coord-key -data {data} once, as the hub's user")
+        except (OSError, UnicodeDecodeError) as e:
+            return None, f"{league.full_id}: could not read {path}: {e}"
+        if not BOARD_KEY.fullmatch(key):
+            return None, f"{league.full_id}: {path} does not hold a 64-character hex key"
+        return key, None
 
     def _members(self, db, league: League, hub: str) -> list[LeagueMembership]:
         rows = db.query(LeagueMembership).filter(
@@ -349,6 +378,9 @@ class ImmortalBaronsProvider(GameProvider):
             problems.append(f"{league.full_id}: [ib.{league.league_id}] data_dir is not set or "
                             f"does not exist, so the hub's game was not given the roster and "
                             f"will not broadcast it")
+        key, why_not = self.coordinator_key(config, league)
+        if key is None:
+            problems.append(f"{why_not}. Until there is one, members cannot check the roster and rules the hub's game broadcasts, and refuse them")
         for p in problems:
             logger.warning(f"ibnodes: {p}")
 

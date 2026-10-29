@@ -163,6 +163,17 @@ class Board:
         path = self.data / "packet-ledger.json"
         return json.loads(path.read_text()) if path.exists() else {}
 
+    def log_mark(self) -> int:
+        return len(self.planetary_log())
+
+    def log_since(self, mark: int) -> str:
+        return self.planetary_log()[mark:]
+
+    def faults_since(self, mark: int) -> list:
+        """planetary.log lines since `mark` that report something held or refused."""
+        return [line for line in self.log_since(mark).splitlines()
+                if "held" in line or "refused" in line.lower()]
+
     def planetary_log(self) -> str:
         path = self.data / "planetary.log"
         return path.read_text(errors="replace") if path.exists() else ""
@@ -305,22 +316,32 @@ class IbLeague:
 
     # -- running it -----------------------------------------------------------------
 
-    def join_all(self) -> None:
-        """Every board's first exchange, to the point where it plays the league's rules.
+    def settle(self, max_rounds: int = 5) -> int:
+        """Exchange rounds until the league is quiet: returns how many it took.
 
-        A board's first sync brings the Coordinator's key and the roster; its first
-        -maint then writes its opening packets, which its next sync uploads. The hub
-        runs its game on them, and that answers with the league's signed settings and
-        roster; one more sync and -maint and the board has adopted them.
+        A round is, per board, a sync, a -maint and a sync. Until a board plays the
+        league's rules, the Coordinator and the other members hold what it sends,
+        and it is told so ("... refused our packet: your packets are being held
+        here"). Those notices trail the adoption by a round or so, because they
+        answer packets already in flight. A round with none on any board, and no
+        failed hub run, is the steady state; measured on the rig 2026-10-29, a new
+        two-board league reaches it on round 4 on v0.2.6 and round 3 on trunk.
         """
-        for board in self.boards.values():
-            board.sync()
-        for board in self.boards.values():
-            board.maint()
-            board.sync()
-        for board in self.boards.values():
-            board.sync()
-            board.maint()
+        for rounds in range(1, max_rounds + 1):
+            marks = {i: b.log_mark() for i, b in self.boards.items()}
+            first_run = len(self.runs())
+            for board in self.boards.values():
+                board.sync()
+                board.maint()
+                board.sync()
+            noisy = {i: b.faults_since(marks[i]) for i, b in self.boards.items()}
+            failed = [r for r in self.runs()[first_run:] if r["status"] != "completed"]
+            if not any(noisy.values()) and not failed:
+                return rounds
+        raise AssertionError(
+            f"league 900I still not quiet after {max_rounds} rounds:\n"
+            + "\n".join(f"board {i:02d}: {lines}" for i, lines in noisy.items() if lines)
+            + (f"\nhub runs: {failed}" if failed else ""))
 
     def wait_idle(self, timeout: float = 120) -> None:
         """Until every packet the hub holds has been processed and no run is going.

@@ -23,10 +23,24 @@ REPO = Path(__file__).resolve().parents[3]
 VENV_PYTHON = SRV / "venv" / "bin" / "python"
 
 # Immortal Barons, a native Go binary: no dosemu, no install tree, no fixtures.
-# Built from trunk rather than a release because the test clock (IB_GAME_DATE,
-# IB's REDATE.COM) is not in v0.2.6. linux/amd64, CGO_ENABLED=0, -trimpath.
+# calendar_probe's build, from trunk rather than a release because the test clock
+# (IB_GAME_DATE, IB's REDATE.COM) is not in v0.2.6. linux/amd64, CGO_ENABLED=0,
+# -trimpath.
 IB_COMMIT = "e9d34f2"
 IB_BINARY = SRV / "media" / "ib" / IB_COMMIT / "immortal-barons"
+
+# The builds the IB scenarios play, both of them every run: the latest release,
+# and trunk as it stands. rig.ib_builds fetches or builds them here and names
+# them in current.json; the source, the Go toolchain and its caches live here too.
+IB_ROOT = SRV / "ib"
+IB_CURRENT = IB_ROOT / "current.json"
+IB_UPSTREAM = "andy5995/immortal-barons"
+IB_KINDS = ("release", "trunk")
+
+# nova-client, checked out by rig.nova_client, so the IB scenarios move packets
+# the way a real board does: through the client, over the hub's service API.
+NOVA_CLIENT = SRV / "nova-client"
+NOVA_CLIENT_REPO = "http://gitea-hl:3000/lime/nova-client.git"
 
 HUB_INDEX = 1
 HUB_PORT = 8900

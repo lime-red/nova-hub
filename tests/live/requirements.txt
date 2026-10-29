@@ -1,5 +1,6 @@
-# What the live rig's interpreter needs *in addition to* nova-hub's own
-# requirements. Install into the rig venv:
+# What the live rig's interpreter needs: nova-hub's own pins, so the rig tests
+# the dependency set that ships, plus what only the rig uses. Install into the
+# rig venv:
 #
 #     tests/live/run.sh --setup
 #     # or: /srv/novatest/venv/bin/pip install -r tests/live/requirements.txt
@@ -8,26 +9,20 @@
 # meant a rebuilt rig host looked healthy until a walk failed deep inside dosemu
 # with an ImportError.
 #
-# This file deliberately does NOT `-r ../../requirements.txt`. The rig venv
-# (/srv/novatest/venv, python 3.13, owned by novahub-t and read by every node
-# user) has never matched the product pins and cannot: requirements.txt pins
-# aiohttp==3.10.0, which publishes no wheel for 3.13 and fails to build from
-# source on that host, where 3.14.3 is installed and working. Nothing in the rig
-# depends on those exact versions -- it imports the hub's own code, not a pinned
-# dependency surface -- so this file adds what the rig needs and leaves the base
-# environment alone rather than forcing a downgrade that cannot install.
+# This file used to leave the product pins out: they once held aiohttp==3.10.0,
+# which has no wheel for the rig's python 3.13. That pin is 3.14.3 now, so the
+# rig takes the same versions as CI and production. Left out, the rig drifted
+# (fastapi 0.115 against 0.128) and test_api_docs failed there alone.
+-r ../../requirements.txt
 
-# sr-harness drives the games: the pty runner, the pyte screen, the BRE player
-# walk and the 8.3 guard. It began as this rig's dosdrive/dosrun/dospath/player
-# and was split out as its own library (lime/sr-harness) so it can be shared;
-# what is left in rig/ is the part that knows about nova-hub. Pinned to a tag
-# for the same reason bre-agent is: a walk that changes changes what the live
-# tests mean. The repo is public, so no credentials are needed.
-sr-harness @ git+https://gitea-hl.taild204f.ts.net/lime/sr-harness.git@v0.1.1
+# The test runner, at uv.lock's dev versions (requirements.txt is --no-dev).
+pytest==8.3.4
+pytest-asyncio==0.24.0
 
-# The terminal emulator sr-harness reconstructs the screen with. sr-harness
-# itself only asks for >=0.8.2; the rig keeps the exact version it was proved on.
-pyte==0.8.2
+# sr-harness (the pty runner, the pyte screen, the BRE player walk) and pyte
+# come in through nova-hub's own requirements now, which the game reset needs:
+# the same v0.1.1, pinned there by its commit. Naming the tag here as well makes
+# pip refuse the two spellings of one version as a conflict.
 
 # The decision module rig/player.py hands the wheel to for agent_rounds. Pinned
 # to a tag, not a branch: a scenario that asserts on which action was chosen is

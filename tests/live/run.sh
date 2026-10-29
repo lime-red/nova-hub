@@ -29,7 +29,7 @@
 # nova-client at --client REF, default main (rig.nova_client). Pin IB with
 # IB_RELEASE=<tag> or IB_TRUNK=<commit> in the environment.
 #
-# Everything here is leagues 900B and 901B on novatest-hl. Nothing in this tree
+# Everything here is leagues 900B, 901B, 900F and 900I on novatest-hl. Nothing in this tree
 # touches a production host or a production league number.
 set -euo pipefail
 

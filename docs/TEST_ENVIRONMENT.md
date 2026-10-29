@@ -83,6 +83,7 @@ Production runs `013B`, `014B`, `015B`, `015F`. Reserve a block far away:
 | `900B` | BRE | Primary happy-path league |
 | `900F` | FE | Same nodes, second game type |
 | `901B` | BRE | Second BRE league — exercises the multi-league bug (card B-1) |
+| `900I` | Immortal Barons | Native game, end to end through real nova-clients; see section 12 |
 
 `901B` matters: B-1 only reproduces when **two leagues of the same game type**
 exist. Production has that today; the test environment must too, or the 0.2.0
@@ -460,3 +461,68 @@ worth knowing before chasing the next one:
 None of the live rig tests are affected: they build their own data dirs
 (`rig/hub.py::make_data_dir`), and the viewer hub has its own config at
 `/srv/novatest/viewer/config.toml`.
+
+## 12. Immortal Barons: league 900I, release and trunk
+
+`tests/test_ib_league.py` plays IB end to end, with nothing stood in for:
+
+- the hub is a real server (uvicorn on a free port, from the tree under test) on a
+  fresh database, processing uploads on its own as production does;
+- its game is the League Coordinator, node 1, in a data directory of its own;
+- each member board is a data directory set up the way a sysop joins
+  (`-ibbs-reset`, `bbs.cfg`, `-gen-board-key`), with no roster and no
+  Coordinator key until its first sync brings them;
+- each board syncs with nova-client's own `client.py`, from a checkout of
+  nova-client at `/srv/novatest/nova-client`, under its own credentials.
+
+The test runs the game itself (`board.maint()`), standing in for the client
+daemon's schedule, so the order of events is the scenario's to choose. IB is
+native: no dosemu, no fixtures, no node users. Everything lives under the test's
+`tmp_path`, owned by the rig user.
+
+**Every scenario runs twice, once per build**: the latest IB release and IB trunk.
+A change on trunk that the hub or the client has to answer then shows up the
+night it lands, not the day it ships. `run.sh` readies both before pytest:
+
+- `python -m rig.ib_builds` downloads the latest release from GitHub (checked
+  against its `SHA256SUMS`) and builds trunk from a clone in `/srv/novatest/ib/src`
+  with the Go its `go.mod` names, fetched from go.dev and checked against
+  go.dev's sha256. Builds are kept by name under `/srv/novatest/ib/builds`, so an
+  unchanged trunk costs a fetch. What a run plays is in
+  `/srv/novatest/ib/current.json`, and the test ids name it:
+  `[release-v0.2.6]`, `[trunk-75058b5]`.
+- A build that cannot be had is recorded, and its scenarios **fail** saying why. A
+  skip would hide the one thing a nightly run is there to say, that trunk stopped
+  building. If the network is down, the last build is played and the run says so.
+- Pin either one with `IB_RELEASE=<tag>` or `IB_TRUNK=<commit>` in the environment.
+- `python -m rig.nova_client REF` checks nova-client out at `--client REF`
+  (default `main`), detached and forced, like a `--try` tree.
+
+```
+ssh novatest-hl 'sudo -u novahub-t /srv/novatest/nova-hub/tests/live/run.sh -k ib_league'
+ssh novatest-hl 'sudo -u novahub-t /srv/novatest/nova-hub/tests/live/run.sh --client my-branch -k ib_league'
+```
+
+`/srv/novatest/ib` and `/srv/novatest/nova-client` are created once, owned by the
+rig user (`sudo install -d -o novahub-t -g novahub-t -m 755 <dir>`).
+
+### How a new league behaves, measured 2026-10-29
+
+- **The hub records one failed run per joining board.** A newcomer's opening
+  packets are written before it has the league's rules, so the Coordinator holds
+  them, and IB exits 1 for a fault it has not reported before. The hub reports
+  that run as failed. It is expected, and it happens once per board.
+- **A new league is noisy before it is quiet.** Members hold each other's packets
+  the same way until both play the league's rules, and tell each other so.
+  `IbLeague.settle()` runs exchange rounds until one is clean and every board holds
+  the hub's roster and rules. Two boards from scratch get there on round 3 or 4.
+- **Members adopt a new roster from the Coordinator's signed broadcast.** The
+  client never replaces an `ibnodes.dat` a game already has; the game does that
+  itself.
+- **IB trunk 514557a (2026-10-27) does not settle when two boards join together.**
+  Each holds the other's opening packet. Their later packets apply, but every run
+  re-reports the hold until the packet expires. The check meant to stop that
+  (`PlayingLeagueRules`) reads `BoardRuleset`, which the report has just set back
+  to the held packet's old fingerprint. v0.2.6 releases the packet instead.
+  `test_boards_join_and_settle_into_the_league_rules[trunk-…]` fails on it, as it
+  should.

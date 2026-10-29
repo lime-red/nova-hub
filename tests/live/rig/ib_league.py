@@ -220,7 +220,7 @@ class IbLeague:
                                  if not isinstance(v, dict)}
         self.config["server"].update(port=self.port, public_url=self.url)
         # Long enough that one client's several uploads make one run.
-        self.config["processing"]["settle_seconds"] = 2
+        self.config["processing"]["settle_seconds"] = 1
         self.config["ib"] = {LEAGUE: {"binary": str(binary), "data_dir": str(self.game),
                                       "hub_board_key": hub_key}}
         self.config_path = self.root / "config.toml"
@@ -355,8 +355,10 @@ class IbLeague:
         """Until every packet the hub holds has been processed and no run is going.
 
         An upload is a row with no processed_at until the run that takes it; the run
-        starts after settle_seconds and may go round again. Two quiet looks in a row,
-        a second apart, so a run that is just starting is not mistaken for none.
+        starts after settle_seconds and may go round again, but whatever it is
+        waiting for is a row with no processed_at, so a look that sees none pending
+        and none running is quiet. Two in a row, as a guard against reading
+        between a run's last commit and its status.
         """
         deadline = time.monotonic() + timeout
         quiet = 0
@@ -367,7 +369,7 @@ class IbLeague:
             quiet = quiet + 1 if pending == 0 and running == 0 else 0
             if quiet >= 2:
                 return
-            time.sleep(1)
+            time.sleep(0.3)
         raise TimeoutError(f"the hub still had work after {timeout}s:\n{self.hub_log()[-4000:]}")
 
     # -- what the hub holds -----------------------------------------------------------

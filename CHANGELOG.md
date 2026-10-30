@@ -4,6 +4,22 @@ All notable changes to Nova Hub will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **A nodelist can be generated from the league page.** The Nodelist row has a
+  Generate button (admins), which says what was written and any warning, such
+  as the hub's game not being given it. Before, the only way was the API's
+  `POST /leagues/{id}/generate-nodelist`, though an approval's warning sent
+  the admin to the league page for it.
+- **Changing who is in a league regenerates its nodelist.** Adding, editing
+  and removing a member, and setting the hub's address or Hub Routes Mail,
+  now regenerate it, as an approval and a processing run already did. A league
+  built by hand, with no packets yet, otherwise had none: a processing run
+  regenerates only the leagues it processed.
+- **Approving into an Immortal Barons league writes the IB roster.** The
+  approval regenerated every league's nodelist with the BRE/FE generator, so
+  an IB league would have got BRE's layout under the IB name, without the
+  board keys. It now asks each league's game, as Generate Nodelist does.
+
 ## [0.10.0] - 2026-10-30
 
 ### Security

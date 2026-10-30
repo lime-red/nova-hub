@@ -454,6 +454,53 @@ def test_generated_nodelist_is_the_one_served(api, world, data_dir):
     assert b"135:135/20" in body and b"135:135/21" in body
 
 
+
+def _served_nodelist(client, world):
+    response = client.get(f"{LEAGUES}/{world['league']}/nodelist")
+    return response.content if response.status_code == 200 else None
+
+
+def test_setting_the_hub_address_generates_the_nodelist(api, world, data_dir):
+    """A league whose members were added before it had a hub address gets its
+    nodelist when the address is set, without anyone asking for it."""
+    client, _ = api
+    assert _served_nodelist(client, world) is None
+
+    response = client.put(f"{LEAGUES}/{world['league']}", json={"hub_fidonet_address": "135:135/1"})
+
+    assert response.status_code == 200
+    body = _served_nodelist(client, world)
+    assert body is not None and b"135:135/1" in body and b"135:135/21" in body
+
+
+def test_member_changes_regenerate_the_nodelist(api, world, data_dir):
+    client, db = api
+    db.get(League, world["league"]).hub_fidonet_address = "135:135/1"
+    db.commit()
+    gamma = Client(client_id="gamma", client_secret="x", bbs_name="Gamma")
+    db.add(gamma)
+    db.commit()
+    g7 = FtnAddress(client_id=gamma.id, address="135:135/7")
+    db.add(g7)
+    db.commit()
+
+    # Added: Gamma is in it.
+    response = client.post(f"{LEAGUES}/{world['league']}/members",
+                           json={"client_id": gamma.id, "bbs_index": 7, "ftn_address_id": g7.id})
+    assert response.status_code == 200, response.text
+    assert b"135:135/7" in _served_nodelist(client, world)
+
+    # Edited: Alpha's new address replaces its old one.
+    response = client.patch(f"{LEAGUES}/{world['league']}/members/{world['ma']}",
+                            json={"ftn_address_id": world["a8"]})
+    assert response.status_code == 200, response.text
+    body = _served_nodelist(client, world)
+    assert b"135:135/8" in body and b"135:135/20" not in body
+
+    # Removed: Gamma is gone again.
+    assert client.delete(f"{LEAGUES}/{world['league']}/members/{gamma.id}").status_code == 200
+    assert b"135:135/7" not in _served_nodelist(client, world)
+
 # -- index pre-fill and the address book -------------------------------------
 
 ADDRESS_BOOK = "/management/api/v1/address-book"

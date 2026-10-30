@@ -2374,8 +2374,8 @@ Validation Error
 Edit a league membership's BBS index and/or FTN address (admin only)
 
 Both fields are validated before either is written, so a rejected edit
-leaves the membership exactly as it was. The league's nodelist picks the
-change up at its next regeneration.
+leaves the membership exactly as it was. The league's nodelist is
+regenerated if the edit changed it.
 
 **Path Parameters:**
 - `league_id`: Database ID of the league

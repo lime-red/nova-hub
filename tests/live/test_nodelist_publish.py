@@ -38,8 +38,7 @@ async def test_a_new_member_reaches_every_board_through_the_game(pristine, hub):
     league = hub.db.get(League, _add_newcomer(hub))
 
     # 1. What an approval does.
-    problems = regenerate_nodelists(hub.db, [league.id], str(hub.data_dir),
-                                    hub.config["hub"], hub.config["dosemu"])
+    problems = regenerate_nodelists(hub.db, [league.id], hub.config)
     assert problems == []
     install = LEAGUE.install_path(HUB)
     nodes_file = next(p for p in install.iterdir() if p.name.lower() == "brnodes.dat")
@@ -99,8 +98,7 @@ async def test_the_game_sends_its_nodelist_when_the_file_changes(pristine, hub):
     )
 
     league_id = _add_newcomer(hub)
-    assert regenerate_nodelists(hub.db, [league_id], str(hub.data_dir),
-                                hub.config["hub"], hub.config["dosemu"]) == []
+    assert regenerate_nodelists(hub.db, [league_id], hub.config) == []
     node_rig.run(LEAGUE, HUB, "PLANETARY", tag="nl-d3", date=_day(3))
     sent = _sent_nodelist(HUB)
     assert sent is not None, "the nodes file changed and the game sent no nodelist"

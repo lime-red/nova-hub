@@ -195,6 +195,20 @@ async function handleEditMember() {
   }
 }
 
+// The last Generate Nodelist: what was written and any warnings, or why not.
+const nodelistResult = ref<{ filename: string, members: number, warnings: string[] } | null>(null)
+const nodelistError = ref<string | null>(null)
+const generatingNodelist = ref(false)
+
+async function handleGenerateNodelist() {
+  generatingNodelist.value = true
+  nodelistResult.value = null
+  nodelistError.value = null
+  nodelistResult.value = await leaguesStore.generateNodelist(leagueId.value)
+  if (!nodelistResult.value) nodelistError.value = leaguesStore.error
+  generatingNodelist.value = false
+}
+
 async function handleRemoveMember(clientId: number) {
   if (confirm('Remove this member from the league?')) {
     await leaguesStore.removeMember(leagueId.value, clientId)
@@ -321,6 +335,12 @@ async function handleDelete() {
                       </span>
                     </template>
                     <span v-else class="badge badge-warning">Not generated yet</span>
+                    <button
+                      v-if="authStore.isAdmin"
+                      class="btn btn-secondary btn-sm nodelist-generate"
+                      :disabled="generatingNodelist"
+                      @click="handleGenerateNodelist"
+                    >{{ generatingNodelist ? 'Generating…' : 'Generate' }}</button>
                   </dd>
                 </div>
                 <div v-if="isImmortalBarons" class="info-item">
@@ -342,6 +362,15 @@ async function handleDelete() {
               </p>
               <p v-else-if="leaguesStore.currentLeague.coordinator_key_problem" class="form-hint mt-2">
                 {{ leaguesStore.currentLeague.coordinator_key_problem }}
+              </p>
+              <div v-if="nodelistError" class="alert alert-error mt-2">{{ nodelistError }}</div>
+              <div v-else-if="nodelistResult?.warnings.length" class="alert alert-warning mt-2">
+                <div>Wrote {{ nodelistResult.filename }} ({{ nodelistResult.members }} members), but:</div>
+                <div v-for="w in nodelistResult.warnings" :key="w">{{ w }}</div>
+              </div>
+              <p v-else-if="nodelistResult" class="form-hint mt-2">
+                Wrote {{ nodelistResult.filename }} with {{ nodelistResult.members }} members.
+                The hub's game sends it to every member on its next run.
               </p>
               <p v-if="!leaguesStore.currentLeague.hub_fidonet_address" class="form-hint mt-2">
                 Nodelist generation is blocked for this league until the hub's
@@ -775,6 +804,10 @@ async function handleDelete() {
 .nodelist-age {
   margin-left: 0.5rem;
   font-size: 0.85em;
+}
+
+.nodelist-generate {
+  margin-left: 0.75rem;
 }
 
 .page {

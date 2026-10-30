@@ -174,6 +174,25 @@ export const useLeaguesStore = defineStore('leagues', () => {
     }
   }
 
+  // Generate the league's nodelist now. Returns what the hub said, or null
+  // (with `error` set) if it would not write one.
+  async function generateNodelist(leagueId: number):
+      Promise<{ filename: string, members: number, warnings: string[] } | null> {
+    loading.value = true
+    error.value = null
+
+    try {
+      const response = await leaguesApi.generateNodelist(leagueId)
+      await loadLeague(leagueId)
+      return response.data
+    } catch (err: unknown) {
+      error.value = apiError(err, 'Failed to generate nodelist')
+      return null
+    } finally {
+      loading.value = false
+    }
+  }
+
   async function addMember(leagueId: number, data: {
     client_id: number
     bbs_index: number
@@ -250,6 +269,7 @@ export const useLeaguesStore = defineStore('leagues', () => {
     createLeague,
     updateLeague,
     deleteLeague,
+    generateNodelist,
     addMember,
     removeMember,
     updateMember,

@@ -44,6 +44,7 @@ from typing import Optional
 
 from backend.core.clock import utcnow
 from backend.models.database import Client, League, LeagueMembership, Packet
+from backend.services.attack_trace import record_safely
 from backend.services.games import game_for_letter
 from backend.services.native_runner import NativeRunner
 from backend.services.providers.base import (
@@ -294,6 +295,7 @@ class ImmortalBaronsProvider(GameProvider):
                 continue
 
             checksum = hashlib.sha256(content).hexdigest()
+            added = []
             for dest in self.recipients(db, league, info, hub):
                 exists = db.query(Packet.id).filter(
                     Packet.league_id == league.id, Packet.filename == name,
@@ -301,7 +303,7 @@ class ImmortalBaronsProvider(GameProvider):
                 ).first()
                 if exists:
                     continue
-                db.add(Packet(
+                added.append(Packet(
                     filename=name,
                     league_id=league.id,
                     source_bbs_index=info["source_bbs_index"],
@@ -313,7 +315,10 @@ class ImmortalBaronsProvider(GameProvider):
                     processed_at=utcnow(),
                     is_processed=True,
                 ))
+            db.add_all(added)
             db.commit()
+            for row in added:
+                record_safely(db, row, content)
             logger.info(f"Collected outbound: {name}")
 
     # -- the roster ---------------------------------------------------------------

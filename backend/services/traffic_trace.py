@@ -19,6 +19,11 @@ of its send (bre_packet's `chain`):
   it is destroyed or GOOIE_LIFETIME has passed.
 - anything else -- a message, a Spy Guy -- is a journey of one.
 
+Immortal Barons numbers every action and echoes the number (ib_packet), so an
+"id:" chain is one action: its send and every answer, however many. A recon
+request carries no number, and a league-wide one is answered by a report per
+realm, all in one packet: those join the request the first one answered.
+
 Player IDs are not letters, and a Message names its recipients only by ID. The
 letters are learned from records that carry both (an op, a trade deal, a
 message's sender); a recipient never seen that way shows as "?".
@@ -200,6 +205,8 @@ def journeys(found: List[Event]) -> List[Journey]:
     for (_, chain), group in chains.items():
         if chain.startswith("gooie:"):
             out.extend(_gooies(group))
+        elif chain.startswith("id:"):
+            out.append(Journey(group, expects_result=True))
         else:
             out.extend(_pairs(group))
     out.sort(key=lambda j: j.started or datetime.min, reverse=True)
@@ -209,15 +216,21 @@ def journeys(found: List[Event]) -> List[Journey]:
 def _pairs(group: List[Event]) -> List[Journey]:
     open_sends: List[Journey] = []
     out: List[Journey] = []
+    answered: Dict[int, Journey] = {}       # IB recon: packet -> the request it answers
     for e in group:
         if e.role == bre_packet.SEND:
             j = Journey([e], expects_result=True)
             open_sends.append(j)
             out.append(j)
         elif e.role == bre_packet.RESULT:
-            if open_sends:
+            first = e.hops[0].packet_id if e.hops else None
+            if (e.chain or "").startswith("recon:") and first in answered:
+                answered[first].events.append(e)
+            elif open_sends:
                 j = open_sends.pop()        # the latest send still waiting
                 j.events.append(e)
+                if first is not None:
+                    answered[first] = j
             else:
                 out.append(Journey([e], expects_result=True))   # its send is older
         else:

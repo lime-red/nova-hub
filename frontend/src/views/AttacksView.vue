@@ -69,7 +69,7 @@ async function load() {
     const [a, t] = await Promise.all([
       attacksApi.list({
         ...filters,
-        attack_id: /^[0-9a-fA-F]{1,16}$/.test(id) ? id : undefined,
+        attack_id: /^[0-9a-fA-F.]{1,40}$/.test(id) ? id : undefined,
         mit: onlyMit.value ? 'any' : undefined,
       }),
       attacksOnly ? Promise.resolve({ data: [] as TrafficJourney[] }) : trafficApi.list(filters),
@@ -520,9 +520,11 @@ watch([days, leagueId, planet, onlyMit], load)
                               <p class="text-muted small">
                                 <template v-if="forces[j.attack_id].resolved">
                                   <strong>{{ forces[j.attack_id].success ? 'SUCCESS' : 'FAILURE' }}</strong><template v-if="forces[j.attack_id].regions_captured">,
-                                  captured {{ forces[j.attack_id].regions_captured }} region<span v-if="forces[j.attack_id].regions_captured !== 1">s</span></template>.
-                                  Attacker lost {{ forces[j.attack_id].loss_percent }}% of each unit type;
-                                  destroyed {{ forces[j.attack_id].defenders_destroyed }} defending trooper<span v-if="forces[j.attack_id].defenders_destroyed !== 1">s</span>.
+                                  captured {{ forces[j.attack_id].regions_captured }} region<span v-if="forces[j.attack_id].regions_captured !== 1">s</span></template><template v-if="forces[j.attack_id].outcome"> ({{ forces[j.attack_id].outcome }})</template>.
+                                  <template v-if="forces[j.attack_id].loss_percent !== null">
+                                    Attacker lost {{ forces[j.attack_id].loss_percent }}% of each unit type;
+                                    destroyed {{ forces[j.attack_id].defenders_destroyed }} defending trooper<span v-if="forces[j.attack_id].defenders_destroyed !== 1">s</span>.
+                                  </template>
                                 </template>
                                 <template v-else>No result seen yet, so no outcome.</template>
                                 <template v-if="forces[j.attack_id].carriers">

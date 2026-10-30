@@ -1,4 +1,9 @@
-"""Follow each BRE attack through the hub, from launch to result.
+"""Follow each attack through the hub, from launch to result.
+
+BRE's are read by bre_packet and Immortal Barons' by ib_packet; FE's war
+records are not mapped yet. The journey and the MIT judgement are the same for
+both games but where noted (IB counts its wait differently, and its packets
+are dated, not timed).
 
 A Missing In Transit is the attacker's game giving up: no result came back
 within the league's "Days for Lost Attacks". From inside the game that is all
@@ -36,12 +41,13 @@ from backend.logging_config import get_logger
 from backend.models.database import (
     AttackSighting, League, LeagueGameSettings, Packet, TrafficSighting,
 )
-from backend.services import bre_packet, realm_names
+from backend.services import bre_packet, ib_packet, realm_names
 
 logger = get_logger(context="attack_trace")
 
 DEFAULT_LOST_ATTACK_DAYS = 7    # BRE's default, used until a Configupdate is seen
-NODELIST_PREFIXES = ("BRNODES.", "FENODES.")   # stored as packets, but text
+DEFAULT_LOST_DAYS = {"B": DEFAULT_LOST_ATTACK_DAYS, "I": ib_packet.DEFAULT_LOST_FORCES_DAYS}
+NODELIST_PREFIXES = ("BRNODES.", "FENODES.", "IBNODES.")   # stored as packets, but text
 # Only the League Coordinator -- the hub's game -- sends these.
 HUB_ONLY_TYPES = (bre_packet.CONFIG_UPDATE, bre_packet.GAME_START)
 
@@ -171,9 +177,54 @@ def _record_bre(db: Session, league: League, packet: Packet, content: bytes) -> 
     return added
 
 
+def _record_ib(db: Session, league: League, packet: Packet, content: bytes) -> int:
+    p = ib_packet.parse(content)
+    src, dst = _bbs(packet.source_bbs_index), _bbs(packet.dest_bbs_index)
+    if src is None or dst is None:
+        return 0
+    settings, starts = ib_packet.orders(p)
+    if (settings or starts) and not from_hub(packet):
+        # The games refuse league orders the Coordinator did not sign; the hub
+        # takes them only from its own game, which is the Coordinator.
+        logger.warning(f"{packet.filename}: ignoring league orders from board {src}")
+        settings = starts = None
+    if settings is not None:
+        _remember_settings(db, league, packet, settings)
+    if starts is not None:
+        from backend.services.game_reset.history import record_game_start
+        s = settings or bre_packet.LeagueSettings(None, None, None, None, {})
+        s = bre_packet.LeagueSettings(starts, s.protection_turns, s.indiv_attacks_per_day,
+                                      s.lost_attack_days, s.settings)
+        record_game_start(db, league, packet, s)
+    db.flush()
+    row = db.get(LeagueGameSettings, league.id)
+    game = ib_packet.game_of(row.game_started_at if row else None)
+
+    added = 0
+    for a in ib_packet.strikes(p, src, dst):
+        db.add(AttackSighting(
+            attack_id=ib_packet.action_id(game, a.origin, a.ident), is_result=a.is_result,
+            packet_id=packet.id, league_id=league.id,
+            from_planet=a.from_planet, to_planet=a.to_planet,
+            attacker_name=a.attacker_name, target_name=a.target_name,
+            attack_type=a.attack_type, stamp=a.stamp,
+        ))
+        added += 1
+    for t in ib_packet.traffic(p, src, dst, game):
+        db.add(TrafficSighting(
+            event_key=t.key, packet_id=packet.id, league_id=league.id,
+            record_type=t.record_type, kind=t.kind,
+            from_planet=t.from_planet, to_planet=t.to_planet,
+            from_name=t.from_name, to_name=t.to_name,
+            chain=t.chain, role=t.role, stamp=t.stamp,
+        ))
+        added += 1
+    return added
+
+
 # FE's packets share BRE's container, but its war records are not mapped yet
 # (fe_packet), so an FE league records nothing.
-_READERS = {"B": _record_bre}
+_READERS = {"B": _record_bre, "I": _record_ib}
 
 
 def record_safely(db: Session, packet: Packet, content: bytes) -> int:
@@ -224,7 +275,7 @@ def backfill(db: Session, data_dir: Path, redo: bool = False) -> Dict[str, int]:
     } | {pid for (pid,) in db.query(TrafficSighting.packet_id).distinct()}
     packets = (
         db.query(Packet).join(League, Packet.league_id == League.id)
-        .filter(League.game_type == "B")
+        .filter(League.game_type.in_(tuple(_READERS)))
         .order_by(Packet.uploaded_at.asc())
         .all()
     )
@@ -292,18 +343,34 @@ def _candidates(packet: Packet, paths: Optional[List[Path]]) -> List[bytes]:
 
 
 # ── the admin reveal ──────────────────────────────────────────────────────
-def forces(db: Session, attack_id: str, data_dir: Optional[Path]
-           ) -> Optional[bre_packet.Forces]:
+def forces(db: Session, attack_id: str, data_dir: Optional[Path]):
     """Read an attack's strength, and its cost if the result has been seen,
     back out of a packet the hub stored. Sightings hold no unit counts, so this
     is the only way to them: see the admin reveal in api/management/attacks.py.
 
-    A result is preferred, as it echoes the attack and adds the outcome. Only a
-    copy whose checksum matches its row is read (filenames are reused).
+    A bre_packet.Forces for a BRE attack, an ib_packet.Forces for an IB one,
+    None if no stored packet holds it. A BRE result is preferred, as it echoes
+    the attack and adds the outcome; an IB result does not echo, so both are
+    read. Only a copy whose checksum matches its row is read (filenames are
+    reused).
     """
     rows = (db.query(Packet).join(AttackSighting, AttackSighting.packet_id == Packet.id)
             .filter(AttackSighting.attack_id == attack_id.lower())
             .order_by(AttackSighting.is_result.desc(), Packet.id).all())
+    if not rows:
+        return None
+    league = db.get(League, rows[0].league_id)
+    if league is not None and league.game_type == "I":
+        ident = int(attack_id.rsplit(".", 1)[-1])
+        attack = result = None
+        for _, content in stored_contents(rows, data_dir):
+            try:
+                p = ib_packet.parse(content)
+            except ib_packet.PacketFormatError:
+                continue
+            attack = attack or ib_packet.find_strike(p, ident, False)
+            result = result or ib_packet.find_strike(p, ident, True)
+        return ib_packet.forces(attack, result)
     for r in stored_records(rows, data_dir):
         if r.type in (bre_packet.INDIV_ATTACK, bre_packet.ATTACK_RESULT) \
                 and bre_packet.attack(r).attack_id == attack_id.lower():
@@ -311,21 +378,28 @@ def forces(db: Session, attack_id: str, data_dir: Optional[Path]
     return None
 
 
-def stored_records(packets: List[Packet], data_dir: Optional[Path]):
-    """Every record of these packets, read back from whichever stored copy
-    matches the row's checksum (filenames are reused), in the order given."""
+def stored_contents(packets: List[Packet], data_dir: Optional[Path]):
+    """(packet, bytes) for each of these packets the hub still holds a copy of
+    that matches the row's checksum (filenames are reused), in the order given."""
     index = _file_index(Path(data_dir)) if data_dir else {}
     for packet in packets:
         for content in _candidates(packet, index.get(packet.filename.upper())):
             if packet.checksum and hashlib.sha256(content).hexdigest() != packet.checksum:
                 continue
-            try:
-                records = bre_packet.parse(content)
-            except bre_packet.PacketFormatError:
-                continue
-            # A damaged record decodes to garbage, which a reveal would show as fact.
-            yield from (r for r in records if r.crc_ok)
+            yield packet, content
             break
+
+
+def stored_records(packets: List[Packet], data_dir: Optional[Path]):
+    """Every record of these BRE packets, read back from whichever stored copy
+    matches the row's checksum, in the order given."""
+    for _, content in stored_contents(packets, data_dir):
+        try:
+            records = bre_packet.parse(content)
+        except bre_packet.PacketFormatError:
+            continue
+        # A damaged record decodes to garbage, which a reveal would show as fact.
+        yield from (r for r in records if r.crc_ok)
 
 
 # ── the journey ───────────────────────────────────────────────────────────
@@ -359,6 +433,7 @@ class Journey:
     result_at_hub: Optional[datetime] = None
     result_delivered: Optional[datetime] = None
     lost_attack_days: int = DEFAULT_LOST_ATTACK_DAYS
+    game_type: str = "B"
     # The attacker's board clock minus the hub's; None if never measured.
     attacker_clock: Optional[timedelta] = None
     # When the attacker's board rolled over into the due date, bracketed on the
@@ -393,6 +468,13 @@ class Journey:
         if not self.launched:
             return None
         day = datetime.combine(self.launched.date(), datetime.min.time())
+        if self.game_type == "I":
+            # IB gives forces back at the first maintenance once a whole
+            # LostForcesDays have passed after the launch day
+            # (InFlightStrike.lostForcesDaysLeft); 0 is never.
+            if self.lost_attack_days <= 0:
+                return None
+            return day + timedelta(days=self.lost_attack_days + 1)
         return day + timedelta(days=self.lost_attack_days)
 
     @property
@@ -415,6 +497,10 @@ class Journey:
         production's boards roll over when their schedule says, not at midnight:
         EOTS at about 00:43 its time, The Eclipse anywhere from minutes to hours
         after.
+
+        An IB board's rollover is its first maintenance of the date, which burns
+        nothing the hub can see, and its packets are dated but not timed, so an
+        IB result handed over after the due midnight is only ever "possible".
 
           "late"      handed over after the rollover: discarded
           "possible"  handed over while it was happening, or with no rollover seen
@@ -588,8 +674,12 @@ def journeys(db: Session, hub_index: str, league_id: Optional[int] = None,
                        AttackSighting.stamp >= since))
         q = q.filter(AttackSighting.attack_id.in_(ids))
 
+    games = {lg.id: lg.game_type for lg in db.query(League.id, League.game_type)}
+    # BRE has no "never"; IB's 0 is one.
     lost_days = {s.league_id: s.lost_attack_days
-                 for s in db.query(LeagueGameSettings).all() if s.lost_attack_days}
+                 for s in db.query(LeagueGameSettings).all()
+                 if s.lost_attack_days or (s.lost_attack_days == 0
+                                           and games.get(s.league_id) == "I")}
     hub = _bbs(hub_index)
 
     by_id: Dict[str, Journey] = {}
@@ -601,7 +691,9 @@ def journeys(db: Session, hub_index: str, league_id: Optional[int] = None,
                 from_planet=s.from_planet, to_planet=s.to_planet,
                 attacker=s.attacker, target=s.target, attack_type=s.attack_type,
                 launched=None, resolved=None,
-                lost_attack_days=lost_days.get(s.league_id, DEFAULT_LOST_ATTACK_DAYS),
+                game_type=games.get(s.league_id, "B"),
+                lost_attack_days=lost_days.get(
+                    s.league_id, DEFAULT_LOST_DAYS.get(games.get(s.league_id), 7)),
             )
         dest = _bbs(p.dest_bbs_index)
         # A packet for the hub's own board is taken when the hub's game runs it;
@@ -629,14 +721,17 @@ def journeys(db: Session, hub_index: str, league_id: Optional[int] = None,
                 j.attack_delivered = _earliest(j.attack_delivered, taken)
 
     out = list(by_id.values())
-    clocks = _clock_observations(db, {j.league_id for j in out}, hub) if out else {}
+    # Clocks, rollovers and lost relays are read from BRE's timed stamps,
+    # sequence numbers and reused rows; IB has none of the three.
+    bre = [j for j in out if j.game_type == "B"]
+    clocks = _clock_observations(db, {j.league_id for j in bre}, hub) if bre else {}
     for j in out:
         j.hops.sort(key=lambda h: (h.at_hub or datetime.min, h.is_result))
         when = j.attack_at_hub or j.launched
-        if when:
+        if when and j.game_type == "B":
             j.attacker_clock = _clock_at(clocks.get((j.league_id, j.from_planet)), when)
-    _rollovers(db, out, hub)
-    _unheld(db, out, hub)
+    _rollovers(db, bre, hub)
+    _unheld(db, bre, hub)
     out.sort(key=lambda j: j.launched or j.attack_at_hub or datetime.min, reverse=True)
     return out[:limit]
 

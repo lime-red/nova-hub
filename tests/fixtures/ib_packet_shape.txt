@@ -1,0 +1,278 @@
+Packet:
+  FromBoard
+  ToBoard
+  Date
+  Scores
+  Attacks
+  Terrors
+  SpecialOps `json:",omitempty"`
+  Results
+  LeagueConfig
+  LeagueNodes
+  Recon
+  ReconReports
+  Annihilator
+  TimeChecks
+  IPMessages
+  SpyGuys `json:",omitempty"`
+  News `json:",omitempty"`
+  Threats `json:",omitempty"`
+  TradeBids `json:",omitempty"`
+  TradeFills `json:",omitempty"`
+  Market `json:",omitempty"`
+  TradeDeals `json:",omitempty"`
+  TradeReceipts `json:",omitempty"`
+  Notice `json:",omitempty"`
+  Version `json:",omitempty"`
+  Ruleset `json:",omitempty"`
+  Seq
+  Signature
+  BoardSig
+  Bulletins `json:",omitempty"`
+  Reset
+  Freeze `json:",omitempty"`
+  Quiet `json:",omitempty"`
+  League
+  Hops
+  Protocol `json:",omitempty"`
+  FromNode
+  ToNode
+  Battles `json:",omitempty"`
+RemoteScore:
+  Empire
+  NetWorth
+  Land
+  Score
+  Protected `json:",omitempty"`
+  OwnerHash `json:",omitempty"`
+  FormerName `json:",omitempty"`
+RemoteAttack:
+  ID
+  FromBoard
+  TargetEmpire
+  Offense
+  Contributors
+  Kind
+  Group
+  FromEmpire `json:",omitempty"`
+Contribution:
+  Owner
+  AttackForce
+  Tech `json:",omitempty"`
+AttackForce:
+  Troopers
+  Jets
+  Tanks
+  Bombers
+RemoteTerror:
+  ID
+  FromBoard
+  TargetEmpire
+  Agents
+  Op `json:",omitempty"`
+  FromEmpire `json:",omitempty"`
+  Strength `json:",omitempty"`
+RemoteSpecialOp:
+  ID
+  FromBoard
+  FromEmpire
+  TargetEmpire
+  Op
+  Dial `json:",omitempty"`
+AttackResult:
+  ID
+  TargetBoard
+  TargetEmpire
+  LandTaken
+  Won
+  Survivors
+  Kind
+  Outcome `json:",omitempty"`
+  Enemy `json:",omitempty"`
+  Report `json:"ReportMsg,omitempty"`
+  Score `json:",omitempty"`
+  Backfired `json:",omitempty"`
+UnitLoss:
+  Troopers
+  Jets
+  Turrets
+  Tanks
+  Bombers
+Msg:
+  T `json:"t,omitempty"`
+  P `json:"p,omitempty"`
+  N `json:"n,omitempty"`
+  A `json:"a,omitempty"`
+  J `json:"j,omitempty"`
+  R `json:"r,omitempty"`
+  I `json:"i,omitempty"`
+LeagueConfig:
+  GameStartDate
+  JoinDate
+  TurnsPerDay
+  ProtectionTurns
+  GameLength
+  IdleDaysRemove
+  InitialMarketLand
+  LandPerDay
+  MoneyCapBillions
+  InterestRate
+  StdInvestRate
+  SteadyInvest
+  FoodUnlimited
+  MaxTaxRate
+  PlanetaryTaxRate
+  MaxRegions
+  MaxIndividualAttacks
+  MaxLocalAttacks `json:",omitempty"`
+  MaxGroupAttacks
+  MaxTerrorOps
+  MaxBombingOps
+  LostForcesDays
+  BombingOps
+  MissileOps
+  GooieKablooie `json:"ClingyAnnihilator"`
+  LocalAttacks
+  LocalAttackScoring
+  DupeChecking
+  MinBoardVersion
+  IPTrading
+  Pirates
+  MaxPlayers
+  BuyMilitary
+  MaintCosts
+  TradeCosts
+  RegionCosts
+  AttackCosts
+  TerrorCosts
+  AttackDamage
+  AttackRewards
+  SabreHandling `json:"SlappenheimerHandling"`
+  SabreConstantDial `json:",omitempty"`
+LeagueNode:
+  Number
+  Name
+  Address
+  City
+  State
+  Country
+  PublicKey
+  Hosts
+ReconRequest:
+  ID
+  FromBoard
+  FromOwner
+  TargetEmpire
+SpyReport:
+  Board
+  Empire
+  Date
+  Land
+  Offense
+  Defense
+  Gold
+  Troopers
+  Jets
+  Turrets
+  Tanks
+  Morale
+AnnihilatorStatus:
+  FromBoard
+  Funded
+  Launched
+  ArrivesAt `json:",omitempty"`
+  ArrivesDay
+  Intact
+  Dismantled
+TimeCheck:
+  From
+  To
+  Sent
+IPMessage:
+  FromBoard
+  FromEmpire
+  ToCoordinator
+  ToEmpire
+  ToEmpires `json:",omitempty"`
+  When
+  Body
+SpyGuyDispatch:
+  FromBoard
+  Days
+Threat:
+  FromBoard
+  Kind
+  ID
+  Target
+  At `json:",omitempty"`
+  Gone `json:",omitempty"`
+IPTradeBid:
+  ID
+  FromBoard
+  FromOwner
+  FromEmpire
+  Seller
+  Good
+  Qty
+  Price
+IPTradeFill:
+  ID
+  Filled
+  Good
+  Qty
+  Gold
+  Reason `json:"ReasonMsg,omitempty"`
+RemoteListing:
+  Realm
+  Good
+  Qty
+  Price
+IPTradeDeal:
+  ID `json:",omitempty"`
+  FromBoard
+  FromEmpire
+  ToEmpire
+  Goods
+  When
+TradeBasket:
+  Troopers
+  Jets
+  Turrets
+  Bombers
+  Food
+  Gold
+  Agents
+  Tanks
+  Carriers
+IPTradeReceipt:
+  ID `json:",omitempty"`
+  FromEmpire
+  ToEmpire
+  Goods
+  Delivered
+BulletinSet:
+  Files
+BulletinFile:
+  Name
+  Title
+  Data
+LeagueReset:
+  OnDate
+  Announced
+LeagueFreeze:
+  Serial
+  Frozen
+  Message `json:",omitempty"`
+QuietReport:
+  Serial
+  QuietSince
+BattleLogEntry:
+  Date
+  Planet
+  Attacker
+  Defender
+  Won
+  Land
+  Crushed
+  Remote
+  Weapon `json:",omitempty"`

@@ -559,7 +559,7 @@ reveal is logged.
 **attack_id**
   - Type: `string`
   - Location: path *(required)*
-  - Pattern: `^[0-9a-fA-F]{16}$`
+  - Pattern: `^([0-9a-fA-F]{16}|[0-9]{1,6}\.[0-9]{1,3}\.[0-9]{1,12})$`
 
 #### Responses
 

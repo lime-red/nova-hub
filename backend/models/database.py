@@ -505,12 +505,14 @@ class ProcessingRunItem(Base):
 
 
 class AttackSighting(Base):
-    """One BRE individual attack, or its result, inside one packet the hub carried.
+    """One individual attack (BRE) or attack (IB), or its result, inside one
+    packet the hub carried.
 
     An attack is usually seen more than once: under HOST routing the attacker's
     upload carries it to the hub, and the hub's own game repacks it into the
     packet for the target. Its result makes the same trip back. The attack ID
-    (8 bytes the game generates, echoed verbatim in the result) ties every
+    (BRE: 8 bytes the game generates, echoed verbatim in the result; IB: the
+    sending board's number for it, echoed likewise) ties every
     sighting together, so grouping by it gives the attack's whole journey --
     which is what tells a Missing In Transit apart from a slow board.
 

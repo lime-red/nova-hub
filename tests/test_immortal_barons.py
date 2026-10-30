@@ -289,6 +289,24 @@ def test_the_hubs_game_never_overwrites_a_different_packet(hub):
     assert dests(hub, name) == []
 
 
+def test_attacks_are_traced_on_upload_and_as_the_hubs_game_writes_them(hub):
+    from backend.models.database import AttackSighting
+    attack = (b'{"Date": "2026-10-01", "FromNode": 2, "ToNode": 1, "Attacks": [{"ID": 5, '
+              b'"TargetEmpire": "Hubland", "Kind": 1, "Group": false, "FromEmpire": "Two"}]}')
+    assert upload(hub, "A", ib_name(2, 1, 1), attack).status_code in (200, 201)
+    result = (b'{"Date": "2026-10-01", "FromNode": 1, "ToNode": 2, "Results": [{"ID": 5, '
+              b'"TargetEmpire": "Hubland", "Won": false, "Kind": "Normal Attack"}]}')
+    (hub["game"] / "to_send" / ib_name(1, 2, 2)).write_bytes(result)
+    asyncio.run(IB.collect_outbound(ProcessingService(hub["db"], hub["config"]), hub["league"], 0,
+                                    hub["game"] / "to_send"))
+    db = hub["Session"]()
+    try:
+        got = sorted((s.attack_id, s.is_result) for s in db.query(AttackSighting))
+    finally:
+        db.close()
+    assert got == [("0.2.5", False), ("0.2.5", True)]
+
+
 def test_temp_files_and_renamed_duplicates_are_not_packets(hub):
     out = hub["game"] / "outbound"
     (out / f".{ib_name(1, 8, 2)}-123.tmp").write_bytes(b"half")

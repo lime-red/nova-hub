@@ -373,6 +373,8 @@ async def update_league(
     db.refresh(league)
 
     logger.info(f"Updated league {league.full_id} by {current_user.username}")
+    if any(getattr(league, f) != before[f] for f in ("hub_fidonet_address", "hub_routes_mail")):
+        _regenerate_nodelist(db, league)
 
     member_count = (
         db.query(LeagueMembership)
@@ -653,8 +655,20 @@ async def add_member(
         db.refresh(membership)
 
     logger.info(f"Added {client.bbs_name} to league {league.full_id} by {current_user.username}")
+    _regenerate_nodelist(db, league)
 
     return _member_response(membership)
+
+
+def _regenerate_nodelist(db: Session, league: League) -> None:
+    """Bring the league's nodelist up to date after a change to who is in it,
+    or to the hub's own entry. Any reason it could not be is logged; the change
+    stands either way, and Generate Nodelist on the league page says why."""
+    from backend.core.config import get_config
+    from backend.services.applications import regenerate_nodelists
+
+    for problem in regenerate_nodelists(db, [league.id], get_config()):
+        logger.warning(f"nodelist: {problem}")
 
 
 def _data_dir() -> str:
@@ -726,11 +740,16 @@ async def generate_nodelist(
     its nodes file (only if that changes it). The game sends it to every member
     on its next run, as it does when the file is edited by hand.
 
+    A nodelist the same as the current one is not rewritten: the game sends one
+    when its file changes, so rewriting it would change nothing, or send the
+    same nodelist to every member again. `changed` says which happened.
+
     **Path Parameters:**
     - `league_id`: Database ID of the league
 
-    **Returns:** `{"filename": ..., "members": <count>, "warnings": [...]}`; a
-    warning means the hub's game was not given the nodelist (no `game_folder`,
+    **Returns:** `{"filename": ..., "members": <count>, "changed": <bool>,
+    "warnings": [...]}`; `changed` is false when the membership gave the same
+    nodelist as before, so nothing was written. A warning means the hub's game was not given the nodelist (no `game_folder`,
     say), so the members will not receive it.
     """
     from backend.core.config import get_config
@@ -748,6 +767,10 @@ async def generate_nodelist(
             detail=f"League has unknown game type '{league.game_type}' — nodelist not generated",
         )
 
+    from backend.services.nodelist_generator import find_nodelist
+
+    before = find_nodelist(_data_dir(), league)
+    before = before.read_bytes() if before is not None else None
     dest, problems = provider.generate_nodelist(db, get_config(), league)
     if dest is None:
         raise HTTPException(status_code=422, detail="; ".join(problems) or "Nodelist not generated")
@@ -762,9 +785,12 @@ async def generate_nodelist(
         .count()
     )
 
-    logger.info(f"Generated nodelist {dest.name} for league {league.full_id} by {current_user.username}")
+    changed = dest.read_bytes() != before
+    logger.info(f"Generated nodelist {dest.name} for league {league.full_id} by {current_user.username}"
+                + ("" if changed else "; unchanged, so not rewritten"))
 
-    return {"filename": dest.name, "members": member_count, "warnings": problems}
+    return {"filename": dest.name, "members": member_count, "changed": changed,
+            "warnings": problems}
 
 
 @router.delete("/{league_id}/members/{member_id}", summary="Remove Member")
@@ -801,10 +827,12 @@ async def remove_member(
     if not membership:
         raise HTTPException(status_code=404, detail="Membership not found")
 
+    league = membership.league
     db.delete(membership)
     db.commit()
 
     logger.info(f"Removed member {member_id} from league {league_id} by {current_user.username}")
+    _regenerate_nodelist(db, league)
 
     return {"message": "Member removed successfully"}
 
@@ -821,8 +849,8 @@ async def update_member(
     Edit a league membership's BBS index and/or FTN address (admin only)
 
     Both fields are validated before either is written, so a rejected edit
-    leaves the membership exactly as it was. The league's nodelist picks the
-    change up at its next regeneration.
+    leaves the membership exactly as it was. The league's nodelist is
+    regenerated if the edit changed it.
 
     **Path Parameters:**
     - `league_id`: Database ID of the league
@@ -892,5 +920,7 @@ async def update_member(
            if before[2] != membership.board_key else "")
         + f" by {current_user.username}"
     )
+    if before != (membership.bbs_index, membership.fidonet_address, membership.board_key):
+        _regenerate_nodelist(db, membership.league)
 
     return _member_response(membership)

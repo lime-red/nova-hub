@@ -2290,11 +2290,16 @@ service API's bootstrap download serve it, and into the hub's own game as
 its nodes file (only if that changes it). The game sends it to every member
 on its next run, as it does when the file is edited by hand.
 
+A nodelist the same as the current one is not rewritten: the game sends one
+when its file changes, so rewriting it would change nothing, or send the
+same nodelist to every member again. `changed` says which happened.
+
 **Path Parameters:**
 - `league_id`: Database ID of the league
 
-**Returns:** `{"filename": ..., "members": <count>, "warnings": [...]}`; a
-warning means the hub's game was not given the nodelist (no `game_folder`,
+**Returns:** `{"filename": ..., "members": <count>, "changed": <bool>,
+"warnings": [...]}`; `changed` is false when the membership gave the same
+nodelist as before, so nothing was written. A warning means the hub's game was not given the nodelist (no `game_folder`,
 say), so the members will not receive it.
 
 #### Parameters
@@ -2374,8 +2379,8 @@ Validation Error
 Edit a league membership's BBS index and/or FTN address (admin only)
 
 Both fields are validated before either is written, so a rejected edit
-leaves the membership exactly as it was. The league's nodelist picks the
-change up at its next regeneration.
+leaves the membership exactly as it was. The league's nodelist is
+regenerated if the edit changed it.
 
 **Path Parameters:**
 - `league_id`: Database ID of the league

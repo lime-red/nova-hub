@@ -200,8 +200,7 @@ class Approval:
 
 def approve(db: Session, admin: SysopUser, application: Application, grants: list[Grant],
             client_id: Optional[str] = None, bbs_name: Optional[str] = None,
-            note: Optional[str] = None, data_dir: Optional[str] = None,
-            hub_config: Optional[dict] = None, dosemu_config: Optional[dict] = None,
+            note: Optional[str] = None, config: Optional[dict] = None,
             request: Optional[Request] = None) -> Approval:
     """Approve, granting these leagues. Commits everything, or nothing.
 
@@ -256,8 +255,7 @@ def approve(db: Session, admin: SysopUser, application: Application, grants: lis
         raise
 
     db.refresh(application)
-    problems = regenerate_nodelists(db, [g.league_id for g in grants], data_dir, hub_config,
-                                    dosemu_config)
+    problems = regenerate_nodelists(db, [g.league_id for g in grants], config)
     return Approval(application, client, token, link, problems)
 
 
@@ -361,32 +359,33 @@ def _grant(db: Session, client: Client, grant: Grant) -> LeagueMembership:
     return membership
 
 
-def regenerate_nodelists(db: Session, league_ids: list[int], data_dir: Optional[str],
-                         hub_config: Optional[dict],
-                         dosemu_config: Optional[dict] = None) -> list[str]:
+def regenerate_nodelists(db: Session, league_ids: list[int],
+                         config: Optional[dict]) -> list[str]:
     """Regenerate each league's nodelist, and give it to the hub's game to send.
 
-    Returns why any could not be.
+    Each league's game writes its own: BRNODES/FENODES for the SR games, the
+    IB roster for Immortal Barons. `config` is the raw config dict; without
+    one nothing is written. Returns why any could not be.
 
-    After the approval has committed: a league with no hub address can't get a
-    nodelist, which the admin needs to hear, but it is no reason to undo the
-    approval.
+    After the change has committed: a league with no hub address can't get a
+    nodelist, which the admin needs to hear, but it is no reason to undo it.
     """
-    from backend.services.nodelist_generator import NodelistGenerator
+    from backend.services.providers import provider_for
 
-    if data_dir is None:
+    if config is None:
         return []
     problems = []
-    generator = NodelistGenerator(db, data_dir, hub_config or {}, dosemu_config)
     for league_id in league_ids:
         league = db.get(League, league_id)
+        if league is None:
+            continue
         try:
-            if generator.generate(league_id) is None:
-                problems.append(f"{league.full_id}: no nodelist written; set the league's "
-                                "hub address, then generate it from the league page")
-        except Exception as e:  # noqa: BLE001 -- the approval stands either way
+            _, why = provider_for(league.game_type).generate_nodelist(db, config, league)
+        except Exception as e:  # noqa: BLE001 -- the change stands either way
             problems.append(f"{league.full_id}: nodelist generation failed: {e}")
-    return problems + generator.problems
+            continue
+        problems += [w if w.startswith(league.full_id) else f"{league.full_id}: {w}" for w in why]
+    return problems
 
 
 # --- the Verify step ---------------------------------------------------------

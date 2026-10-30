@@ -364,6 +364,19 @@ def test_the_roster_goes_into_the_hubs_game_and_out_to_the_members(hub):
         db.close()
 
 
+
+def test_an_approval_regenerates_the_ib_roster_not_a_bre_nodelist(hub):
+    """Approving an application regenerates the leagues it grants. For an IB
+    league that is the roster, as Generate Nodelist writes it: the SR
+    generator would write BRE's layout under the IB name, without the keys."""
+    from backend.services.applications import regenerate_nodelists
+
+    assert regenerate_nodelists(hub["db"], [hub["league"].id], hub["config"]) == []
+    published = hub["game"] / "ibnodes.dat"
+    content, _ = IB.roster(hub["db"], hub["config"], hub["league"])
+    assert published.read_bytes() == content.encode()
+    assert b"HOST" not in published.read_bytes()
+
 def coordinator_key(hub, board: str, league: str = "555I"):
     token = create_service_token(hub["boards"][board].client_id)
     return hub["http"].get(f"/service/api/v1/leagues/{league}/coordinator-key",

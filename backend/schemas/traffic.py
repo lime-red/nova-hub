@@ -19,6 +19,8 @@ class TrafficEvent(BaseModel):
     to_planet: int
     from_letter: Optional[str] = None
     to_letter: Optional[str] = None
+    from_name: Optional[str] = None   # as the hub knew them when it read the packet
+    to_name: Optional[str] = None
     stamp: Optional[str] = None       # far side's game clock, where it says
     at_hub: Optional[str] = None
     delivered: Optional[str] = None
@@ -37,7 +39,11 @@ class TrafficJourney(BaseModel):
     to_planet: int
     from_letter: Optional[str] = None
     to_letter: Optional[str] = None
+    from_name: Optional[str] = None   # as the hub knew them when it read the packet
+    to_name: Optional[str] = None
     recipients: Optional[str] = None  # Message: "all planets", or realm letters
+    # Message: the recipients' names in the same order, null where not known.
+    recipient_names: Optional[List[Optional[str]]] = None
     expects_result: bool
     sent_at_hub: Optional[str] = None
     sent_delivered: Optional[str] = None

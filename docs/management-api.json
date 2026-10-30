@@ -909,8 +909,15 @@
             "title": "Attack Type"
           },
           "attacker": {
-            "title": "Attacker",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attacker"
           },
           "attacker_clock_minutes": {
             "anyOf": [
@@ -922,6 +929,17 @@
               }
             ],
             "title": "Attacker Clock Minutes"
+          },
+          "attacker_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attacker Name"
           },
           "from_planet": {
             "title": "From Planet",
@@ -1058,8 +1076,26 @@
             "type": "string"
           },
           "target": {
-            "title": "Target",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          },
+          "target_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Name"
           },
           "to_planet": {
             "title": "To Planet",
@@ -1082,8 +1118,6 @@
           "league_id",
           "from_planet",
           "to_planet",
-          "attacker",
-          "target",
           "stage",
           "lost_attack_days"
         ],
@@ -4822,6 +4856,17 @@
             ],
             "title": "From Letter"
           },
+          "from_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Name"
+          },
           "from_planet": {
             "title": "From Planet",
             "type": "integer"
@@ -4883,6 +4928,17 @@
             ],
             "title": "To Letter"
           },
+          "to_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Name"
+          },
           "to_planet": {
             "title": "To Planet",
             "type": "integer"
@@ -4925,6 +4981,17 @@
             ],
             "title": "From Letter"
           },
+          "from_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Name"
+          },
           "from_planet": {
             "title": "From Planet",
             "type": "integer"
@@ -4951,6 +5018,27 @@
               }
             ],
             "title": "League Name"
+          },
+          "recipient_names": {
+            "anyOf": [
+              {
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recipient Names"
           },
           "recipients": {
             "anyOf": [
@@ -5032,6 +5120,17 @@
               }
             ],
             "title": "To Letter"
+          },
+          "to_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Name"
           },
           "to_planet": {
             "title": "To Planet",

@@ -203,14 +203,29 @@ function trafficStepTitle(t: TrafficJourney, step: TrafficStep): string {
   return at ? `${step.label}: ${when(at)}` : `${step.label}: not yet`
 }
 
-function trafficRoute(t: { from_planet: number; to_planet: number; from_letter: string | null; to_letter: string | null; recipients?: string | null }): string {
-  const from = `${t.from_planet}${t.from_letter ?? ''}`
+// A realm: its planet and letter (an IB realm has no letter), and its name as
+// the hub knew it when it read the packet.
+function realm(planet: number, letter: string | null, name: string | null | undefined): string {
+  const where = `${planet}${letter ?? ''}`
+  return name ? `${where} ${name}` : where
+}
+
+function trafficRoute(t: {
+  from_planet: number; to_planet: number; from_letter: string | null; to_letter: string | null
+  from_name: string | null; to_name: string | null
+  recipients?: string | null; recipient_names?: (string | null)[] | null
+}): string {
+  const from = realm(t.from_planet, t.from_letter, t.from_name)
   const r = t.recipients ?? null
   if (r === 'all planets') return `${from} → all planets`
-  if (r !== null) {
-    return r.length > 1 ? `${from} → ${t.to_planet} (${r.split('').join(', ')})` : `${from} → ${t.to_planet}${r}`
+  const letters = r === null ? [] : r.split('')
+  const named = t.recipient_names ?? null
+  if (named !== null || r !== null) {
+    const who = (named ?? letters).map((n, i) => n ?? letters[i] ?? '?')
+    if (who.length === 1 && named === null) return `${from} → ${t.to_planet}${who[0]}`
+    return `${from} → ${t.to_planet} (${who.join(', ')})`
   }
-  return `${from} → ${t.to_planet}${t.to_letter ?? ''}`
+  return `${from} → ${realm(t.to_planet, t.to_letter, t.to_name)}`
 }
 
 function trafficStageClass(t: TrafficJourney): string {
@@ -406,7 +421,7 @@ watch([days, leagueId, planet, onlyMit], load)
                     </td>
                     <td>{{ leagueLabel(j.league_id, j.league_name) }}</td>
                     <td class="font-mono">
-                      {{ j.from_planet }}{{ j.attacker }} &rarr; {{ j.to_planet }}{{ j.target }}
+                      {{ realm(j.from_planet, j.attacker, j.attacker_name) }} &rarr; {{ realm(j.to_planet, j.target, j.target_name) }}
                     </td>
                     <td>Attack<span v-if="j.attack_type" class="text-muted"> &middot; {{ j.attack_type }}</span></td>
                     <td>

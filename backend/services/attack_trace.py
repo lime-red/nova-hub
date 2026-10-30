@@ -36,7 +36,7 @@ from backend.logging_config import get_logger
 from backend.models.database import (
     AttackSighting, League, LeagueGameSettings, Packet, TrafficSighting,
 )
-from backend.services import bre_packet
+from backend.services import bre_packet, realm_names
 
 logger = get_logger(context="attack_trace")
 
@@ -81,16 +81,28 @@ def record(db: Session, packet: Packet, content: bytes, commit: bool = True) -> 
     recorded against the row before belongs to a different packet and goes.
     """
     league = packet.league or db.get(League, packet.league_id)
-    if league is None or league.game_type != "B":
+    if league is None:
+        return 0
+    reader = _READERS.get(league.game_type)
+    if reader is None:
         return 0
     if packet.filename.upper().startswith(NODELIST_PREFIXES):
         return 0          # BRNODES.015 is a text nodelist, not a game packet
 
-    records = bre_packet.parse(content)
     db.query(AttackSighting).filter(AttackSighting.packet_id == packet.id).delete()
     db.query(TrafficSighting).filter(TrafficSighting.packet_id == packet.id).delete()
+    added = reader(db, league, packet, content)
+    if commit:
+        db.commit()
+    else:
+        db.flush()
+    return added
 
-    added, hub = 0, from_hub(packet)
+
+def _record_bre(db: Session, league: League, packet: Packet, content: bytes) -> int:
+    records = bre_packet.parse(content)
+    hub = from_hub(packet)
+    usable = []
     for rec in records:
         if not rec.crc_ok:
             # A damaged record decodes to garbage; recording a garbage ID would
@@ -100,6 +112,22 @@ def record(db: Session, packet: Packet, content: bytes, commit: bool = True) -> 
             logger.warning(f"{packet.filename}: ignoring a {rec.name} from {rec.src} "
                            f"that its sender could not have written")
             continue
+        usable.append(rec)
+
+    # Realm lists first, so a packet that announces a realm and then acts for
+    # it names it.
+    seen = packet.processed_at or packet.uploaded_at or utcnow()
+    for rec in usable:
+        if rec.type == bre_packet.RECON_UPDATE and rec.data and rec.data[0] == rec.src:
+            try:
+                realms = bre_packet.realms(rec)
+            except bre_packet.PacketFormatError:
+                continue
+            realm_names.remember(db, league.id, rec.src, realms, packet.id, seen)
+    names = realm_names.Names(db, league.id)
+
+    added = 0
+    for rec in usable:
         if rec.type in (bre_packet.INDIV_ATTACK, bre_packet.ATTACK_RESULT):
             a = bre_packet.attack(rec)
             db.add(AttackSighting(
@@ -107,6 +135,8 @@ def record(db: Session, packet: Packet, content: bytes, commit: bool = True) -> 
                 packet_id=packet.id, league_id=league.id,
                 from_planet=a.from_planet, to_planet=a.to_planet,
                 attacker=a.attacker, target=a.target,
+                attacker_name=names.name(a.from_planet, a.attacker),
+                target_name=names.name(a.to_planet, a.target),
                 attack_type=a.attack_type, stamp=a.stamp,
             ))
             added += 1
@@ -120,22 +150,30 @@ def record(db: Session, packet: Packet, content: bytes, commit: bool = True) -> 
             t = bre_packet.traffic(rec)
             if t is None:
                 continue        # News that is not about a Gooie
+            # A message's recipients are on the planet it is addressed to.
+            recipient_names = None
+            if t.recipients and t.recipients != [bre_packet.ALL_PLANETS]:
+                recipient_names = [names.name(t.to_planet, player=r) for r in t.recipients]
             db.add(TrafficSighting(
                 event_key=bre_packet.event_key(rec), packet_id=packet.id,
                 league_id=league.id, record_type=t.type, kind=t.name,
                 from_planet=t.from_planet, to_planet=t.to_planet,
                 from_letter=t.from_letter, to_letter=t.to_letter,
                 from_player=t.from_player, to_player=t.to_player,
+                from_name=names.name(t.from_planet, t.from_letter, t.from_player),
+                to_name=names.name(t.to_planet, t.to_letter, t.to_player),
                 recipients=None if t.recipients is None
                 else ",".join(str(r) for r in t.recipients),
+                recipient_names=recipient_names,
                 chain=t.chain, role=t.role, stamp=t.stamp,
             ))
             added += 1
-    if commit:
-        db.commit()
-    else:
-        db.flush()
     return added
+
+
+# FE's packets share BRE's container, but its war records are not mapped yet
+# (fe_packet), so an FE league records nothing.
+_READERS = {"B": _record_bre}
 
 
 def record_safely(db: Session, packet: Packet, content: bytes) -> int:
@@ -308,11 +346,14 @@ class Journey:
     league_id: int
     from_planet: int
     to_planet: int
-    attacker: str
-    target: str
+    attacker: Optional[str]                # realm letters; IB has none
+    target: Optional[str]
     attack_type: Optional[str]
     launched: Optional[datetime]
     resolved: Optional[datetime]           # defender's game clock
+    # As the hub knew them when it read the packets (realm_names).
+    attacker_name: Optional[str] = None
+    target_name: Optional[str] = None
     attack_at_hub: Optional[datetime] = None
     attack_delivered: Optional[datetime] = None
     result_at_hub: Optional[datetime] = None
@@ -572,6 +613,9 @@ def journeys(db: Session, hub_index: str, league_id: Optional[int] = None,
         source = _bbs(p.source_bbs_index)
         at_hub = (p.processed_at or p.uploaded_at) if source == hub else p.uploaded_at
         j.hops.append(Hop(s.is_result, p.id, p.filename, source, dest, at_hub, taken))
+        # The earliest sighting that named them: what they were when launched.
+        j.attacker_name = j.attacker_name or s.attacker_name
+        j.target_name = j.target_name or s.target_name
         if s.is_result:
             j.resolved = _earliest(j.resolved, s.stamp)
             j.result_at_hub = _earliest(j.result_at_hub, at_hub)

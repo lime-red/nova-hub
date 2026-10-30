@@ -525,7 +525,8 @@ class AttackSighting(Base):
     )
 
     id = Column(Integer, primary_key=True, index=True)
-    attack_id = Column(String(16), nullable=False, index=True)
+    # BRE: the 8-byte ID in hex. IB: "<game start>.<origin node>.<id>" (ib_packet).
+    attack_id = Column(String(40), nullable=False, index=True)
     is_result = Column(Boolean, nullable=False, default=False)
     packet_id = Column(Integer, ForeignKey("packets.id"), nullable=False, index=True)
     league_id = Column(Integer, ForeignKey("leagues.id"), nullable=False)
@@ -533,9 +534,15 @@ class AttackSighting(Base):
     # Game planet numbers, which are the league's BBS indices.
     from_planet = Column(Integer, nullable=False)
     to_planet = Column(Integer, nullable=False)
-    attacker = Column(String(1), nullable=False)   # realm letter on from_planet
-    target = Column(String(1), nullable=False)     # realm letter on to_planet
+    # Realm letters on from_planet and to_planet. IB realms have no letter.
+    attacker = Column(String(1), nullable=True)
+    target = Column(String(1), nullable=True)
     attack_type = Column(String(20), nullable=True)
+    # The realms' names as the hub knew them when it read this packet -- not as
+    # they are now: a letter is reused after a reset or a deleted realm. IB
+    # packets name realms outright; for BRE they come from realm_names.
+    attacker_name = Column(String(64), nullable=True)
+    target_name = Column(String(64), nullable=True)
 
     # Attack: when the attacker's session began -- the Date: on their MIT report.
     # Result: when the defender's game resolved it.
@@ -571,8 +578,14 @@ class TrafficSighting(Base):
     to_letter = Column(String(1), nullable=True)
     from_player = Column(Integer, nullable=True)
     to_player = Column(Integer, nullable=True)
+    # Realm names at the time the packet was read, as for AttackSighting.
+    from_name = Column(String(64), nullable=True)
+    to_name = Column(String(64), nullable=True)
     # Message only: comma-separated player IDs, or -999 for every planet.
     recipients = Column(String(300), nullable=True)
+    # Message only: the recipients' names, in order, where they were known
+    # (null for one that was not); IB names recipients rather than numbering them.
+    recipient_names = Column(JSON, nullable=True)
     # A send and its result share this, as do a Gooie's notices; role says
     # which this is ("send", "result", "notice"). See bre_packet.traffic().
     chain = Column(String(64), nullable=True, index=True)
@@ -580,6 +593,27 @@ class TrafficSighting(Base):
     stamp = Column(DateTime, nullable=True)
 
     packet = relationship("Packet")
+
+
+class RealmName(Base):
+    """Who holds each realm slot on a BRE planet, as last announced.
+
+    Each planet's Recon Update lists its realms by slot: slot 0 is realm A. The
+    hub keeps the latest one per slot so it can name the realms in a sighting
+    when it reads the packet. A slot changes hands after a reset or when a realm
+    is deleted and its letter reused, which is why sightings copy the name
+    rather than join to this table.
+    """
+
+    __tablename__ = "realm_names"
+
+    league_id = Column(Integer, ForeignKey("leagues.id"), primary_key=True)
+    planet = Column(Integer, primary_key=True)
+    letter = Column(String(1), primary_key=True)
+    player_id = Column(Integer, nullable=True)
+    name = Column(String(64), nullable=False)
+    packet_id = Column(Integer, ForeignKey("packets.id"), nullable=True)
+    seen_at = Column(DateTime, nullable=True)
 
 
 class LeagueGameSettings(Base):

@@ -47,7 +47,11 @@ class Event:
     to_planet: int
     from_letter: Optional[str] = None
     to_letter: Optional[str] = None
+    # Realm names as the hub knew them when it read the packet (realm_names).
+    from_name: Optional[str] = None
+    to_name: Optional[str] = None
     recipients: Optional[str] = None     # Message: "all planets", or letters
+    recipient_names: Optional[List[Optional[str]]] = None
     stamp: Optional[datetime] = None
     at_hub: Optional[datetime] = None
     delivered: Optional[datetime] = None
@@ -100,7 +104,8 @@ class Journey:
         r = self.results[0]
         return Event(r.key, r.league_id, r.record_type, r.kind,
                      from_planet=r.to_planet, to_planet=r.from_planet,
-                     from_letter=r.to_letter, to_letter=r.from_letter)
+                     from_letter=r.to_letter, to_letter=r.from_letter,
+                     from_name=r.to_name, to_name=r.from_name)
 
     @property
     def started(self) -> Optional[datetime]:
@@ -157,6 +162,8 @@ def events(db: Session, hub_index: str, league_id: Optional[int] = None,
                 key=s.event_key, league_id=s.league_id, record_type=s.record_type,
                 kind=s.kind, from_planet=s.from_planet, to_planet=s.to_planet,
                 from_letter=s.from_letter, to_letter=s.to_letter,
+                from_name=s.from_name, to_name=s.to_name,
+                recipient_names=s.recipient_names,
                 stamp=s.stamp, chain=s.chain, role=s.role,
                 _recipient_ids=None if s.recipients is None
                 else [int(r) for r in s.recipients.split(",") if r],

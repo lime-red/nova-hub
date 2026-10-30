@@ -76,6 +76,8 @@ async def list_attacks(
             to_planet=j.to_planet,
             attacker=j.attacker,
             target=j.target,
+            attacker_name=j.attacker_name,
+            target_name=j.target_name,
             attack_type=j.attack_type,
             launched=_iso(j.launched),
             resolved=_iso(j.resolved),

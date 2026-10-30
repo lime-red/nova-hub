@@ -555,8 +555,12 @@ export interface AttackJourney {
   league_name: string | null
   from_planet: number
   to_planet: number
-  attacker: string
-  target: string
+  // Realm letters (none for an IB realm), and the names the hub knew them by
+  // when it read the packets: who held the slot then, not now.
+  attacker: string | null
+  target: string | null
+  attacker_name: string | null
+  target_name: string | null
   attack_type: string | null
   launched: string | null
   resolved: string | null
@@ -617,6 +621,8 @@ export interface TrafficEvent {
   to_planet: number
   from_letter: string | null
   to_letter: string | null
+  from_name: string | null
+  to_name: string | null
   stamp: string | null
   at_hub: string | null
   delivered: string | null
@@ -635,7 +641,11 @@ export interface TrafficJourney {
   to_planet: number
   from_letter: string | null
   to_letter: string | null
+  from_name: string | null
+  to_name: string | null
   recipients: string | null
+  // A message's recipients by name, in order; null where the hub had not heard.
+  recipient_names: (string | null)[] | null
   expects_result: boolean
   sent_at_hub: string | null
   sent_delivered: string | null

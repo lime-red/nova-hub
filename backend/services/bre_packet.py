@@ -190,13 +190,15 @@ class Record:
     dst: int
     crc_ok: bool
     data: bytes          # decompressed
+    # The game's names for its types: BRE's unless the packet is FE's (fe_packet).
+    names: Optional[dict] = field(default=None, repr=False, compare=False)
 
     @property
     def name(self) -> str:
-        return RECORD_TYPES.get(self.type, f"type {self.type:#04x}")
+        return (self.names or RECORD_TYPES).get(self.type, f"type {self.type:#04x}")
 
 
-def parse(packet: bytes) -> List[Record]:
+def parse(packet: bytes, names: Optional[dict] = None) -> List[Record]:
     if len(packet) < HEADER_SIZE:
         raise PacketFormatError(f"{len(packet)} bytes is shorter than the header")
     records, i, budget = [], HEADER_SIZE, MAX_PACKET_BODY
@@ -214,7 +216,7 @@ def parse(packet: bytes) -> List[Record]:
             raise PacketFormatError(f"record at offset {i} runs past the end")
         data = unrle(payload, min(MAX_RECORD_BODY, budget))
         budget -= len(data)
-        records.append(Record(rtype, src, dst, record_crc(payload) == crc, data))
+        records.append(Record(rtype, src, dst, record_crc(payload) == crc, data, names))
         i += RECORD_HEADER_SIZE + length
     return records
 

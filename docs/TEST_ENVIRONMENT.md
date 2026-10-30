@@ -526,3 +526,25 @@ rig user (`sudo install -d -o novahub-t -g novahub-t -m 755 <dir>`).
   to the held packet's old fingerprint. v0.2.6 releases the packet instead.
   `test_boards_join_and_settle_into_the_league_rules[trunk-…]` fails on it, as it
   should.
+
+### Players in the game when the day turns, measured 2026-10-30
+
+`test_a_new_day_while_barons_are_playing` has two barons on board 02 as the
+game's midnight passes and `-maint` starts the new day: one at the Entry menu,
+one part-way through a turn. They are `rig.ib_player.Player`s: IB's `-local`
+mode in a pty, which takes the world lock per action as a door session does,
+answering prompts by what is on screen. Every process gets the same
+`IB_CLOCK_OFFSET` (one that lands the game 90 s before the end of tomorrow), so
+they all pass midnight together, as a BBS's door and its maintenance do. The
+scenario takes about two minutes per build, most of it waiting for midnight.
+
+What both builds do (v0.2.6, trunk 1084c13):
+
+- `-maint` exits 0 and advances one day while both sessions are open.
+- Every realm has the new day's turns at once, the one mid-turn included: the
+  rollover clears the uncommitted turn's progress (IB #10).
+- The turn in hand still finishes, and is charged once, to the new day. The
+  baron at the menu plays on into the new day. Neither session fails a save,
+  and both exit 0.
+- `ib()` takes the same offset (`clock=`), as `Board.maint(clock)`; the v0.2.6
+  release has `IB_CLOCK_OFFSET` and `IB_GAME_DATE` too.

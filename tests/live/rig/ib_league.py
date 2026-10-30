@@ -68,9 +68,13 @@ def builds() -> dict:
         return {}
 
 
-def ib(binary: Path, data: Path, *args, timeout: int = 120) -> subprocess.CompletedProcess:
-    """Run the game on a data directory, headless, on the real clock."""
+def ib(binary: Path, data: Path, *args, timeout: int = 120,
+       clock: str = None) -> subprocess.CompletedProcess:
+    """Run the game on a data directory, headless: on the real clock, or shifted by
+    `clock` (IB_CLOCK_OFFSET, a Go duration such as 3600s)."""
     env = {k: v for k, v in os.environ.items() if not k.startswith("IB_")}
+    if clock:
+        env["IB_CLOCK_OFFSET"] = clock
     return subprocess.run([str(binary), *args, "-data", str(data)], env=env,
                           stdin=subprocess.DEVNULL, capture_output=True, text=True,
                           timeout=timeout)
@@ -142,8 +146,8 @@ class Board:
         self.league.wait_idle()
         return result
 
-    def maint(self) -> subprocess.CompletedProcess:
-        return ib(self.league.build.binary, self.data, "-maint")
+    def maint(self, clock: str = None) -> subprocess.CompletedProcess:
+        return ib(self.league.build.binary, self.data, "-maint", clock=clock)
 
     # -- what the board holds ------------------------------------------------------
 
@@ -158,6 +162,13 @@ class Board:
 
     def rules(self) -> dict:
         return json.loads((self.data / "config.json").read_text())
+
+    def world(self) -> dict:
+        return json.loads((self.data / "world.json").read_text())
+
+    def turns_left(self) -> dict:
+        """Realm name -> turns left, from the save."""
+        return {e["Name"]: e["TurnsLeft"] for e in self.world()["Empires"]}
 
     def ledger(self) -> dict:
         path = self.data / "packet-ledger.json"

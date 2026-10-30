@@ -4,6 +4,8 @@ All notable changes to Nova Hub will be documented in this file.
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-10-30
+
 ### Fixed
 - **A nodelist can be generated from the league page.** The Nodelist row has a
   Generate button (admins), which says what was written and any warning, such
@@ -19,6 +21,12 @@ All notable changes to Nova Hub will be documented in this file.
   approval regenerated every league's nodelist with the BRE/FE generator, so
   an IB league would have got BRE's layout under the IB name, without the
   board keys. It now asks each league's game, as Generate Nodelist does.
+
+### Changed
+- **The live rig:** `test_multi_day`'s below-the-minimum-sample scenario plays
+  on until the route really is noisy, instead of failing on days when the
+  game's emission happened to give a regular stride (#108). A new IB scenario
+  rolls a game day over while barons are in the game (#109).
 
 ## [0.10.0] - 2026-10-30
 

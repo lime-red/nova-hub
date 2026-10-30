@@ -454,6 +454,22 @@ def test_generated_nodelist_is_the_one_served(api, world, data_dir):
     assert b"135:135/20" in body and b"135:135/21" in body
 
 
+def test_generating_an_unchanged_nodelist_says_so(api, world, data_dir):
+    """The second press finds nothing to write, and says that rather than
+    claiming to have written it: the file's time does not move."""
+    client, db = api
+    db.get(League, world["league"]).hub_fidonet_address = "135:135/1"
+    db.commit()
+    url = f"{LEAGUES}/{world['league']}/generate-nodelist"
+
+    # Setting the address above went round the API, so nothing is there yet.
+    assert client.post(url).json()["changed"] is True
+    second = client.post(url).json()
+
+    assert second["changed"] is False
+    assert second["filename"] == "BRNODES.900" and second["members"] == 2
+
+
 
 def _served_nodelist(client, world):
     response = client.get(f"{LEAGUES}/{world['league']}/nodelist")

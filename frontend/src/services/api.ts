@@ -332,7 +332,7 @@ export const leaguesApi = {
     `${api.defaults.baseURL}/leagues/${leagueId}/nodelist`,
 
   generateNodelist: (leagueId: number) =>
-    api.post<{ filename: string, members: number, warnings: string[] }>(
+    api.post<{ filename: string, members: number, changed: boolean, warnings: string[] }>(
       `/leagues/${leagueId}/generate-nodelist`),
 
   updateMember: (leagueId: number, membershipId: number, data: {

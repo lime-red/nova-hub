@@ -196,7 +196,7 @@ async function handleEditMember() {
 }
 
 // The last Generate Nodelist: what was written and any warnings, or why not.
-const nodelistResult = ref<{ filename: string, members: number, warnings: string[] } | null>(null)
+const nodelistResult = ref<{ filename: string, members: number, changed: boolean, warnings: string[] } | null>(null)
 const nodelistError = ref<string | null>(null)
 const generatingNodelist = ref(false)
 
@@ -365,12 +365,18 @@ async function handleDelete() {
               </p>
               <div v-if="nodelistError" class="alert alert-error mt-2">{{ nodelistError }}</div>
               <div v-else-if="nodelistResult?.warnings.length" class="alert alert-warning mt-2">
-                <div>Wrote {{ nodelistResult.filename }} ({{ nodelistResult.members }} members), but:</div>
+                <div v-if="nodelistResult.changed">Wrote {{ nodelistResult.filename }} ({{ nodelistResult.members }} members), but:</div>
+                <div v-else>{{ nodelistResult.filename }} is already up to date ({{ nodelistResult.members }} members), but:</div>
                 <div v-for="w in nodelistResult.warnings" :key="w">{{ w }}</div>
               </div>
-              <p v-else-if="nodelistResult" class="form-hint mt-2">
+              <p v-else-if="nodelistResult?.changed" class="form-hint mt-2">
                 Wrote {{ nodelistResult.filename }} with {{ nodelistResult.members }} members.
                 The hub's game sends it to every member on its next run.
+              </p>
+              <p v-else-if="nodelistResult" class="form-hint mt-2">
+                Checked: {{ nodelistResult.filename }} already matches the {{ nodelistResult.members }}
+                members, so it was left as it is (hence the unchanged time). Members are sent a
+                nodelist only when it changes.
               </p>
               <p v-if="!leaguesStore.currentLeague.hub_fidonet_address" class="form-hint mt-2">
                 Nodelist generation is blocked for this league until the hub's

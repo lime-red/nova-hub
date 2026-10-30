@@ -740,11 +740,16 @@ async def generate_nodelist(
     its nodes file (only if that changes it). The game sends it to every member
     on its next run, as it does when the file is edited by hand.
 
+    A nodelist the same as the current one is not rewritten: the game sends one
+    when its file changes, so rewriting it would change nothing, or send the
+    same nodelist to every member again. `changed` says which happened.
+
     **Path Parameters:**
     - `league_id`: Database ID of the league
 
-    **Returns:** `{"filename": ..., "members": <count>, "warnings": [...]}`; a
-    warning means the hub's game was not given the nodelist (no `game_folder`,
+    **Returns:** `{"filename": ..., "members": <count>, "changed": <bool>,
+    "warnings": [...]}`; `changed` is false when the membership gave the same
+    nodelist as before, so nothing was written. A warning means the hub's game was not given the nodelist (no `game_folder`,
     say), so the members will not receive it.
     """
     from backend.core.config import get_config
@@ -762,6 +767,10 @@ async def generate_nodelist(
             detail=f"League has unknown game type '{league.game_type}' — nodelist not generated",
         )
 
+    from backend.services.nodelist_generator import find_nodelist
+
+    before = find_nodelist(_data_dir(), league)
+    before = before.read_bytes() if before is not None else None
     dest, problems = provider.generate_nodelist(db, get_config(), league)
     if dest is None:
         raise HTTPException(status_code=422, detail="; ".join(problems) or "Nodelist not generated")
@@ -776,9 +785,12 @@ async def generate_nodelist(
         .count()
     )
 
-    logger.info(f"Generated nodelist {dest.name} for league {league.full_id} by {current_user.username}")
+    changed = dest.read_bytes() != before
+    logger.info(f"Generated nodelist {dest.name} for league {league.full_id} by {current_user.username}"
+                + ("" if changed else "; unchanged, so not rewritten"))
 
-    return {"filename": dest.name, "members": member_count, "warnings": problems}
+    return {"filename": dest.name, "members": member_count, "changed": changed,
+            "warnings": problems}
 
 
 @router.delete("/{league_id}/members/{member_id}", summary="Remove Member")

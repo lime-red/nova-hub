@@ -177,7 +177,7 @@ export const useLeaguesStore = defineStore('leagues', () => {
   // Generate the league's nodelist now. Returns what the hub said, or null
   // (with `error` set) if it would not write one.
   async function generateNodelist(leagueId: number):
-      Promise<{ filename: string, members: number, warnings: string[] } | null> {
+      Promise<{ filename: string, members: number, changed: boolean, warnings: string[] } | null> {
     loading.value = true
     error.value = null
 

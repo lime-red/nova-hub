@@ -1,6 +1,6 @@
 # Nova Hub - Management API
 
-**Version:** 0.10.1
+**Version:** 0.11.0
 
 
 # Management API for Sysop Administration

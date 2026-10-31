@@ -4,6 +4,8 @@ All notable changes to Nova Hub will be documented in this file.
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-31
+
 ### Added
 - **Immortal Barons attacks and traffic are followed through the hub**, as
   BRE's are: attack journeys with the MIT judgement, ops, trade deals, recon,

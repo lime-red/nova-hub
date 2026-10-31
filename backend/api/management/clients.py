@@ -18,6 +18,7 @@ from backend.logging_config import get_logger
 from backend.models.database import (
     ClaimLink,
     Client,
+    ClientLeaguePoll,
     FtnAddress,
     League,
     LeagueMembership,
@@ -447,6 +448,8 @@ async def delete_client(
     for address in client.ftn_addresses:
         db.delete(address)
     db.query(ClaimLink).filter(ClaimLink.client_id == client.id).delete()
+    # Its polls, of leagues it has since left, describe nothing once it is gone.
+    db.query(ClientLeaguePoll).filter(ClientLeaguePoll.client_id == client.id).delete()
     audit.record(db, "client.deleted", actor=current_user, target=client,
                  detail=f"client_id {client.client_id}", request=http_request)
     db.delete(client)

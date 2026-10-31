@@ -22,7 +22,7 @@ from backend.core import database
 from backend.core.database import get_db, sqlite_pragmas
 from backend.core.security import get_current_user, require_admin
 from backend.models.database import (
-    AttackSighting, AuditEvent, Base, Client, GameReset, League, LeagueGameSettings,
+    AttackSighting, AuditEvent, Base, Client, ClientLeaguePoll, GameReset, League, LeagueGameSettings,
     LeagueMembership, Packet, ProcessingRun, ProcessingRunFile, ProcessingRunItem,
     SequenceAlert, SysopUser, TrafficSighting,
 )
@@ -115,6 +115,7 @@ def _a_league_with_everything(db):
                           direction="in", item_type="Report"),
         ProcessingRunFile(processing_run_id=run.id, league_id=league.id,
                           file_type="score", filename="SCORES.TXT"),
+        ClientLeaguePoll(client_id=board.id, league_id=league.id),
     ])
     db.commit()
     return league, other, theirs
@@ -129,7 +130,8 @@ def test_deleting_a_league_takes_everything_that_names_it(hub):
 
     db.expire_all()
     for model in (AttackSighting, TrafficSighting, LeagueGameSettings, GameReset, SequenceAlert,
-                  ProcessingRunItem, ProcessingRunFile, ProcessingRun, LeagueMembership):
+                  ProcessingRunItem, ProcessingRunFile, ProcessingRun, LeagueMembership,
+                  ClientLeaguePoll):
         assert db.query(model).count() == 0, model.__name__
     # Another league's packet the run carried keeps its row, without the run.
     assert db.query(Packet).one().id == theirs.id
@@ -149,6 +151,8 @@ def test_deleting_a_bbs_keeps_the_packets_it_sent(hub):
     db.add(Packet(filename="557B0201.001", league_id=league.id, source_bbs_index="02",
                   dest_bbs_index="01", sequence_number=1, file_size=1,
                   source_client_id=board.id, dest_client_id=board.id))
+    # It polled the league once, and later left it: its poll row stays.
+    db.add(ClientLeaguePoll(client_id=board.id, league_id=league.id))
     db.commit()
 
     r = client.delete(f"/management/api/v1/clients/{board.id}")
@@ -156,6 +160,7 @@ def test_deleting_a_bbs_keeps_the_packets_it_sent(hub):
     db.expire_all()
     packet = db.query(Packet).one()
     assert packet.source_client_id is None and packet.dest_client_id is None
+    assert db.query(ClientLeaguePoll).count() == 0
 
 
 def test_creating_a_league_is_audited_and_its_number_is_three_digits(hub):

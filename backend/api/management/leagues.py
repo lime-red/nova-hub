@@ -513,6 +513,7 @@ async def delete_league(
         "DELETE FROM packets WHERE league_id = :lid",
         "DELETE FROM processing_runs WHERE league_id = :lid",
         "DELETE FROM league_memberships WHERE league_id = :lid",
+        "DELETE FROM client_league_polls WHERE league_id = :lid",
         "DELETE FROM leagues WHERE id = :lid",
     ):
         db.execute(text(statement), lid)

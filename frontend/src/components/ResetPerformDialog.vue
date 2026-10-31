@@ -10,6 +10,7 @@ import {
   type ResetField,
   type ResetValue
 } from '@/services/api'
+import { blankResetValue, resetSignal } from '@/games'
 
 const props = defineProps<{ form: GameResetForm }>()
 const emit = defineEmits<{ close: []; performed: [reset: ResetDetail] }>()
@@ -38,7 +39,7 @@ const baseline = computed<Record<string, ResetValue>>(() => {
 })
 
 function display(f: ResetField, v: ResetValue | undefined): string {
-  if (v === null || v === undefined || v === '') return f.kind === 'date' ? 'day of reset' : '—'
+  if (v === null || v === undefined || v === '') return blankResetValue(f.id, f.kind)
   if (f.kind === 'toggle') return v ? 'Enabled' : 'Disabled'
   if (f.kind === 'choice') return f.choices.find((c) => c.letter === v)?.name ?? String(v)
   if (f.kind === 'number') return Number(v).toLocaleString()
@@ -90,7 +91,7 @@ async function perform() {
         <div class="alert alert-error mb-4">
           <strong>Every player on every board in {{ form.full_id }} is wiped.</strong>
           The hub resets its own game now, and each member's game resets on its next
-          run after it downloads the Game Start. This can't be undone once members
+          run after it downloads the {{ resetSignal(form.game_type) }}. This can't be undone once members
           have run it.
         </div>
 

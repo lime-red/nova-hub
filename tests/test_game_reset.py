@@ -23,6 +23,7 @@ from backend.core.database import get_db
 from backend.core.security import get_current_user
 from backend.models.database import AuditEvent, Base, GameReset, League, SysopUser
 from backend.services.game_reset import drafts
+from backend.services import ib_packet
 from backend.services.game_reset.fields import CHOICE, DATE, NUMBER, defaults, fields_for
 
 TODAY = date(2026, 10, 15)
@@ -83,6 +84,84 @@ def test_every_field_is_complete(game):
     # The defaults pass our own checks, without a warning.
     settings, errors = drafts.validate(game, {}, TODAY)
     assert errors == [] and drafts.warnings(game, settings) == []
+
+
+# IB's DefaultConfig, as a fresh Coordinator's config.json holds it (dev 902I,
+# v0.2.6), but MoneyCapBillions, which IB fixed at 2 (#205).
+IB_DEFAULTS = {
+    "GameStartDate": "", "JoinDate": "", "TurnsPerDay": 10, "ProtectionTurns": 15,
+    "GameLength": 0, "IdleDaysRemove": 10, "InitialMarketLand": 0, "LandPerDay": 1000,
+    "InterestRate": 50, "StdInvestRate": 35, "SteadyInvest": False,
+    "FoodUnlimited": False, "MaxTaxRate": 50, "PlanetaryTaxRate": 5, "MaxRegions": 500,
+    "MaxLocalAttacks": 0, "MaxIndividualAttacks": 1, "MaxGroupAttacks": 1,
+    "MaxTerrorOps": 10, "MaxBombingOps": 5, "LostForcesDays": 3, "LocalAttacks": True,
+    "LocalAttackScoring": False, "DupeChecking": True, "MinBoardVersion": "",
+    "IPTrading": True, "Pirates": True, "BombingOps": True, "MissileOps": True,
+    "ClingyAnnihilator": True, "MaxPlayers": 25, "BuyMilitary": 0, "MaintCosts": 0,
+    "TradeCosts": 0, "RegionCosts": 0, "AttackCosts": 0, "TerrorCosts": 0,
+    "AttackDamage": 0, "AttackRewards": 0, "SabreHandling": 1, "SabreConstantDial": 5,
+}
+
+
+def ib_league_config_fields():
+    """LeagueConfig's fields in IB's frozen packet shape, by config.json's names."""
+    shape = Path(__file__).parent / "fixtures" / "ib_packet_shape.txt"
+    lines = shape.read_text().split("\nLeagueConfig:\n", 1)[1].splitlines()
+    out = set()
+    for line in lines:
+        if not line.startswith(" "):
+            break
+        tag = line.split('json:"')[1].split(",")[0].split('"')[0] if 'json:"' in line else ""
+        out.add(tag or line.split()[0])
+    return out - {"MoneyCapBillions", "SlappenheimerHandling"} | {"SabreHandling"}
+
+
+def test_the_ib_form_sets_every_league_rule_at_ibs_defaults():
+    assert ib_packet.config_json(defaults("I")) == IB_DEFAULTS
+    assert set(IB_DEFAULTS) == ib_league_config_fields()
+
+
+def test_ib_settings_survive_the_round_trip_through_a_packet():
+    s, errors = drafts.validate("I", {
+        "turns_per_day": 7, "join_date": "2026-11-20", "start_date": "2026-10-20",
+        "attack_damage": "H", "region_costs": "N", "buy_military": "L", "sabre": "C",
+        "sabre_dial": 9, "pirates": False, "game_length": 90, "planetary_tax_rate": 0,
+        "local_attacks_per_day": 4, "min_board_version": "v0.2.6"}, TODAY)
+    assert errors == [] and s["min_board_version"] == "0.2.6"
+    sent = ib_packet.config_json(s)
+    sent["SlappenheimerHandling"] = sent.pop("SabreHandling")
+    back = ib_packet.league_settings(sent)
+    assert back.game_started_at.date().isoformat() == "2026-10-20"
+    assert {k: v for k, v in back.settings.items()} == {
+        k: v for k, v in s.items() if k != "start_date"}
+
+
+def test_ib_has_minimums_and_blank_dates():
+    assert "turns_per_day" in errors_for("I", {"turns_per_day": 0})
+    assert "interest_rate" in errors_for("I", {"interest_rate": 49})
+    assert "investment_rate" in errors_for("I", {"investment_rate": 34})
+    assert "tax_rate" in errors_for("I", {"tax_rate": 51})
+    assert "indiv_attacks" in errors_for("I", {"indiv_attacks": 101})
+    assert "attack_rewards" in errors_for("I", {"attack_rewards": "N"})
+    settings, errors = drafts.validate("I", {}, TODAY)
+    assert errors == [] and settings["join_date"] is None and settings["start_date"] is None
+    assert settings["min_board_version"] == ""
+    for bad in ("abc", "0.2.6-rc1", "1..2", 5):
+        assert "min_board_version" in errors_for("I", {"min_board_version": bad}), bad
+    assert errors_for("I", {"min_board_version": " V1.0 "}) == {}
+
+
+def test_ib_fields_are_complete():
+    fields = fields_for("I")
+    assert len({f.id for f in fields}) == len(fields)
+    for f in fields:
+        assert f.help_title and f.help, f.id
+        if f.kind == NUMBER:
+            assert f.min <= f.default <= f.max, f.id
+        if f.kind == CHOICE:
+            assert f.default in [letter for letter, _ in f.choices], f.id
+    settings, errors = drafts.validate("I", {}, TODAY)
+    assert errors == [] and drafts.warnings("I", settings) == []
 
 
 def test_choices_are_only_what_the_editor_accepts():
@@ -262,6 +341,17 @@ def test_fe_league_gets_fe_fields(api):
     db.commit()
     body = client.get(f"{BASE}/{fe.id}/reset").json()
     assert [f["label"] for f in body["fields"]] == [e[0] for e in FE_EDITOR]
+
+
+def test_ib_league_gets_ib_fields(api):
+    client, db, _ = api
+    ib = League(league_id="900", game_type="I", name="900I", is_active=True)
+    db.add(ib)
+    db.commit()
+    body = client.get(f"{BASE}/{ib.id}/reset").json()
+    kinds = {f["id"]: f["kind"] for f in body["fields"]}
+    assert len(kinds) == 41 and kinds["min_board_version"] == "text"
+    assert body["defaults"]["join_date"] is None
 
 
 def test_one_draft_per_league_in_the_database(db_session, sample_league):

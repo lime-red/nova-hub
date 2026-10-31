@@ -491,9 +491,9 @@ def test_an_admin_sets_a_boards_key_and_only_in_an_ib_league(hub):
     assert hub["http"].patch(url, json={"board_key": KEY_C}).status_code == 400
 
 
-def test_an_ib_league_has_no_reset_editor(hub):
+def test_an_ib_league_has_a_reset_form(hub):
     r = hub["http"].get(f"/management/api/v1/leagues/{hub['league'].id}/reset")
-    assert r.status_code == 404
+    assert r.status_code == 200 and r.json()["game_type"] == "I"
 
 
 # -- client config ---------------------------------------------------------------

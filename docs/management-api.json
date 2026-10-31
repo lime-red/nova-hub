@@ -4871,7 +4871,7 @@
             "type": "boolean"
           },
           "kind": {
-            "description": "number, choice, toggle or date",
+            "description": "number, choice, toggle, date or text",
             "title": "Kind",
             "type": "string"
           },

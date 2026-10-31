@@ -9,6 +9,7 @@
 // start date, decoded from it.
 import { computed, onMounted, ref, watch } from 'vue'
 import ResetProgress from '@/components/ResetProgress.vue'
+import { blankResetValue, resetSignal } from '@/games'
 import {
   apiError,
   gameResetApi,
@@ -24,9 +25,12 @@ const props = withDefaults(
     refreshKey: number
     inline?: boolean
     openId?: number | null
+    gameType?: string
   }>(),
-  { inline: false, openId: null }
+  { inline: false, openId: null, gameType: 'B' }
 )
+const signal = computed(() => resetSignal(props.gameType))
+const Signal = computed(() => signal.value[0].toUpperCase() + signal.value.slice(1))
 const emit = defineEmits<{ open: [resetId: number]; finished: [] }>()
 
 const SHOWN = 2
@@ -62,7 +66,7 @@ function reveal(id: number | null) {
 }
 
 function display(f: ResetField, v: ResetValue | undefined): string {
-  if (v === null || v === undefined || v === '') return f.kind === 'date' ? 'day of reset' : '—'
+  if (v === null || v === undefined || v === '') return blankResetValue(f.id, f.kind)
   if (f.kind === 'toggle') return v ? 'Enabled' : 'Disabled'
   if (f.kind === 'choice') return f.choices.find((c) => c.letter === v)?.name ?? String(v)
   if (f.kind === 'number') return Number(v).toLocaleString()
@@ -110,7 +114,7 @@ onMounted(load)
       <div v-if="error" class="alert alert-error">{{ error }}</div>
       <p v-else-if="loading" class="text-muted">Loading...</p>
       <p v-else-if="!rows.length" class="text-muted">
-        No resets yet: none from the console, and no Game Start in the packets the hub holds.
+        No resets yet: none from the console, and no {{ signal }} in the packets the hub holds.
       </p>
       <template v-else>
         <table class="table">
@@ -134,7 +138,7 @@ onMounted(load)
                 </td>
                 <td>
                   <template v-if="r.source === 'observed'">
-                    <span class="text-muted" title="Seen in a Game Start packet, not performed from the console">
+                    <span class="text-muted" :title="`Seen in a ${signal} packet, not performed from the console`">
                       seen in packets
                     </span>
                   </template>
@@ -143,9 +147,9 @@ onMounted(load)
                 <td>
                   <span v-if="r.status === 'applying'" class="badge badge-info">under way</span>
                   <span v-else-if="r.status === 'failed'" class="badge badge-danger">failed</span>
-                  <span v-else-if="r.confirmed === false" class="badge badge-danger">Game Start disagrees</span>
+                  <span v-else-if="r.confirmed === false" class="badge badge-danger">{{ Signal }} disagrees</span>
                   <span v-else-if="r.confirmed" class="badge badge-success">confirmed</span>
-                  <span v-else-if="r.source === 'console'" class="badge badge-warning">awaiting Game Start</span>
+                  <span v-else-if="r.source === 'console'" class="badge badge-warning">awaiting {{ signal }}</span>
                   <span v-else class="badge badge-success">applied</span>
                 </td>
                 <td class="toggle"><span class="chevron" :class="{ open: expanded === r.id }" aria-hidden="true"></span></td>
@@ -156,6 +160,7 @@ onMounted(load)
                     v-if="inline && r.source === 'console'"
                     :league-id="leagueId"
                     :reset-id="r.id"
+                    :game-type="gameType"
                     embedded
                     @finished="onFinished"
                   />
@@ -182,7 +187,7 @@ onMounted(load)
                     class="btn btn-secondary btn-sm"
                     @click.stop="emit('open', r.id)"
                   >
-                    Progress and editor log
+                    Progress and {{ gameType === 'I' ? "the game's" : 'editor' }} log
                   </button>
                 </td>
               </tr>

@@ -325,10 +325,11 @@ def traffic_details(t: Traffic) -> Optional[dict]:
 
 
 # ── league orders ─────────────────────────────────────────────────────────
-# LeagueConfig's fields by the reset catalogue's ids (game_reset/fields.py),
-# where IB keeps BRE's setting; the rest are IB's own and kept under their own
-# names. Level is Medium 0, Low 1, High 2, None 3; BuyMode Yes 0, No 1,
-# Limited 2; SabreMode None 0, User Select 1, Random 2, Constant 3.
+# LeagueConfig's fields by the reset catalogue's ids (game_reset/fields.py):
+# BRE's id where IB keeps BRE's setting, an id of its own where it doesn't.
+# Level is Medium 0, Low 1, High 2, None 3; BuyMode Yes 0, No 1, Limited 2;
+# SabreMode None 0, User Select 1, Random 2, Constant 3. MoneyCapBillions is
+# left out: IB fixed it at 2 (#205) and no longer lets it be set.
 _NUMBERS = {"TurnsPerDay": "turns_per_day", "ProtectionTurns": "protection_turns",
             "LandPerDay": "land_per_day", "InterestRate": "interest_rate",
             "MaxTaxRate": "tax_rate", "MaxIndividualAttacks": "indiv_attacks",
@@ -347,9 +348,12 @@ _TOGGLES = {"ClingyAnnihilator": "gooie", "DupeChecking": "dupe_checking",
             "SteadyInvest": "steady_investment"}
 _BUY = {0: "Y", 1: "N", 2: "L"}
 _SABRE = {0: "N", 1: "U", 2: "R", 3: "C"}
-# IB's own, kept as they are.
-_OWN = ("GameLength", "IdleDaysRemove", "MoneyCapBillions", "FoodUnlimited",
-        "PlanetaryTaxRate", "MaxLocalAttacks", "MinBoardVersion", "IPTrading", "Pirates")
+# IB's own settings.
+_OWN_NUMBERS = {"GameLength": "game_length", "IdleDaysRemove": "idle_days_remove",
+                "PlanetaryTaxRate": "planetary_tax_rate",
+                "MaxLocalAttacks": "local_attacks_per_day"}
+_OWN_TOGGLES = {"FoodUnlimited": "food_unlimited", "IPTrading": "ip_trading",
+                "Pirates": "pirates"}
 
 
 def league_settings(c: dict) -> bre_packet.LeagueSettings:
@@ -373,12 +377,48 @@ def league_settings(c: dict) -> bre_packet.LeagueSettings:
     joined = day(c.get("JoinDate"))
     if joined:
         out["join_date"] = joined.date().isoformat()
-    for k in _OWN:
-        if k in c:
-            out[k] = c[k]
+    for k, fid in _OWN_NUMBERS.items():
+        if _int(c.get(k)) is not None:
+            out[fid] = c[k]
+    for k, fid in _OWN_TOGGLES.items():
+        if isinstance(c.get(k), bool):
+            out[fid] = c[k]
+    if isinstance(c.get("MinBoardVersion"), str):
+        out["min_board_version"] = c["MinBoardVersion"]
     return bre_packet.LeagueSettings(
         day(c.get("GameStartDate")), out.get("protection_turns"),
         out.get("indiv_attacks"), out.get("lost_attack_days"), out)
+
+
+def config_json(settings: dict) -> dict:
+    """The keys of the Coordinator's config.json that a reset's settings set:
+    league_settings() the other way round. config.json names Sabre Handling
+    SabreHandling where the packet says SlappenheimerHandling, and the dial is
+    left as it is unless Sabre is Constant, which is the only time the form has
+    one. A blank date is IB's own "none": start now, or no join cut-off."""
+    out = {}
+    for tables in ((_NUMBERS, _OWN_NUMBERS), (_TOGGLES, _OWN_TOGGLES)):
+        for table in tables:
+            for k, fid in table.items():
+                if fid in settings:
+                    out[k] = settings[fid]
+    level = {v: k for k, v in _LEVEL.items()}
+    for k, fid in _LEVELS.items():
+        if fid in settings:
+            out[k] = level[settings[fid]]
+    if "buy_military" in settings:
+        out["BuyMilitary"] = {v: k for k, v in _BUY.items()}[settings["buy_military"]]
+    if "sabre" in settings:
+        out["SabreHandling"] = {v: k for k, v in _SABRE.items()}[settings["sabre"]]
+    if settings.get("sabre_dial") is not None:
+        out["SabreConstantDial"] = settings["sabre_dial"]
+    if "start_date" in settings:
+        out["GameStartDate"] = settings["start_date"] or ""
+    if "join_date" in settings:
+        out["JoinDate"] = settings["join_date"] or ""
+    if "min_board_version" in settings:
+        out["MinBoardVersion"] = settings["min_board_version"] or ""
+    return out
 
 
 def orders(p: dict) -> Tuple[Optional[bre_packet.LeagueSettings], Optional[datetime.datetime]]:

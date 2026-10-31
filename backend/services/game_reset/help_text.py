@@ -8,6 +8,7 @@ setting for this option has been switched") are dropped; they are not help.
 Typos are the games', kept as they are.
 
 Generated once from the .HLP files and committed; the games will not change.
+Immortal Barons has no help file: its text is from its own config editor, below.
 """
 
 # field id -> (help title as the editor shows it, help text)
@@ -466,5 +467,226 @@ FE = {
         'league, automatically resetting their games without sysop intervention.\n'
         'This can be used if you wish to end league play and restart the game\n'
         'fresh or if problems have developed requiring a league-wide reset.'
+    ),
+}
+
+
+# Immortal Barons: the help its own config editor shows for each setting
+# (internal/menu/config_editor_tui.go, v0.2.6), word for word. IB is MIT
+# licensed, (c) Andy Alt and contributors; https://github.com/andy5995/immortal-barons.
+# IB words its help itself rather than copying BRE's.
+IB = {
+    'start_date': (
+        'Game Start Date',
+        'The date the game starts. Before it, players can join and play their '
+        'first turns, but no new day begins. Blank starts the game right away.'
+    ),
+    'join_date': (
+        'Game Join Date',
+        'New players may not join after this date. Blank leaves joining open.'
+    ),
+    'turns_per_day': (
+        'Turns Per Day',
+        'How many turns each player may take per day.'
+    ),
+    'protection_turns': (
+        'Turns of Protection',
+        'New-realm protection: turns a fresh empire cannot attack and cannot be'
+        ' attacked, giving newcomers time to get established.'
+    ),
+    'game_length': (
+        'Game Length',
+        "Game days before this board's game ends. The realm with the most "
+        'regions is crowned Planetary Master, every realm is removed, and a new'
+        ' game starts. 0 means the game never ends.'
+    ),
+    'idle_days_remove': (
+        'Days Idle Before Removal',
+        'Days a realm may go unplayed before it is removed. A realm whose owner'
+        ' never played a turn is removed the next day. 0 never removes '
+        'anything.'
+    ),
+    'initial_land': (
+        'Initial Market Land',
+        'Extra regions each new realm may buy when it is created, on top of its'
+        " first day's allowance."
+    ),
+    'land_per_day': (
+        'Land Created / Day',
+        'Regions added each day to what each realm may buy.'
+    ),
+    'interest_rate': (
+        'Interest Rate',
+        'Bank interest over 10 days: 50 is 5% a day, and the maximum (200) is '
+        '20% a day. It is paid in equal parts at the end of each turn a player '
+        'takes. High rates let banking dominate the game, so a value near the '
+        'minimum keeps play balanced.'
+    ),
+    'investment_rate': (
+        'Standard Investment Rate',
+        'The investment return over 10 days when Steady Investment Rate is on: '
+        '35 is 3.5% a day, and the maximum (100) is 10% a day. When Steady '
+        'Investment Rate is off, the return drifts each day with how much is '
+        'invested, and the bank pulls it back when it falls below half of this '
+        'value or rises above one and a half times it.'
+    ),
+    'steady_investment': (
+        'Steady Investment Rate',
+        'When on, the investment return stays fixed at the Standard Investment '
+        'Rate instead of drifting each day with how much is invested.'
+    ),
+    'tax_rate': (
+        'Max Tax Rate',
+        'The highest tax rate a player is allowed to set.'
+    ),
+    'planetary_tax_rate': (
+        'Planetary Tax Rate',
+        "The crown tax the Queen Royale takes from each turn's gold income, as "
+        "a whole percent (default 5, maximum 20). The gold goes to the Queen's "
+        'purse, which she refunds a share of to each baron at the start of '
+        'their playing day.'
+    ),
+    'max_region_purchase': (
+        'Max Purchasable Regions',
+        'The most regions a player may buy in one turn. It does not limit how '
+        'many regions a player may own. 0 means no limit.'
+    ),
+    'max_players': (
+        'Max Players',
+        'The most players on this board, 1 to 25. 0 means as many as the planet'
+        ' has room for (25).'
+    ),
+    'food_unlimited': (
+        'Food Unlimited',
+        'When on, the food market never runs short — its daily supply is '
+        'unlimited.'
+    ),
+    'buy_military': (
+        'Buy Military',
+        'Whether players may buy military units. Yes: they may buy them freely.'
+        ' No: they must build them with industry. Limited is not built yet and '
+        'works like Yes.'
+    ),
+    'maintenance_costs': (
+        'Maintenance Costs',
+        'Upkeep cost for regions and forces: High, Medium, Low, or None.'
+    ),
+    'trade_costs': (
+        'Trade Deal Costs',
+        'Cost of trade deals: High, Medium, Low, or None.'
+    ),
+    'region_costs': (
+        'Region Costs',
+        'How fast the price of a region rises for a realm with 300 or more '
+        'regions. Smaller realms and realms under protection are not affected. '
+        'None removes the extra rise; it does not make regions free.'
+    ),
+    'attack_damage': (
+        'Attack Damage',
+        'How much of its force each side loses before it breaks off a battle: '
+        'High, Medium, or Low. It applies to attacks on this board and on other'
+        ' boards.'
+    ),
+    'attack_rewards': (
+        'Attack Rewards',
+        "How large a share of a beaten realm's regions the winner takes: High, "
+        'Medium, or Low. Only regions change hands.'
+    ),
+    'sabre': (
+        'Sabre Handling',
+        'How S3-Sabre missiles sent to other boards are aimed. User Select: the'
+        ' player sets the dial. Random: a random dial for each launch. '
+        'Constant: always the dial set below. None: the missile cannot be used.'
+    ),
+    'sabre_dial': (
+        'Sabre Constant Setting',
+        'Which dial Constant handling fires (0-10). Ignored by the other modes.'
+    ),
+    'local_attacks_per_day': (
+        'Max Local Attacks',
+        'The most attacks a player may make on this board in one day. Regular '
+        'attacks, nuclear, chemical and biological attacks, and attacks on '
+        'pirates all count. A player can still make only one per turn. 0 means '
+        'no daily limit beyond that.'
+    ),
+    'pirates': (
+        'Pirates',
+        'Whether there are pirates at all. Off, nobody is raided and Attack '
+        'Pirates is gone.'
+    ),
+    'attack_costs': (
+        'Attack Costs',
+        'How much gold an attack sent to another board costs to launch.'
+    ),
+    'terrorist_costs': (
+        'Terrorist Costs',
+        'How much gold terrorist operations cost to launch.'
+    ),
+    'indiv_attacks': (
+        'Individual Attacks',
+        'The most Individual Attack Forces a player may send to other boards in'
+        ' one day. 0 means no limit. Attacks on this board are limited by Max '
+        'Local Attacks instead.'
+    ),
+    'group_attacks': (
+        'Group Attacks',
+        'The most group (interplanetary) attacks a player may lead or join in '
+        'one day. 0 means no limit.'
+    ),
+    'terrorist_ops': (
+        'Terrorist Ops',
+        'The most terrorist operations a player may launch in one day. Each '
+        'agent sent counts as one operation. 0 means no limit.'
+    ),
+    'bombings': (
+        'Bombing Ops',
+        'The most bombing operations a player may launch in one day. 0 means no'
+        ' limit.'
+    ),
+    'lost_attack_days': (
+        'Lost Forces',
+        'Game days to wait for a result from another board before giving up. '
+        'Packets go missing; this stops an army being lost for good. Troops, '
+        'agents and trade deals come home and market bids are refunded, but '
+        'gold spent on special operations is not. 0 means never give up.'
+    ),
+    'gooie': (
+        'Gooie Kablooie',
+        'Whether the Gooie Kablooie doomsday weapon may be built.'
+    ),
+    'bombing_ops': (
+        'Bombing Operations',
+        'Whether players may send the four bombing operations to other boards: '
+        'Bomb Food Market, Bomb Trading Market, Bomb Trade Routes and Undermine'
+        ' Investments.'
+    ),
+    'missile_ops': (
+        'Missile Operations',
+        'Whether players may send nuclear, chemical and S3-Sabre missiles to '
+        'other boards. Attacks on this board are not affected.'
+    ),
+    'local_attacks': (
+        'Local Attacks',
+        'Whether barons on this board may attack each other in a league game.'
+    ),
+    'local_scoring': (
+        'Local Attack Scoring',
+        'Whether winning a regular attack on a baron on this board earns score.'
+        ' The loser never loses score.'
+    ),
+    'dupe_checking': (
+        'Dupe Checking',
+        'Whether a baron found playing on another board in the league is locked'
+        ' out here.'
+    ),
+    'ip_trading': (
+        'InterPlanetary Trading',
+        "Whether barons may bid on an ALLIED planet's Trading Market. IB's own "
+        'feature; the original has no such thing.'
+    ),
+    'min_board_version': (
+        'Minimum Game Version',
+        'The game version every board in the league must run (blank for no '
+        'requirement). A board below it has its packets refused.'
     ),
 }

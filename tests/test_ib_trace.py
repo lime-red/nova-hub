@@ -145,8 +145,9 @@ READ = {
     "IPTradeReceipt": {"ID", "FromEmpire", "ToEmpire", "Goods", "Delivered"},
     "LeagueReset": {"OnDate"},
     "LeagueConfig": set(ib_packet._NUMBERS) | set(ib_packet._LEVELS) | set(ib_packet._TOGGLES)
-    | set(ib_packet._OWN) | {"GameStartDate", "JoinDate", "BuyMilitary",
-                             "SlappenheimerHandling", "SabreConstantDial"},
+    | set(ib_packet._OWN_NUMBERS) | set(ib_packet._OWN_TOGGLES)
+    | {"GameStartDate", "JoinDate", "BuyMilitary", "MinBoardVersion",
+       "SlappenheimerHandling", "SabreConstantDial"},
 }
 
 
@@ -219,7 +220,8 @@ def test_lost_forces_days_come_from_the_coordinators_config(db, league):
     assert row.settings["trade_costs"] == "H" and row.settings["region_costs"] == "L"
     assert row.settings["terrorist_costs"] == "N" and row.settings["buy_military"] == "L"
     assert (row.settings["sabre"], row.settings["sabre_dial"]) == ("C", 7)
-    assert row.settings["gooie"] is True and row.settings["IPTrading"] is True
+    assert row.settings["gooie"] is True and row.settings["ip_trading"] is True
+    assert "MoneyCapBillions" not in row.settings and row.settings["idle_days_remove"] == 15
 
 
 def test_ib_gives_up_a_whole_lost_forces_span_after_the_launch_day(db, league, monkeypatch):

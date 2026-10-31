@@ -4,6 +4,22 @@ All notable changes to Nova Hub will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **Immortal Barons leagues have a reset form**, like BRE's and FE's: every
+  league rule in the Coordinator's config.json, with IB's own limits and the
+  help from IB's own config editor. IB has no editor to drive, so PERFORM
+  RESET writes the rules into config.json and orders `-league-reset`, then
+  checks the signed rules and reset order the game wrote against the draft.
+  Anything wrong, and the packets are removed and the game put back from the
+  backup. A Start Date is the reset's own date: every board resets now, and
+  no game day begins until then. Money Cap is left out, since IB fixed it at 2.
+
+### Changed
+- The Coordinator's settings that IB has and BRE doesn't (Game Length, Idle
+  Days, Planetary Tax and the rest) are stored under the form's ids, not IB's
+  names. Rows already stored take the new ids on the next run that
+  broadcasts the rules.
+
 ## [0.11.0] - 2026-10-31
 
 ### Added

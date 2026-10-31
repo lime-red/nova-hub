@@ -413,7 +413,7 @@ export interface ResetField {
   label: string
   page: number
   group: string
-  kind: 'number' | 'choice' | 'toggle' | 'date'
+  kind: 'number' | 'choice' | 'toggle' | 'date' | 'text'
   default: ResetValue
   min: number | null
   max: number | null

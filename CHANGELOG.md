@@ -29,6 +29,17 @@ All notable changes to Nova Hub will be documented in this file.
   Updates, and an admin can reveal an attack's forces, objective and what a
   win took, or a trade's or spell's contents. A message's text is never
   revealed.
+- **League Status on each client's page**, replacing League Memberships: per
+  league, when the client last polled it, what is waiting for it (and since
+  when), its last download and upload, and what the hub's copy of the game
+  says about the board -- its BBSINFO line and ROUTEINFO for BRE and FE, its
+  last TimeCheck answer for IB. Each row has a state: never polled, offline,
+  stopped polling, packets piling up, game silent, out of date, or OK; a
+  league the client polls without being a member shows too. The league page
+  has the same table for its members (a sysop sees only the game's view of
+  BBSes they do not own), and the Clients list marks a BBS with a league
+  needing attention. Polls are recorded from this release on: until then
+  every league reads "never polled".
 
 ### Changed
 - BRE's record 0x10 is named "Global Reset", as BRE.EXE names it ("Game
@@ -39,6 +50,8 @@ All notable changes to Nova Hub will be documented in this file.
   and `traffic_sightings`, and a `realm_names` table. `attack_sightings` is
   rebuilt, as SQLite needs to make its letters nullable and its IDs longer
   (production's is a few thousand rows).
+- One migration (`c4e8a1f2b6d3`): a `client_league_polls` table and
+  `clients.last_user_agent`. Nothing to backfill.
 
 ## [0.10.1] - 2026-10-30
 

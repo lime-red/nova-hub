@@ -101,6 +101,12 @@ async function toggleActive(clientId: number, currentActive: boolean) {
                   <router-link :to="`/clients/${client.id}`" class="client-name">
                     {{ client.bbs_name }}
                   </router-link>
+                  <router-link
+                    v-if="client.league_issues?.length"
+                    :to="`/clients/${client.id}`"
+                    class="badge badge-warning league-issues"
+                    :title="client.league_issues.join('\n')"
+                  >{{ client.league_issues.length === 1 ? '1 league' : `${client.league_issues.length} leagues` }} need attention</router-link>
                 </td>
                 <td class="font-mono">{{ client.client_id }}</td>
                 <td>
@@ -222,6 +228,11 @@ async function toggleActive(clientId: number, currentActive: boolean) {
 </template>
 
 <style scoped>
+.league-issues {
+  margin-left: 0.5rem;
+  text-decoration: none;
+}
+
 .page {
   max-width: 1400px;
   margin: 0 auto;

@@ -88,6 +88,8 @@ class ClientResponse(BaseModel):
     last_seen: Optional[str] = None
     packets_sent_24h: int = 0
     packets_received_24h: int = 0
+    # Each league whose League Status is not OK, e.g. "015F: Never polled this league"
+    league_issues: List[str] = []
 
     model_config = ConfigDict(from_attributes=True)
 

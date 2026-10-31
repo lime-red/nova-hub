@@ -1143,6 +1143,47 @@ Validation Error
 
 ---
 
+### GET `/management/api/v1/clients/{client_id}/league-status`
+
+**Client League Status**
+
+Each league this BBS is in: when its client last polled the league, what is
+waiting for it, and what the hub's copy of the game says about it. Leagues
+it polls without being a member follow, with state `not_member`.
+
+**Path Parameters:**
+- `client_id`: Database ID of the client
+
+**Example:**
+```bash
+curl -X GET "https://hub.example.com/management/api/v1/clients/1/league-status" \
+  -b cookies.txt
+```
+
+#### Parameters
+
+**client_id**
+  - Type: `integer`
+  - Location: path *(required)*
+
+#### Responses
+
+#### 200
+
+Successful Response
+
+
+**Content-Type:** `application/json`
+
+#### 422
+
+Validation Error
+
+
+**Content-Type:** `application/json`
+
+---
+
 ### POST `/management/api/v1/clients/{client_id}/claim-link`
 
 **Issue Claim Link**
@@ -2168,6 +2209,48 @@ nodelist directory).
 ### Request Body
 
 **Content-Type:** `application/json`
+
+#### Responses
+
+#### 200
+
+Successful Response
+
+
+**Content-Type:** `application/json`
+
+#### 422
+
+Validation Error
+
+
+**Content-Type:** `application/json`
+
+---
+
+### GET `/management/api/v1/leagues/{league_id}/member-status`
+
+**League Member Status**
+
+Each active member of the league: its polls, its queue, and what the hub's
+copy of the game says about it. A sysop sees all of that for the BBSes they
+own; for the others, only the game's view (`restricted`), which the
+league's players see in-game anyway.
+
+**Path Parameters:**
+- `league_id`: Database ID of the league
+
+**Example:**
+```bash
+curl -X GET "https://hub.example.com/management/api/v1/leagues/1/member-status" \
+  -b cookies.txt
+```
+
+#### Parameters
+
+**league_id**
+  - Type: `integer`
+  - Location: path *(required)*
 
 #### Responses
 

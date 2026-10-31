@@ -1,6 +1,7 @@
 """Management API league management endpoints"""
 
 import shutil
+from datetime import timezone
 from pathlib import Path
 from typing import List, Optional
 
@@ -9,11 +10,13 @@ from fastapi.responses import FileResponse
 from sqlalchemy import exists, or_, text
 from sqlalchemy.orm import Session
 
+from backend.core.config import get_config
 from backend.core.database import get_db
 from backend.core.scope import Scope, get_scope
 from backend.core.security import require_admin
 from backend.logging_config import get_logger
-from backend.services import audit
+from backend.schemas.league_status import LeagueStatusResponse, LeagueStatusRow
+from backend.services import audit, game_status
 from backend.services.games import MAX_BBS_INDEX, game_for_letter
 from backend.services.providers.immortal_barons import valid_board_key
 from backend.models.database import (
@@ -223,6 +226,42 @@ def _coordinator_key(league: League) -> tuple[Optional[str], Optional[str]]:
     from backend.core.config import get_config
     from backend.services.providers import provider_for
     return provider_for(league.game_type).coordinator_key(get_config(), league)
+
+
+@router.get("/{league_id}/member-status", response_model=LeagueStatusResponse,
+            summary="League Member Status")
+async def get_league_member_status(
+    league_id: int,
+    scope: Scope = Depends(get_scope),
+    db: Session = Depends(get_db),
+):
+    """
+    Each active member of the league: its polls, its queue, and what the hub's
+    copy of the game says about it. A sysop sees all of that for the BBSes they
+    own; for the others, only the game's view (`restricted`), which the
+    league's players see in-game anyway.
+
+    **Path Parameters:**
+    - `league_id`: Database ID of the league
+
+    **Example:**
+    ```bash
+    curl -X GET "https://hub.example.com/management/api/v1/leagues/1/member-status" \\
+      -b cookies.txt
+    ```
+    """
+    scope.require_league(league_id)
+    league = db.query(League).filter(League.id == league_id).first()
+    if not league:
+        raise HTTPException(status_code=404, detail="League not found")
+    config = get_config()
+    found = game_status.for_league(
+        db, league, game_status.hub_index_from(config),
+        Path(config.get("server", {}).get("data_dir", "./data")))
+    since = game_status.tracking_since(db)
+    return LeagueStatusResponse(
+        tracking_since=since.replace(tzinfo=timezone.utc) if since else None,
+        rows=[LeagueStatusRow.of(s, restricted=not scope.sees_client(s.client.id)) for s in found])
 
 
 @router.post("", response_model=LeagueResponse, summary="Create League")

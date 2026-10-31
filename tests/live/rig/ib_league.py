@@ -167,8 +167,9 @@ class Board:
         return json.loads((self.data / "world.json").read_text())
 
     def turns_left(self) -> dict:
-        """Realm name -> turns left, from the save."""
-        return {e["Name"]: e["TurnsLeft"] for e in self.world()["Empires"]}
+        """Realm name -> turns left, from the save. A world just reset has none,
+        and saves them as null."""
+        return {e["Name"]: e["TurnsLeft"] for e in self.world()["Empires"] or []}
 
     def ledger(self) -> dict:
         path = self.data / "packet-ledger.json"

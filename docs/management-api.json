@@ -1861,6 +1861,14 @@
             ],
             "title": "Last Seen"
           },
+          "league_issues": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "League Issues",
+            "type": "array"
+          },
           "packets_received_24h": {
             "default": 0,
             "title": "Packets Received 24H",
@@ -2255,6 +2263,93 @@
           "hub_timezone"
         ],
         "title": "GameResetForm",
+        "type": "object"
+      },
+      "GameViewInfo": {
+        "description": "What the hub's copy of the game says about the board, as its players see it",
+        "properties": {
+          "as_of": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "heard": {
+            "title": "Heard",
+            "type": "boolean"
+          },
+          "hub_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hub Version"
+          },
+          "last_heard": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Heard"
+          },
+          "line": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Line"
+          },
+          "routing_missing": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Routing Missing"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "source",
+          "heard"
+        ],
+        "title": "GameViewInfo",
         "type": "object"
       },
       "Grant": {
@@ -2945,6 +3040,250 @@
           }
         },
         "title": "LeagueStats",
+        "type": "object"
+      },
+      "LeagueStatusResponse": {
+        "properties": {
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/LeagueStatusRow"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "tracking_since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tracking Since"
+          }
+        },
+        "required": [
+          "rows"
+        ],
+        "title": "LeagueStatusResponse",
+        "type": "object"
+      },
+      "LeagueStatusRow": {
+        "description": "One BBS in one league.\n\n`state` is the first of game_status.STATES that applies; `state_label` says\nit in words and `state_detail` says why. On a league page a sysop gets\nonly the game's view of BBSes they do not own: `restricted` is then true\nand the poll and queue fields are empty.",
+        "properties": {
+          "bbs_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bbs Index"
+          },
+          "bbs_name": {
+            "title": "Bbs Name",
+            "type": "string"
+          },
+          "client_id": {
+            "title": "Client Id",
+            "type": "integer"
+          },
+          "fidonet_address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fidonet Address"
+          },
+          "first_poll_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Poll At"
+          },
+          "full_id": {
+            "title": "Full Id",
+            "type": "string"
+          },
+          "game": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GameViewInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "game_type": {
+            "title": "Game Type",
+            "type": "string"
+          },
+          "last_active_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Active At"
+          },
+          "last_downloaded_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Downloaded At"
+          },
+          "last_poll_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Poll At"
+          },
+          "last_token_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Token At"
+          },
+          "last_uploaded_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Uploaded At"
+          },
+          "league_id": {
+            "title": "League Id",
+            "type": "integer"
+          },
+          "league_name": {
+            "title": "League Name",
+            "type": "string"
+          },
+          "member": {
+            "title": "Member",
+            "type": "boolean"
+          },
+          "oldest_waiting_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oldest Waiting At"
+          },
+          "restricted": {
+            "default": false,
+            "title": "Restricted",
+            "type": "boolean"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "state_detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State Detail"
+          },
+          "state_label": {
+            "title": "State Label",
+            "type": "string"
+          },
+          "user_agent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Agent"
+          },
+          "waiting": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Waiting"
+          },
+          "waiting_packets": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/WaitingPacketInfo"
+            },
+            "title": "Waiting Packets",
+            "type": "array"
+          }
+        },
+        "required": [
+          "league_id",
+          "full_id",
+          "league_name",
+          "game_type",
+          "client_id",
+          "bbs_name",
+          "member",
+          "state",
+          "state_label"
+        ],
+        "title": "LeagueStatusRow",
         "type": "object"
       },
       "LeagueSuggestion": {
@@ -5434,6 +5773,31 @@
         ],
         "title": "ValidationError",
         "type": "object"
+      },
+      "WaitingPacketInfo": {
+        "properties": {
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "processed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Processed At"
+          }
+        },
+        "required": [
+          "filename"
+        ],
+        "title": "WaitingPacketInfo",
+        "type": "object"
       }
     }
   },
@@ -7191,6 +7555,49 @@
         ]
       }
     },
+    "/api/v1/clients/{client_id}/league-status": {
+      "get": {
+        "description": "Each league this BBS is in: when its client last polled the league, what is\nwaiting for it, and what the hub's copy of the game says about it. Leagues\nit polls without being a member follow, with state `not_member`.\n\n**Path Parameters:**\n- `client_id`: Database ID of the client\n\n**Example:**\n```bash\ncurl -X GET \"https://hub.example.com/management/api/v1/clients/1/league-status\" \\\n  -b cookies.txt\n```",
+        "operationId": "get_client_league_status_api_v1_clients__client_id__league_status_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeagueStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Client League Status",
+        "tags": [
+          "Management API - Clients"
+        ]
+      }
+    },
     "/api/v1/clients/{client_id}/owners": {
       "post": {
         "description": "Make a sysop an owner of this BBS (admin only)\n\nThe sysop then sees the BBS, its leagues, packets and runs in the console.\nA BBS can have several owners, and a sysop can own several BBSes.\n\n**Returns:** the BBS's owners",
@@ -7827,6 +8234,49 @@
           }
         },
         "summary": "Generate Nodelist",
+        "tags": [
+          "Management API - Leagues"
+        ]
+      }
+    },
+    "/api/v1/leagues/{league_id}/member-status": {
+      "get": {
+        "description": "Each active member of the league: its polls, its queue, and what the hub's\ncopy of the game says about it. A sysop sees all of that for the BBSes they\nown; for the others, only the game's view (`restricted`), which the\nleague's players see in-game anyway.\n\n**Path Parameters:**\n- `league_id`: Database ID of the league\n\n**Example:**\n```bash\ncurl -X GET \"https://hub.example.com/management/api/v1/leagues/1/member-status\" \\\n  -b cookies.txt\n```",
+        "operationId": "get_league_member_status_api_v1_leagues__league_id__member_status_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "league_id",
+            "required": true,
+            "schema": {
+              "title": "League Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeagueStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "League Member Status",
         "tags": [
           "Management API - Leagues"
         ]

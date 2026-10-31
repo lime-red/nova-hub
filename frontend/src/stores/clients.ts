@@ -13,6 +13,8 @@ export interface Client {
   last_seen?: string
   packets_sent_24h: number
   packets_received_24h: number
+  // Each league whose League Status is not OK
+  league_issues: string[]
 }
 
 export interface ClientDetail {

@@ -106,9 +106,67 @@ export const dashboardApi = {
 }
 
 // Clients API functions
+export interface WaitingPacket {
+  filename: string
+  processed_at: string | null
+}
+
+// What the hub's copy of the game says about a BBS, as the league's players see it.
+export interface GameView {
+  source: 'bbsinfo' | 'timecheck'
+  as_of: string | null
+  heard: boolean
+  last_heard: string | null
+  version: string | null
+  hub_version: string | null
+  routing_missing: boolean | null
+  line: string | null
+}
+
+export type LeagueState =
+  | 'not_polling' | 'offline' | 'stopped_polling' | 'backlog'
+  | 'game_silent' | 'out_of_date' | 'ok' | 'not_member'
+
+// One BBS in one league. `restricted`: a sysop's view of a BBS they do not
+// own, which carries the game's view only.
+export interface LeagueStatusRow {
+  league_id: number
+  full_id: string
+  league_name: string
+  game_type: string
+  client_id: number
+  bbs_name: string
+  member: boolean
+  bbs_index: number | null
+  fidonet_address: string | null
+  restricted: boolean
+  first_poll_at: string | null
+  last_poll_at: string | null
+  user_agent: string | null
+  last_token_at: string | null
+  last_active_at: string | null  // last token or last poll of any league
+  waiting: number | null
+  oldest_waiting_at: string | null
+  waiting_packets: WaitingPacket[]
+  last_downloaded_at: string | null
+  last_uploaded_at: string | null
+  game: GameView | null
+  state: LeagueState
+  state_label: string
+  state_detail: string | null
+}
+
+export interface LeagueStatusResponse {
+  tracking_since: string | null
+  rows: LeagueStatusRow[]
+}
+
 export const clientsApi = {
   list: () =>
     api.get('/clients'),
+
+  leagueStatus: (id: number) =>
+    api.get<LeagueStatusResponse>(`/clients/${id}/league-status`),
 
   get: (id: number) =>
     api.get(`/clients/${id}`),
@@ -286,6 +344,9 @@ export const auditApi = {
 export const leaguesApi = {
   list: () =>
     api.get('/leagues'),
+
+  memberStatus: (id: number) =>
+    api.get<LeagueStatusResponse>(`/leagues/${id}/member-status`),
 
   get: (id: number) =>
     api.get(`/leagues/${id}`),

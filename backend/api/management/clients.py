@@ -1,6 +1,7 @@
 """Management API client management endpoints"""
 
 import re
+from pathlib import Path
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -9,6 +10,7 @@ from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from backend.api.management.claim import public_url, utc
+from backend.core.config import get_config
 from backend.core.database import get_db
 from backend.core.scope import Scope, get_scope
 from backend.core.security import get_password_hash, require_admin
@@ -44,7 +46,8 @@ from backend.schemas.claim import (
     ClaimLinkRequest,
     ClaimLinkStatus,
 )
-from backend.services import applications, audit, claim_links, client_secrets
+from backend.schemas.league_status import LeagueStatusResponse, LeagueStatusRow
+from backend.services import applications, audit, claim_links, client_secrets, game_status
 from backend.services.stats_service import StatsService
 
 logger = get_logger(context="management_clients")
@@ -73,10 +76,16 @@ async def list_clients(
     if not scope.is_admin:
         query = query.filter(Client.id.in_(scope.client_ids))
     clients = query.order_by(Client.bbs_name).all()
+    config = get_config()
+    hub_index = game_status.hub_index_from(config)
+    data_dir = Path(config.get("server", {}).get("data_dir", "./data"))
 
     client_list = []
     for client in clients:
         client_stats = stats_service.get_client_stats(client.id, days=1)
+        issues = [f"{s.league.league_id}{s.league.game_type}: {game_status.STATES[s.state]}"
+                  for s in game_status.for_client(db, client, hub_index, data_dir)
+                  if s.state != "ok"]
         client_list.append(
             ClientResponse(
                 id=client.id,
@@ -89,6 +98,7 @@ async def list_clients(
                 last_seen=client_stats.get("last_seen"),
                 packets_sent_24h=client_stats.get("sent_24h", 0),
                 packets_received_24h=client_stats.get("received_24h", 0),
+                league_issues=issues,
             )
         )
 
@@ -229,6 +239,39 @@ async def get_client(
         claim_waiting=claim_links.ready_for(db, client.id, scope.user) is not None,
         old_secret_until=utc(client_secrets.old_secret_until(client)),
     )
+
+
+@router.get("/{client_id}/league-status", response_model=LeagueStatusResponse,
+            summary="Client League Status")
+async def get_client_league_status(
+    client_id: int,
+    scope: Scope = Depends(get_scope),
+    db: Session = Depends(get_db),
+):
+    """
+    Each league this BBS is in: when its client last polled the league, what is
+    waiting for it, and what the hub's copy of the game says about it. Leagues
+    it polls without being a member follow, with state `not_member`.
+
+    **Path Parameters:**
+    - `client_id`: Database ID of the client
+
+    **Example:**
+    ```bash
+    curl -X GET "https://hub.example.com/management/api/v1/clients/1/league-status" \\
+      -b cookies.txt
+    ```
+    """
+    scope.require_client(client_id)
+    client = db.query(Client).filter(Client.id == client_id).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+    config = get_config()
+    found = game_status.for_client(
+        db, client, game_status.hub_index_from(config),
+        Path(config.get("server", {}).get("data_dir", "./data")))
+    return LeagueStatusResponse(tracking_since=utc(game_status.tracking_since(db)),
+                                rows=[LeagueStatusRow.of(s) for s in found])
 
 
 @router.post("", response_model=ClientCreatedResponse, summary="Create Client")

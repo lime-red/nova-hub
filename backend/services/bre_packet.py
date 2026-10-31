@@ -60,7 +60,9 @@ ATTACK_RESULT = 0x08
 # Names as the game's /DETAILED transcript prints them, matched to type numbers
 # by decompressed size (every type has exactly one across production's 10,322
 # BRE packets) and by which answers which in traffic. The hub keeps those names
-# in processing_run_items.
+# in processing_run_items. BRE.EXE holds its own table of the names, in type
+# order from RECON_REQUEST (1) to TIME_CHECK (0x1A), which confirmed every one
+# of these and named 0x10, 0x16 and 0x19 (Oct 2026).
 #
 # The ops are not traceable as attacks are: they carry realm letters, player IDs
 # and planets but no unique ID, and a result echoes its op's first ten bytes
@@ -84,15 +86,18 @@ RECORD_TYPES = {
     0x0E: "Special Op",             # 15
     0x0F: "Special Result",         # 15
     # 240, Configupdate layout, only in the coordinator's first packet of each
-    # game (013B, 014B, and 015B's 8 Jul restart). Named by inference.
-    0x10: "Game Start",
+    # game (013B, 014B, and 015B's 8 Jul restart): the game's GLOBALRESET. The
+    # hub calls what it starts a Game Start (GAME_START, game_reset.history).
+    0x10: "Global Reset",
     0x11: "Dummy Data",             # 2
     0x12: "Routing List",           # 257
     0x13: "Spy Report",             # 74
     0x14: "News Data",              # 258
     0x15: "Report",                 # 738, game-written text, e.g. "Trade Deal arrived at ..."
+    0x16: "Packet Data",            # never seen; named by BRE.EXE's table
     0x17: "Spy Guy",                # 3
     0x18: "Trade Deal",             # 52; named by the rig's /DETAILED transcript
+    0x19: "Nodelist",               # never seen; named by BRE.EXE's table
     0x1A: "Time Check",             # 8
 }
 
@@ -185,13 +190,15 @@ class Record:
     dst: int
     crc_ok: bool
     data: bytes          # decompressed
+    # The game's names for its types: BRE's unless the packet is FE's (fe_packet).
+    names: Optional[dict] = field(default=None, repr=False, compare=False)
 
     @property
     def name(self) -> str:
-        return RECORD_TYPES.get(self.type, f"type {self.type:#04x}")
+        return (self.names or RECORD_TYPES).get(self.type, f"type {self.type:#04x}")
 
 
-def parse(packet: bytes) -> List[Record]:
+def parse(packet: bytes, names: Optional[dict] = None) -> List[Record]:
     if len(packet) < HEADER_SIZE:
         raise PacketFormatError(f"{len(packet)} bytes is shorter than the header")
     records, i, budget = [], HEADER_SIZE, MAX_PACKET_BODY
@@ -209,7 +216,7 @@ def parse(packet: bytes) -> List[Record]:
             raise PacketFormatError(f"record at offset {i} runs past the end")
         data = unrle(payload, min(MAX_RECORD_BODY, budget))
         budget -= len(data)
-        records.append(Record(rtype, src, dst, record_crc(payload) == crc, data))
+        records.append(Record(rtype, src, dst, record_crc(payload) == crc, data, names))
         i += RECORD_HEADER_SIZE + length
     return records
 
@@ -304,6 +311,45 @@ def forces(record: Record) -> Forces:
 def attacks(packet: bytes) -> List[Attack]:
     return [attack(r) for r in parse(packet)
             if r.type in (INDIV_ATTACK, ATTACK_RESULT)]
+
+
+# ── who holds each realm ──────────────────────────────────────────────────
+# A Recon Update is one planet telling the league about its realms. Slot k is
+# realm letter chr(ord("A") + k): its name, and at RECON_PLAYER_IDS its player
+# ID, the number ops, trade deals and messages carry. Checked against
+# production (12 Oct 2026 backup): every player ID an op or trade deal carried
+# was in its planet's Recon Updates at the slot of the letter beside it.
+RECON_UPDATE = 0x02
+RECON_UPDATE_SIZE = 1448
+REALM_SLOTS = 25
+_REALM_NAMES = 2            # 25 Pascal strings of 30 characters
+_REALM_NAME_SIZE = 31
+_RECON_PLAYER_IDS = 1077    # 25 i32s
+
+
+@dataclass
+class Realm:
+    letter: str
+    player_id: Optional[int]
+    name: str
+
+
+def realms(record: Record) -> List[Realm]:
+    """The realms a Recon Update announces for its planet (`record.data[0]`).
+    Empty slots are left out."""
+    d = record.data
+    if record.type != RECON_UPDATE or len(d) < RECON_UPDATE_SIZE:
+        raise PacketFormatError(f"{record.name} is not a Recon Update")
+    out = []
+    ids = struct.unpack_from(f"<{REALM_SLOTS}i", d, _RECON_PLAYER_IDS)
+    for k in range(REALM_SLOTS):
+        o = _REALM_NAMES + k * _REALM_NAME_SIZE
+        if not 0 < d[o] < _REALM_NAME_SIZE:
+            continue
+        name = _pascal(d, o).strip()
+        if name:
+            out.append(Realm(chr(ord("A") + k), ids[k] or None, name))
+    return out
 
 
 # ── league settings ───────────────────────────────────────────────────────

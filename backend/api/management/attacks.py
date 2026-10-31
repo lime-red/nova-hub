@@ -18,13 +18,15 @@ from backend.core.security import require_admin
 from backend.logging_config import get_logger
 from backend.models.database import League, SysopUser
 from backend.schemas.attacks import AttackForces, AttackHop, AttackJourney
-from backend.services import attack_trace, bre_packet
+from backend.services import attack_trace, bre_packet, ib_packet
 
 router = APIRouter()
 logger = get_logger(context="management_attacks")
 
 DEFAULT_WINDOW_DAYS = 14
 MAX_WINDOW_DAYS = 365
+# BRE: 16 hex digits. IB: game.origin.number (ib_packet.action_id).
+ATTACK_ID = r"^([0-9a-fA-F]{16}|[0-9]{1,6}\.[0-9]{1,3}\.[0-9]{1,12})$"
 STAGES = ("result delivered", "result awaiting pickup", "awaiting result",
           "attack awaiting pickup")
 
@@ -38,7 +40,7 @@ async def list_attacks(
     days: int = Query(DEFAULT_WINDOW_DAYS, ge=1, le=MAX_WINDOW_DAYS),
     league_id: Optional[int] = Query(None),
     planet: Optional[int] = Query(None, description="Attacker's or target's planet"),
-    attack_id: Optional[str] = Query(None, pattern="^[0-9a-fA-F]{1,16}$",
+    attack_id: Optional[str] = Query(None, pattern=r"^[0-9a-fA-F.]{1,40}$",
                                      description="ID or a prefix of it; ignores `days`"),
     stage: Optional[str] = Query(None),
     mit: Optional[str] = Query(None, pattern="^(late|possible|overdue|any)$"),
@@ -76,6 +78,8 @@ async def list_attacks(
             to_planet=j.to_planet,
             attacker=j.attacker,
             target=j.target,
+            attacker_name=j.attacker_name,
+            target_name=j.target_name,
             attack_type=j.attack_type,
             launched=_iso(j.launched),
             resolved=_iso(j.resolved),
@@ -105,7 +109,7 @@ async def list_attacks(
 @router.get("/{attack_id}/forces", response_model=AttackForces,
             summary="Reveal an Attack's Forces (admin)")
 async def reveal_forces(
-    attack_id: str = PathParam(..., pattern="^[0-9a-fA-F]{16}$"),
+    attack_id: str = PathParam(..., pattern=ATTACK_ID),
     current_user: SysopUser = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
@@ -123,6 +127,14 @@ async def reveal_forces(
     if f is None:
         raise HTTPException(status_code=404, detail="No stored packet holds this attack")
     logger.info(f"Attack {attack_id.lower()} forces revealed to {current_user.username}")
+    if isinstance(f, ib_packet.Forces):
+        lost = None if f.returned is None else \
+            {u: max(0, n - f.returned.get(u, 0)) for u, n in f.sent.items()}
+        return AttackForces(
+            attack_id=attack_id.lower(), sent=f.sent, resolved=f.won is not None,
+            success=f.won, regions_captured=f.land_taken, lost=lost,
+            returned=f.returned, outcome=f.outcome,
+        )
     sent = {u: getattr(f, u) for u in bre_packet.UNITS}
     lost = f.lost()
     return AttackForces(

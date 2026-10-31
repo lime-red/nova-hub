@@ -705,8 +705,15 @@
             "type": "string"
           },
           "carriers": {
-            "title": "Carriers",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Carriers"
           },
           "defenders_destroyed": {
             "anyOf": [
@@ -743,6 +750,17 @@
               }
             ],
             "title": "Lost"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome"
           },
           "regions_captured": {
             "anyOf": [
@@ -795,7 +813,6 @@
         "required": [
           "attack_id",
           "sent",
-          "carriers",
           "resolved"
         ],
         "title": "AttackForces",
@@ -909,8 +926,15 @@
             "title": "Attack Type"
           },
           "attacker": {
-            "title": "Attacker",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attacker"
           },
           "attacker_clock_minutes": {
             "anyOf": [
@@ -922,6 +946,17 @@
               }
             ],
             "title": "Attacker Clock Minutes"
+          },
+          "attacker_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attacker Name"
           },
           "from_planet": {
             "title": "From Planet",
@@ -1058,8 +1093,26 @@
             "type": "string"
           },
           "target": {
-            "title": "Target",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          },
+          "target_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Name"
           },
           "to_planet": {
             "title": "To Planet",
@@ -1082,8 +1135,6 @@
           "league_id",
           "from_planet",
           "to_planet",
-          "attacker",
-          "target",
           "stage",
           "lost_attack_days"
         ],
@@ -4822,6 +4873,17 @@
             ],
             "title": "From Letter"
           },
+          "from_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Name"
+          },
           "from_planet": {
             "title": "From Planet",
             "type": "integer"
@@ -4883,6 +4945,17 @@
             ],
             "title": "To Letter"
           },
+          "to_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Name"
+          },
           "to_planet": {
             "title": "To Planet",
             "type": "integer"
@@ -4925,6 +4998,17 @@
             ],
             "title": "From Letter"
           },
+          "from_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Name"
+          },
           "from_planet": {
             "title": "From Planet",
             "type": "integer"
@@ -4951,6 +5035,27 @@
               }
             ],
             "title": "League Name"
+          },
+          "recipient_names": {
+            "anyOf": [
+              {
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recipient Names"
           },
           "recipients": {
             "anyOf": [
@@ -5032,6 +5137,17 @@
               }
             ],
             "title": "To Letter"
+          },
+          "to_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Name"
           },
           "to_planet": {
             "title": "To Planet",
@@ -5956,7 +6072,7 @@
             "schema": {
               "anyOf": [
                 {
-                  "pattern": "^[0-9a-fA-F]{1,16}$",
+                  "pattern": "^[0-9a-fA-F.]{1,40}$",
                   "type": "string"
                 },
                 {
@@ -6055,7 +6171,7 @@
             "name": "attack_id",
             "required": true,
             "schema": {
-              "pattern": "^[0-9a-fA-F]{16}$",
+              "pattern": "^([0-9a-fA-F]{16}|[0-9]{1,6}\\.[0-9]{1,3}\\.[0-9]{1,12})$",
               "title": "Attack Id",
               "type": "string"
             }

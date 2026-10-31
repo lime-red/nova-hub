@@ -4,6 +4,34 @@ All notable changes to Nova Hub will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **Immortal Barons attacks and traffic are followed through the hub**, as
+  BRE's are: attack journeys with the MIT judgement, ops, trade deals, recon,
+  Spy Guys, messages and the Annihilator in the traffic view, the
+  Coordinator's settings, and resets in the reset history. Every IB action
+  carries its board's number for it, so results join their sends exactly. An
+  admin can reveal an IB attack's forces, or an op's or trade's contents; a
+  message's text is never revealed. IB counts its lost-forces wait from the
+  day after the launch, and a LostForcesDays of 0 never gives up.
+- **Attacks and traffic name the realms involved**, as the hub knew them when
+  it read the packet: an old attack keeps naming whoever held the letter then,
+  not whoever took it after a reset. BRE names come from each planet's Recon
+  Update; IB packets name realms outright. Not backfilled: packets read before
+  this release show letters only.
+- **Falcon's Eye packets are read with FE's own record names**, from FE.EXE's
+  table (FE's container is BRE's). FE's attacks, spells and trades are not
+  decoded yet, so an FE league still records nothing.
+
+### Changed
+- BRE's record 0x10 is named "Global Reset", as BRE.EXE names it ("Game
+  Start" was inferred), and 0x16 Packet Data and 0x19 Nodelist are named.
+
+### Upgrading
+- One migration (`a9d4e2f7c815`): realm-name columns on `attack_sightings`
+  and `traffic_sightings`, and a `realm_names` table. `attack_sightings` is
+  rebuilt, as SQLite needs to make its letters nullable and its IDs longer
+  (production's is a few thousand rows).
+
 ## [0.10.1] - 2026-10-30
 
 ### Fixed

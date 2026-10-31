@@ -18,7 +18,7 @@ from backend.logging_config import get_logger
 from backend.models.database import League, Packet, SysopUser, TrafficSighting
 from backend.schemas.attacks import AttackHop
 from backend.schemas.traffic import TrafficDetails, TrafficEvent, TrafficJourney
-from backend.services import attack_trace, bre_packet, traffic_trace
+from backend.services import attack_trace, bre_packet, ib_packet, traffic_trace
 
 router = APIRouter()
 logger = get_logger(context="management_traffic")
@@ -29,6 +29,13 @@ REVEALABLE = frozenset({
     bre_packet.TERRORIST_OP, bre_packet.TERRORIST_RESULT, bre_packet.TRADE_DEAL,
     bre_packet.SPY_REPORT, bre_packet.REPORT, bre_packet.SPY_GUY, bre_packet.NEWS,
 })
+# IB's records are JSON with every field named, so more of them can be read.
+IB_REVEALABLE = REVEALABLE | {bre_packet.SPECIAL_OP, bre_packet.SPECIAL_RESULT,
+                              ib_packet.RECON_REQUEST}
+
+
+def revealable(game_type: Optional[str], record_type: int) -> bool:
+    return record_type in (IB_REVEALABLE if game_type == "I" else REVEALABLE)
 
 
 def _iso(t: Optional[datetime]) -> Optional[str]:
@@ -60,15 +67,18 @@ async def list_traffic(
         db, hub_index, league_id=league_id, since=since - LOOKBACK, planet=planet))
     found = [j for j in found
              if max((e.at_hub for e in j.events if e.at_hub), default=since) >= since]
-    names = {lg.id: lg.name for lg in db.query(League).all()}
+    leagues = db.query(League).all()
+    names = {lg.id: lg.name for lg in leagues}
+    games = {lg.id: lg.game_type for lg in leagues}
 
     def event(e):
         return TrafficEvent(
             key=e.key, kind=e.kind, role=e.role,
             from_planet=e.from_planet, to_planet=e.to_planet,
-            from_letter=e.from_letter, to_letter=e.to_letter, stamp=_iso(e.stamp),
+            from_letter=e.from_letter, to_letter=e.to_letter,
+            from_name=e.from_name, to_name=e.to_name, stamp=_iso(e.stamp),
             at_hub=_iso(e.at_hub), delivered=_iso(e.delivered), stage=e.stage,
-            revealable=e.record_type in REVEALABLE,
+            revealable=revealable(games.get(e.league_id), e.record_type),
             hops=[AttackHop(is_result=e.role == bre_packet.RESULT, packet_id=h.packet_id,
                             filename=h.filename, source_bbs=h.source_bbs,
                             dest_bbs=h.dest_bbs, at_hub=_iso(h.at_hub),
@@ -83,7 +93,9 @@ async def list_traffic(
             league_name=names.get(j.first.league_id), kind=j.kind,
             from_planet=r.from_planet, to_planet=r.to_planet,
             from_letter=r.from_letter, to_letter=r.to_letter,
-            recipients=j.first.recipients, expects_result=j.expects_result,
+            from_name=r.from_name, to_name=r.to_name,
+            recipients=j.first.recipients, recipient_names=j.first.recipient_names,
+            expects_result=j.expects_result,
             sent_at_hub=_iso(send.at_hub) if j.send or not results else None,
             sent_delivered=_iso(send.delivered) if j.send or not results else None,
             result_kind=results[0].kind if results else None,
@@ -110,10 +122,25 @@ async def reveal_details(
     rtype = sightings[0].record_type
     if rtype == bre_packet.MESSAGE:
         raise HTTPException(status_code=403, detail="Message content is never revealed")
-    if rtype not in REVEALABLE:
+    league = db.get(League, sightings[0].league_id)
+    game_type = league.game_type if league else None
+    if not revealable(game_type, rtype):
         raise HTTPException(status_code=404, detail="This kind of record is not decoded yet")
     data_dir = Path(get_config().get("server", {}).get("data_dir", "./data"))
     packets = db.query(Packet).filter(Packet.id.in_([s.packet_id for s in sightings])).all()
+    if game_type == "I":
+        for packet, content in attack_trace.stored_contents(packets, data_dir):
+            try:
+                p = ib_packet.parse(content)
+            except ib_packet.PacketFormatError:
+                continue
+            src, dst = int(packet.source_bbs_index, 16), int(packet.dest_bbs_index, 16)
+            for t in ib_packet.traffic(p, src, dst, "0"):
+                if t.key == key:
+                    logger.info(f"Traffic {key} ({t.kind}) revealed to {current_user.username}")
+                    return TrafficDetails(key=key, kind=t.kind,
+                                          details=ib_packet.traffic_details(t) or {})
+        raise HTTPException(status_code=404, detail="No stored packet holds this event")
     for r in attack_trace.stored_records(packets, data_dir):
         if r.type == rtype and bre_packet.event_key(r) == key:
             try:

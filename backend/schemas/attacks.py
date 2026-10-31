@@ -27,8 +27,12 @@ class AttackJourney(BaseModel):
     league_name: Optional[str] = None
     from_planet: int
     to_planet: int
-    attacker: str
-    target: str
+    attacker: Optional[str] = None          # realm letters; an IB realm has none
+    target: Optional[str] = None
+    # The realms' names as the hub knew them when it read the packets: who held
+    # the slot then, not now. None where it had not heard.
+    attacker_name: Optional[str] = None
+    target_name: Optional[str] = None
     attack_type: Optional[str] = None
     # Game clocks: the attacker's board for launched, the defender's for resolved.
     launched: Optional[str] = None
@@ -58,7 +62,7 @@ class AttackForces(BaseModel):
     """Admin only, on request: what an attack sent and, once resolved, what it cost."""
     attack_id: str
     sent: Dict[str, int]                  # troopers, jets, tanks, bombers
-    carriers: int                         # carry the jets; always come home
+    carriers: Optional[int] = None        # BRE: carry the jets; always come home
     resolved: bool                        # False: only the attack has been seen
     success: Optional[bool] = None
     regions_captured: Optional[int] = None
@@ -66,3 +70,4 @@ class AttackForces(BaseModel):
     lost: Optional[Dict[str, int]] = None
     returned: Optional[Dict[str, int]] = None
     defenders_destroyed: Optional[int] = None   # defending troopers
+    outcome: Optional[str] = None         # IB's verdict, e.g. "protected", "notfound"

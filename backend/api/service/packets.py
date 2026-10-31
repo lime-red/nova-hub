@@ -236,8 +236,10 @@ async def upload_packet(
     db.commit()
 
     # Best-effort: an attack that cannot be traced must not fail the upload.
+    # Every row: an IB broadcast is one row per board, each its own hop.
     from backend.services.attack_trace import record_safely
-    record_safely(db, packet, content)
+    for row in rows:
+        record_safely(db, row, content)
 
     # Trigger processing (fire and forget)
     from backend.services.processing_service import trigger_processing

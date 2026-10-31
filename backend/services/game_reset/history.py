@@ -13,6 +13,10 @@ Start the hub passes is recorded here:
   could), kept as an `observed` row so the history goes back further than the
   console does.
 
+An Immortal Barons Coordinator orders a reset with a Reset in its packet,
+dated for the new game's start, and those are recorded the same way
+(attack_trace, from the hub's own game only).
+
 FE's packets aren't decoded yet, so an FE league's history is its console
 resets only.
 """

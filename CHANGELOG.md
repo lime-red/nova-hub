@@ -18,9 +18,17 @@ All notable changes to Nova Hub will be documented in this file.
   not whoever took it after a reset. BRE names come from each planet's Recon
   Update; IB packets name realms outright. Not backfilled: packets read before
   this release show letters only.
-- **Falcon's Eye packets are read with FE's own record names**, from FE.EXE's
-  table (FE's container is BRE's). FE's attacks, spells and trades are not
-  decoded yet, so an FE league still records nothing.
+- **Falcon's Eye attacks and traffic are followed through the hub**, as BRE's
+  are. FE packets are read with FE's own record names, from FE.EXE's table
+  (FE's container is BRE's), and its war records were mapped by playing a war
+  on a two-board rig league and checked against production's 015F traffic.
+  Attacks join their results by the ID each carries, with the MIT judgement on
+  FE's default of 10 days for lost attacks (FE's settings aren't read yet).
+  Spells, trade deals (which FE players can accept or reject) and messages
+  are in the traffic view, counties are named from their boards' Recon
+  Updates, and an admin can reveal an attack's forces, objective and what a
+  win took, or a trade's or spell's contents. A message's text is never
+  revealed.
 
 ### Changed
 - BRE's record 0x10 is named "Global Reset", as BRE.EXE names it ("Game

@@ -594,16 +594,18 @@ export type AttackUnit = 'troopers' | 'jets' | 'tanks' | 'bombers'
 
 export interface AttackForces {
   attack_id: string
-  sent: Record<AttackUnit, number>
+  sent: Record<string, number>     // AttackUnit for BRE and IB; FE: unit_1..unit_3
   carriers: number | null      // BRE only
   resolved: boolean
   success: boolean | null
   regions_captured: number | null
   loss_percent: number | null
-  lost: Record<AttackUnit, number> | null
-  returned: Record<AttackUnit, number> | null
+  lost: Record<string, number> | null
+  returned: Record<string, number> | null
   defenders_destroyed: number | null
   outcome: string | null       // IB's verdict, e.g. "protected"
+  objective: string | null     // FE: Capture Land, People or Resources
+  gained: string | null        // FE: e.g. "15 acres"
 }
 
 export const attacksApi = {

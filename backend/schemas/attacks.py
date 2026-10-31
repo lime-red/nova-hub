@@ -61,7 +61,7 @@ class AttackJourney(BaseModel):
 class AttackForces(BaseModel):
     """Admin only, on request: what an attack sent and, once resolved, what it cost."""
     attack_id: str
-    sent: Dict[str, int]                  # troopers, jets, tanks, bombers
+    sent: Dict[str, int]                  # BRE/IB: troopers, jets, tanks, bombers; FE: unit_1-3
     carriers: Optional[int] = None        # BRE: carry the jets; always come home
     resolved: bool                        # False: only the attack has been seen
     success: Optional[bool] = None
@@ -71,3 +71,5 @@ class AttackForces(BaseModel):
     returned: Optional[Dict[str, int]] = None
     defenders_destroyed: Optional[int] = None   # defending troopers
     outcome: Optional[str] = None         # IB's verdict, e.g. "protected", "notfound"
+    objective: Optional[str] = None       # FE: Capture Land, People or Resources
+    gained: Optional[str] = None          # FE: what a win took, e.g. "15 acres"

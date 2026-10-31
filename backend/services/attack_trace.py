@@ -1,9 +1,9 @@
 """Follow each attack through the hub, from launch to result.
 
-BRE's are read by bre_packet and Immortal Barons' by ib_packet; FE's war
-records are not mapped yet. The journey and the MIT judgement are the same for
-both games but where noted (IB counts its wait differently, and its packets
-are dated, not timed).
+BRE's are read by bre_packet, Falcon's Eye's by fe_packet and Immortal Barons'
+by ib_packet. The journey and the MIT judgement are the same for all three but
+where noted (IB counts its wait differently, and its packets are dated, not
+timed; FE's results are not dated at all, and its rollovers are not mapped).
 
 A Missing In Transit is the attacker's game giving up: no result came back
 within the league's "Days for Lost Attacks". From inside the game that is all
@@ -41,12 +41,13 @@ from backend.logging_config import get_logger
 from backend.models.database import (
     AttackSighting, League, LeagueGameSettings, Packet, TrafficSighting,
 )
-from backend.services import bre_packet, ib_packet, realm_names
+from backend.services import bre_packet, fe_packet, ib_packet, realm_names
 
 logger = get_logger(context="attack_trace")
 
 DEFAULT_LOST_ATTACK_DAYS = 7    # BRE's default, used until a Configupdate is seen
-DEFAULT_LOST_DAYS = {"B": DEFAULT_LOST_ATTACK_DAYS, "I": ib_packet.DEFAULT_LOST_FORCES_DAYS}
+DEFAULT_LOST_DAYS = {"B": DEFAULT_LOST_ATTACK_DAYS, "F": fe_packet.DEFAULT_LOST_ATTACK_DAYS,
+                     "I": ib_packet.DEFAULT_LOST_FORCES_DAYS}
 NODELIST_PREFIXES = ("BRNODES.", "FENODES.", "IBNODES.")   # stored as packets, but text
 # Only the League Coordinator -- the hub's game -- sends these.
 HUB_ONLY_TYPES = (bre_packet.CONFIG_UPDATE, bre_packet.GAME_START)
@@ -120,17 +121,9 @@ def _record_bre(db: Session, league: League, packet: Packet, content: bytes) -> 
             continue
         usable.append(rec)
 
-    # Realm lists first, so a packet that announces a realm and then acts for
-    # it names it.
-    seen = packet.processed_at or packet.uploaded_at or utcnow()
-    for rec in usable:
-        if rec.type == bre_packet.RECON_UPDATE and rec.data and rec.data[0] == rec.src:
-            try:
-                realms = bre_packet.realms(rec)
-            except bre_packet.PacketFormatError:
-                continue
-            realm_names.remember(db, league.id, rec.src, realms, packet.id, seen)
-    names = realm_names.Names(db, league.id)
+    names = _remember_realms(db, league, packet,
+                             [r for r in usable if r.type == bre_packet.RECON_UPDATE],
+                             bre_packet.realms)
 
     added = 0
     for rec in usable:
@@ -156,23 +149,83 @@ def _record_bre(db: Session, league: League, packet: Packet, content: bytes) -> 
             t = bre_packet.traffic(rec)
             if t is None:
                 continue        # News that is not about a Gooie
-            # A message's recipients are on the planet it is addressed to.
-            recipient_names = None
-            if t.recipients and t.recipients != [bre_packet.ALL_PLANETS]:
-                recipient_names = [names.name(t.to_planet, player=r) for r in t.recipients]
-            db.add(TrafficSighting(
-                event_key=bre_packet.event_key(rec), packet_id=packet.id,
-                league_id=league.id, record_type=t.type, kind=t.name,
-                from_planet=t.from_planet, to_planet=t.to_planet,
-                from_letter=t.from_letter, to_letter=t.to_letter,
-                from_player=t.from_player, to_player=t.to_player,
-                from_name=names.name(t.from_planet, t.from_letter, t.from_player),
-                to_name=names.name(t.to_planet, t.to_letter, t.to_player),
-                recipients=None if t.recipients is None
-                else ",".join(str(r) for r in t.recipients),
-                recipient_names=recipient_names,
-                chain=t.chain, role=t.role, stamp=t.stamp,
+            _add_traffic(db, league, packet, rec, t, names)
+            added += 1
+    return added
+
+
+def _remember_realms(db, league, packet, records, realms) -> realm_names.Names:
+    """Realm lists first, so a packet that announces a realm and then acts for
+    it names it. `records` are the packet's Recon Updates."""
+    seen = packet.processed_at or packet.uploaded_at or utcnow()
+    for rec in records:
+        if rec.data and rec.data[0] == rec.src:
+            try:
+                found = realms(rec)
+            except bre_packet.PacketFormatError:
+                continue
+            realm_names.remember(db, league.id, rec.src, found, packet.id, seen)
+    return realm_names.Names(db, league.id)
+
+
+def _add_traffic(db, league, packet, rec, t: bre_packet.Traffic, names) -> None:
+    # A message's recipients are on the planet it is addressed to.
+    recipient_names = None
+    if t.recipients and t.recipients != [bre_packet.ALL_PLANETS]:
+        recipient_names = [names.name(t.to_planet, player=r) for r in t.recipients]
+    db.add(TrafficSighting(
+        event_key=bre_packet.event_key(rec), packet_id=packet.id,
+        league_id=league.id, record_type=t.type, kind=t.name,
+        from_planet=t.from_planet, to_planet=t.to_planet,
+        from_letter=t.from_letter, to_letter=t.to_letter,
+        from_player=t.from_player, to_player=t.to_player,
+        from_name=names.name(t.from_planet, t.from_letter, t.from_player),
+        to_name=names.name(t.to_planet, t.to_letter, t.to_player),
+        recipients=None if t.recipients is None
+        else ",".join(str(r) for r in t.recipients),
+        recipient_names=recipient_names,
+        chain=t.chain, role=t.role, stamp=t.stamp,
+    ))
+
+
+def _record_fe(db: Session, league: League, packet: Packet, content: bytes) -> int:
+    hub = from_hub(packet)
+    src = int(packet.source_bbs_index, 16)
+    usable = []
+    for rec in fe_packet.parse(content):
+        if not rec.crc_ok:
+            continue
+        # As BRE's (see trusted): a member only ever sends its own records.
+        # Settings are not read from FE yet, so there is nothing hub-only.
+        if not hub and rec.src != src:
+            logger.warning(f"{packet.filename}: ignoring a {rec.name} from {rec.src} "
+                           f"that its sender could not have written")
+            continue
+        usable.append(rec)
+    names = _remember_realms(db, league, packet,
+                             [r for r in usable if r.type == fe_packet.RECON_UPDATE],
+                             fe_packet.realms)
+    added = 0
+    for rec in usable:
+        if rec.type in (fe_packet.ATTACK, fe_packet.ATTACK_RESULT):
+            a = fe_packet.attack(rec)
+            db.add(AttackSighting(
+                attack_id=a.attack_id, is_result=a.is_result,
+                packet_id=packet.id, league_id=league.id,
+                from_planet=a.from_planet, to_planet=a.to_planet,
+                attacker=a.attacker, target=a.target,
+                attacker_name=names.name(a.from_planet, a.attacker,
+                                         fe_packet.attacker_player(rec)),
+                target_name=names.name(a.to_planet, a.target,
+                                       fe_packet.target_player(rec)),
+                attack_type=a.attack_type, stamp=a.stamp,
             ))
+            added += 1
+        else:
+            t = fe_packet.traffic(rec)
+            if t is None:
+                continue
+            _add_traffic(db, league, packet, rec, t, names)
             added += 1
     return added
 
@@ -222,9 +275,7 @@ def _record_ib(db: Session, league: League, packet: Packet, content: bytes) -> i
     return added
 
 
-# FE's packets share BRE's container, but its war records are not mapped yet
-# (fe_packet), so an FE league records nothing.
-_READERS = {"B": _record_bre, "I": _record_ib}
+_READERS = {"B": _record_bre, "F": _record_fe, "I": _record_ib}
 
 
 def record_safely(db: Session, packet: Packet, content: bytes) -> int:
@@ -348,8 +399,8 @@ def forces(db: Session, attack_id: str, data_dir: Optional[Path]):
     back out of a packet the hub stored. Sightings hold no unit counts, so this
     is the only way to them: see the admin reveal in api/management/attacks.py.
 
-    A bre_packet.Forces for a BRE attack, an ib_packet.Forces for an IB one,
-    None if no stored packet holds it. A BRE result is preferred, as it echoes
+    A bre_packet.Forces for a BRE attack, an fe_packet.Forces for an FE one,
+    an ib_packet.Forces for an IB one, None if no stored packet holds it. A BRE result is preferred, as it echoes
     the attack and adds the outcome; an IB result does not echo, so both are
     read. Only a copy whose checksum matches its row is read (filenames are
     reused).
@@ -371,6 +422,12 @@ def forces(db: Session, attack_id: str, data_dir: Optional[Path]):
             attack = attack or ib_packet.find_strike(p, ident, False)
             result = result or ib_packet.find_strike(p, ident, True)
         return ib_packet.forces(attack, result)
+    if league is not None and league.game_type == "F":
+        for r in stored_records(rows, data_dir, fe_packet.RECORD_TYPES):
+            if r.type in (fe_packet.ATTACK, fe_packet.ATTACK_RESULT) \
+                    and fe_packet.attack(r).attack_id == attack_id.lower():
+                return fe_packet.forces(r)
+        return None
     for r in stored_records(rows, data_dir):
         if r.type in (bre_packet.INDIV_ATTACK, bre_packet.ATTACK_RESULT) \
                 and bre_packet.attack(r).attack_id == attack_id.lower():
@@ -390,12 +447,13 @@ def stored_contents(packets: List[Packet], data_dir: Optional[Path]):
             break
 
 
-def stored_records(packets: List[Packet], data_dir: Optional[Path]):
-    """Every record of these BRE packets, read back from whichever stored copy
-    matches the row's checksum, in the order given."""
+def stored_records(packets: List[Packet], data_dir: Optional[Path],
+                   names: Optional[dict] = None):
+    """Every record of these BRE packets (FE's, given FE's `names`), read back
+    from whichever stored copy matches the row's checksum, in the order given."""
     for _, content in stored_contents(packets, data_dir):
         try:
-            records = bre_packet.parse(content)
+            records = bre_packet.parse(content, names)
         except bre_packet.PacketFormatError:
             continue
         # A damaged record decodes to garbage, which a reveal would show as fact.
@@ -722,13 +780,16 @@ def journeys(db: Session, hub_index: str, league_id: Optional[int] = None,
 
     out = list(by_id.values())
     # Clocks, rollovers and lost relays are read from BRE's timed stamps,
-    # sequence numbers and reused rows; IB has none of the three.
+    # sequence numbers and reused rows; IB has none of the three. FE's attacks
+    # are timed as BRE's are, so its clocks are measured; its rollovers are not
+    # mapped, so a late FE result is at most "possible".
     bre = [j for j in out if j.game_type == "B"]
-    clocks = _clock_observations(db, {j.league_id for j in bre}, hub) if bre else {}
+    timed = [j for j in out if j.game_type in ("B", "F")]
+    clocks = _clock_observations(db, {j.league_id for j in timed}, hub) if timed else {}
     for j in out:
         j.hops.sort(key=lambda h: (h.at_hub or datetime.min, h.is_result))
         when = j.attack_at_hub or j.launched
-        if when and j.game_type == "B":
+        if when and j.game_type in ("B", "F"):
             j.attacker_clock = _clock_at(clocks.get((j.league_id, j.from_planet)), when)
     _rollovers(db, bre, hub)
     _unheld(db, bre, hub)

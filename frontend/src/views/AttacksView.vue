@@ -133,6 +133,14 @@ function toggle(id: string) {
 
 // Admin reveal: fetched only on click, forgotten when hidden.
 const UNITS = ['troopers', 'jets', 'tanks', 'bombers'] as const
+// FE's units are numbered: their names depend on the county's race.
+function unitsOf(f: AttackForces): string[] {
+  const keys = Object.keys(f.sent)
+  return UNITS.every(u => u in f.sent) ? [...UNITS] : keys
+}
+function unitLabel(u: string): string {
+  return u.startsWith('unit_') ? `unit ${u.slice(5)}` : u
+}
 const forces = ref<Record<string, AttackForces>>({})
 const forcesLoading = ref<string | null>(null)
 const forcesError = ref<Record<string, string>>({})
@@ -497,33 +505,38 @@ watch([days, leagueId, planet, onlyMit], load)
                                 <thead>
                                   <tr>
                                     <th></th>
-                                    <th v-for="u in UNITS" :key="u">{{ u }}</th>
+                                    <th v-for="u in unitsOf(forces[j.attack_id])" :key="u">{{ unitLabel(u) }}</th>
                                   </tr>
                                 </thead>
                                 <tbody>
                                   <tr>
                                     <td class="text-muted">sent</td>
-                                    <td v-for="u in UNITS" :key="u" class="font-mono">{{ forces[j.attack_id].sent[u] }}</td>
+                                    <td v-for="u in unitsOf(forces[j.attack_id])" :key="u" class="font-mono">{{ forces[j.attack_id].sent[u] }}</td>
                                   </tr>
                                   <template v-if="forces[j.attack_id].lost">
                                     <tr>
                                       <td class="text-muted">lost</td>
-                                      <td v-for="u in UNITS" :key="u" class="font-mono">{{ forces[j.attack_id].lost![u] }}</td>
+                                      <td v-for="u in unitsOf(forces[j.attack_id])" :key="u" class="font-mono">{{ forces[j.attack_id].lost![u] }}</td>
                                     </tr>
                                     <tr>
                                       <td class="text-muted">returned</td>
-                                      <td v-for="u in UNITS" :key="u" class="font-mono">{{ forces[j.attack_id].returned![u] }}</td>
+                                      <td v-for="u in unitsOf(forces[j.attack_id])" :key="u" class="font-mono">{{ forces[j.attack_id].returned![u] }}</td>
                                     </tr>
                                   </template>
                                 </tbody>
                               </table>
                               <p class="text-muted small">
                                 <template v-if="forces[j.attack_id].resolved">
-                                  <strong>{{ forces[j.attack_id].success ? 'SUCCESS' : 'FAILURE' }}</strong><template v-if="forces[j.attack_id].regions_captured">,
+                                  <template v-if="forces[j.attack_id].objective">{{ forces[j.attack_id].objective }}: </template>
+                                  <strong>{{ forces[j.attack_id].success ? 'SUCCESS' : 'FAILURE' }}</strong><template v-if="forces[j.attack_id].gained">,
+                                  took {{ forces[j.attack_id].gained }}</template><template v-else-if="forces[j.attack_id].regions_captured">,
                                   captured {{ forces[j.attack_id].regions_captured }} region<span v-if="forces[j.attack_id].regions_captured !== 1">s</span></template><template v-if="forces[j.attack_id].outcome"> ({{ forces[j.attack_id].outcome }})</template>.
                                   <template v-if="forces[j.attack_id].loss_percent !== null">
                                     Attacker lost {{ forces[j.attack_id].loss_percent }}% of each unit type;
                                     destroyed {{ forces[j.attack_id].defenders_destroyed }} defending trooper<span v-if="forces[j.attack_id].defenders_destroyed !== 1">s</span>.
+                                  </template>
+                                  <template v-else-if="forces[j.attack_id].defenders_destroyed !== null">
+                                    Defenders lost {{ forces[j.attack_id].defenders_destroyed }} unit<span v-if="forces[j.attack_id].defenders_destroyed !== 1">s</span>.
                                   </template>
                                 </template>
                                 <template v-else>No result seen yet, so no outcome.</template>

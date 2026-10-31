@@ -18,7 +18,7 @@ from backend.core.security import require_admin
 from backend.logging_config import get_logger
 from backend.models.database import League, SysopUser
 from backend.schemas.attacks import AttackForces, AttackHop, AttackJourney
-from backend.services import attack_trace, bre_packet, ib_packet
+from backend.services import attack_trace, bre_packet, fe_packet, ib_packet
 
 router = APIRouter()
 logger = get_logger(context="management_attacks")
@@ -26,7 +26,8 @@ logger = get_logger(context="management_attacks")
 DEFAULT_WINDOW_DAYS = 14
 MAX_WINDOW_DAYS = 365
 # BRE: 16 hex digits. IB: game.origin.number (ib_packet.action_id).
-ATTACK_ID = r"^([0-9a-fA-F]{16}|[0-9]{1,6}\.[0-9]{1,3}\.[0-9]{1,12})$"
+# BRE: 16 hex; FE: 20 hex; IB: game.board.number
+ATTACK_ID = r"^([0-9a-fA-F]{16}|[0-9a-fA-F]{20}|[0-9]{1,6}\.[0-9]{1,3}\.[0-9]{1,12})$"
 STAGES = ("result delivered", "result awaiting pickup", "awaiting result",
           "attack awaiting pickup")
 
@@ -127,6 +128,19 @@ async def reveal_forces(
     if f is None:
         raise HTTPException(status_code=404, detail="No stored packet holds this attack")
     logger.info(f"Attack {attack_id.lower()} forces revealed to {current_user.username}")
+    if isinstance(f, fe_packet.Forces):
+        resolved = f.success is not None
+        return AttackForces(
+            attack_id=attack_id.lower(), sent=f.sent, resolved=resolved,
+            success=f.success, lost=f.lost,
+            returned=None if f.lost is None else
+            {u: max(0, n - f.lost.get(u, 0)) for u, n in f.sent.items()},
+            regions_captured=f.gained if f.gained_what == "acres" else None,
+            objective=f.objective,
+            gained=f"{f.gained} {f.gained_what}" if resolved and f.gained_what and f.gained
+            else None,
+            defenders_destroyed=f.defenders_lost,
+        )
     if isinstance(f, ib_packet.Forces):
         lost = None if f.returned is None else \
             {u: max(0, n - f.returned.get(u, 0)) for u, n in f.sent.items()}

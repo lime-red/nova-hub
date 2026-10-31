@@ -18,7 +18,7 @@ from backend.logging_config import get_logger
 from backend.models.database import League, Packet, SysopUser, TrafficSighting
 from backend.schemas.attacks import AttackHop
 from backend.schemas.traffic import TrafficDetails, TrafficEvent, TrafficJourney
-from backend.services import attack_trace, bre_packet, ib_packet, traffic_trace
+from backend.services import attack_trace, bre_packet, fe_packet, ib_packet, traffic_trace
 
 router = APIRouter()
 logger = get_logger(context="management_traffic")
@@ -34,8 +34,14 @@ IB_REVEALABLE = REVEALABLE | {bre_packet.SPECIAL_OP, bre_packet.SPECIAL_RESULT,
                               ib_packet.RECON_REQUEST}
 
 
+# FE's are filed under BRE's numbers (fe_packet._FILED_AS): trades and spells.
+FE_REVEALABLE = frozenset({bre_packet.TRADE_DEAL, bre_packet.REPORT,
+                           bre_packet.SPECIAL_OP, bre_packet.SPECIAL_RESULT})
+
+
 def revealable(game_type: Optional[str], record_type: int) -> bool:
-    return record_type in (IB_REVEALABLE if game_type == "I" else REVEALABLE)
+    allowed = {"I": IB_REVEALABLE, "F": FE_REVEALABLE}.get(game_type, REVEALABLE)
+    return record_type in allowed
 
 
 def _iso(t: Optional[datetime]) -> Optional[str]:
@@ -140,6 +146,17 @@ async def reveal_details(
                     logger.info(f"Traffic {key} ({t.kind}) revealed to {current_user.username}")
                     return TrafficDetails(key=key, kind=t.kind,
                                           details=ib_packet.traffic_details(t) or {})
+        raise HTTPException(status_code=404, detail="No stored packet holds this event")
+    if game_type == "F":
+        for r in attack_trace.stored_records(packets, data_dir, fe_packet.RECORD_TYPES):
+            if bre_packet.event_key(r) == key:
+                try:
+                    details = fe_packet.traffic_details(r)
+                except bre_packet.PacketFormatError as exc:
+                    raise HTTPException(status_code=422,
+                                        detail=f"The stored record can't be read: {exc}")
+                logger.info(f"Traffic {key} ({r.name}) revealed to {current_user.username}")
+                return TrafficDetails(key=key, kind=r.name, details=details or {})
         raise HTTPException(status_code=404, detail="No stored packet holds this event")
     for r in attack_trace.stored_records(packets, data_dir):
         if r.type == rtype and bre_packet.event_key(r) == key:

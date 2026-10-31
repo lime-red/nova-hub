@@ -4,13 +4,14 @@ import { useRoute, useRouter } from 'vue-router'
 import { useClientsStore, type FtnAddressInfo } from '@/stores/clients'
 import { useAuthStore } from '@/stores/auth'
 import AppLayout from '@/components/AppLayout.vue'
+import LeagueStatusTable from '@/components/LeagueStatusTable.vue'
 import {
   applicationsApi,
   clientsApi,
-  leaguesApi,
   usersApi,
   type Application,
   type JoinableLeague,
+  type LeagueStatusResponse,
 } from '@/services/api'
 import type { User } from '@/stores/auth'
 import { useCopy } from '@/clipboard'
@@ -243,9 +244,20 @@ async function handleRemoveOwner(userId: number) {
   }
 }
 
+// Each league's polls, queue and the hub game's view; null while loading.
+const leagueStatus = ref<LeagueStatusResponse | null>(null)
+
+async function loadLeagueStatus() {
+  try {
+    leagueStatus.value = (await clientsApi.leagueStatus(clientId.value)).data
+  } catch {
+    leagueStatus.value = { tracking_since: null, rows: [] }
+  }
+}
+
 onMounted(async () => {
   await clientsStore.loadClient(clientId.value)
-  await Promise.all([loadClaimStatus(), loadUsers(), loadRequests()])
+  await Promise.all([loadClaimStatus(), loadUsers(), loadRequests(), loadLeagueStatus()])
 })
 
 function openEditModal() {
@@ -685,47 +697,18 @@ async function handleRemoveAddress(address: FtnAddressInfo) {
           </div>
         </div>
 
-        <!-- League Memberships -->
+        <!-- League Status -->
         <div class="card mt-4">
           <div class="card-header">
-            <h3>League Memberships</h3>
+            <h3>League Status</h3>
           </div>
           <div class="card-body" style="padding: 0;">
-            <table class="table">
-              <thead>
-                <tr>
-                  <th>League</th>
-                  <th>BBS Index</th>
-                  <th>Fidonet Address</th>
-                  <th>Nodelist</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-if="!clientsStore.currentClient.league_memberships?.length">
-                  <td colspan="4" class="text-center text-muted" style="padding: 2rem;">
-                    Not a member of any leagues
-                  </td>
-                </tr>
-                <tr v-for="membership in clientsStore.currentClient.league_memberships" :key="membership.league_id">
-                  <td>
-                    <router-link :to="`/leagues/${membership.league_id}`">
-                      {{ membership.league_name }} ({{ membership.full_id }})
-                    </router-link>
-                  </td>
-                  <td class="font-mono">{{ String(membership.bbs_index).padStart(2, '0') }}</td>
-                  <td class="font-mono">{{ membership.fidonet_address || '-' }}</td>
-                  <td>
-                    <a
-                      v-if="membership.nodelist_filename"
-                      class="font-mono"
-                      :href="leaguesApi.nodelistUrl(membership.league_id)"
-                      download
-                    >{{ membership.nodelist_filename }}</a>
-                    <span v-else class="text-muted">Not generated yet</span>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+            <LeagueStatusTable
+              by="client"
+              :rows="leagueStatus?.rows ?? []"
+              :tracking-since="leagueStatus?.tracking_since ?? null"
+              :loading="leagueStatus === null"
+            />
           </div>
         </div>
 

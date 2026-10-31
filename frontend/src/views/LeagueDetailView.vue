@@ -5,7 +5,8 @@ import { useLeaguesStore, type LeagueMember } from '@/stores/leagues'
 import { useAuthStore } from '@/stores/auth'
 import AppLayout from '@/components/AppLayout.vue'
 import ResetHistory from '@/components/ResetHistory.vue'
-import { gameResetApi, leaguesApi, type ResetField } from '@/services/api'
+import LeagueStatusTable from '@/components/LeagueStatusTable.vue'
+import { gameResetApi, leaguesApi, type LeagueStatusResponse, type ResetField } from '@/services/api'
 import { gameForLetter, gameTypeName } from '@/games'
 
 const route = useRoute()
@@ -109,9 +110,21 @@ function openReset(resetId: number) {
   router.push({ path: `/leagues/${leagueId.value}/reset`, query: { reset: String(resetId) } })
 }
 
+// Each member's polls, queue and the hub game's view; null while loading.
+const memberStatus = ref<LeagueStatusResponse | null>(null)
+
+async function loadMemberStatus() {
+  try {
+    memberStatus.value = (await leaguesApi.memberStatus(leagueId.value)).data
+  } catch {
+    memberStatus.value = { tracking_since: null, rows: [] }
+  }
+}
+
 onMounted(async () => {
   await leaguesStore.loadLeague(leagueId.value)
   loadResetFields()
+  loadMemberStatus()
 })
 
 function openEditModal() {
@@ -477,6 +490,21 @@ async function handleDelete() {
                 </tr>
               </tbody>
             </table>
+          </div>
+        </div>
+
+        <!-- Member Status -->
+        <div class="card mt-4">
+          <div class="card-header">
+            <h3>Member Status</h3>
+          </div>
+          <div class="card-body" style="padding: 0;">
+            <LeagueStatusTable
+              by="league"
+              :rows="memberStatus?.rows ?? []"
+              :tracking-since="memberStatus?.tracking_since ?? null"
+              :loading="memberStatus === null"
+            />
           </div>
         </div>
 

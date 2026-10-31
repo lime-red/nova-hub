@@ -97,6 +97,8 @@ class Client(Base):
     # credentials, and first uploaded a packet. Set once, never moved.
     first_token_at = Column(DateTime, nullable=True)
     first_upload_at = Column(DateTime, nullable=True)
+    # The User-Agent of its last token request, e.g. "nova-client-py/0.6.0".
+    last_user_agent = Column(String(100), nullable=True)
 
     # Relationships
     packets_uploaded = relationship(
@@ -342,6 +344,24 @@ class League(Base):
     def full_id(self) -> str:
         """Return full league identifier (e.g., '555B')"""
         return f"{self.league_id}{self.game_type}"
+
+
+class ClientLeaguePoll(Base):
+    """When a client last asked for a league's packets.
+
+    Written by the service API's packet listing, at most once a minute per row
+    (see POLL_WRITE_EVERY in api/service/packets.py), whether or not the client
+    is a member: a client polling a league it was dropped from shows up too.
+    clients.last_seen is not this: it moves with every token, for any league.
+    """
+
+    __tablename__ = "client_league_polls"
+
+    client_id = Column(Integer, ForeignKey("clients.id"), primary_key=True)
+    league_id = Column(Integer, ForeignKey("leagues.id"), primary_key=True)
+    first_poll_at = Column(DateTime, nullable=False, default=utcnow)
+    last_poll_at = Column(DateTime, nullable=False, default=utcnow)
+    last_user_agent = Column(String(100), nullable=True)
 
 
 class LeagueMembership(Base):

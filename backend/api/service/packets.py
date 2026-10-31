@@ -15,7 +15,7 @@ from backend.core.config import get_config
 from backend.core.database import get_db
 from backend.core.security import get_current_client
 from backend.logging_config import get_logger
-from backend.models.database import Client, League, LeagueMembership, Packet
+from backend.models.database import Client, ClientLeaguePoll, League, LeagueMembership, Packet
 from backend.schemas.packets import BINARY, PacketInfo, PacketListResponse, PacketUploadResponse
 from backend.services.games import LEAGUE_ID_REGEX, game_for_letter, nodelist_game
 from backend.services.league_utils import board_hex, parse_league_id
@@ -32,6 +32,32 @@ router = APIRouter()
 # numbering takes months to come back round to the same name; the same name and
 # the same bytes within a day is one packet sent twice.
 RETRY_WINDOW = timedelta(days=1)
+
+# A client lists each league every minute or two; the League Status view reads
+# polls in minutes and hours, so a write more often than this buys nothing.
+POLL_WRITE_EVERY = timedelta(minutes=1)
+
+
+def _record_poll(db: Session, client: Client, league: League, user_agent: Optional[str]) -> None:
+    """Note that this client asked for this league's packets, member or not.
+
+    Never allowed to break the poll: a failure here is logged and dropped."""
+    try:
+        now = utcnow()
+        poll = db.get(ClientLeaguePoll, (client.id, league.id))
+        if poll is None:
+            db.add(ClientLeaguePoll(client_id=client.id, league_id=league.id,
+                                    first_poll_at=now, last_poll_at=now,
+                                    last_user_agent=(user_agent or None) and user_agent[:100]))
+        elif now - poll.last_poll_at >= POLL_WRITE_EVERY:
+            poll.last_poll_at = now
+            poll.last_user_agent = (user_agent or None) and user_agent[:100]
+        else:
+            return
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.warning(f"Could not record {client.client_id}'s poll of league {league.id}: {e}")
 
 
 async def _read_body(request: Request, max_size: int) -> bytes:
@@ -254,6 +280,7 @@ async def upload_packet(
 
 @router.get("", response_model=PacketListResponse, summary="List Available Packets")
 async def list_packets(
+    request: Request,
     league_id: str = PathParam(..., pattern=LEAGUE_ID_REGEX),
     unread: bool = Query(False, description="Filter to only unread (not downloaded) packets"),
     client: Client = Depends(get_current_client),
@@ -288,6 +315,8 @@ async def list_packets(
 
     if not league:
         return PacketListResponse(packets=[])
+
+    _record_poll(db, client, league, request.headers.get("user-agent"))
 
     # Get client memberships
     memberships = (

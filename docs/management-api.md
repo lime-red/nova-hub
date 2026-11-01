@@ -2138,14 +2138,14 @@ Validation Error
 
 ### GET `/management/api/v1/leagues/{league_id}/ib-game`
 
-**The Hub's Immortal Barons Game**
+**The League as Its Coordinator Sees It**
 
-What the hub's own game, the League Coordinator, knows of the league:
-each board's last accepted packet, version, rules and round trip; the
-freeze and each board's quiet report; the packets it is holding and why;
-and its own strikes and trades still waiting for an answer, with the game
-days left before they are given back. Read from the game's files, as of
-its last save (`saved`).
+Immortal Barons only. The hub runs the league's game as its Coordinator
+(node 1) and plays no part in it; this is what it knows of the boards:
+each one's last accepted packet, version, rules and round trip; the freeze
+and each board's quiet report; and the packets the hub is holding and why.
+Read from the Coordinator game's files, as of its last save (`saved`). The
+hub's own board is left out.
 
 #### Parameters
 

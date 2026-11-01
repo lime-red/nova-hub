@@ -5,6 +5,7 @@ values into the game's editor, and an over-max number or a letter the field
 doesn't take would throw it out of step. So it rejects rather than clamps, and
 returns every problem at once for the form to show beside its field.
 """
+import re
 from datetime import date
 from typing import Optional
 
@@ -13,11 +14,13 @@ from sqlalchemy.orm import Session
 from backend.core.clock import utcnow
 from backend.models.database import GameReset, League
 from backend.services.game_reset.fields import (
-    CHOICE, DATE, NUMBER, TOGGLE, defaults, fields_for,
+    CHOICE, DATE, NUMBER, TEXT, TOGGLE, defaults, fields_for,
 )
 
 # The editor takes a year up to 2999 (Join Date's "no cut-off").
 MAX_YEAR = 2999
+# IB's required version: a release number, which IB itself prints with a "v".
+VERSION = re.compile(r"\d+(\.\d+){0,3}")
 
 
 class DraftConflict(Exception):
@@ -81,6 +84,17 @@ def validate(game_type: str, settings: dict, today: date) -> tuple[dict, list]:
                 errors.append((f.id, f"The game takes years up to {MAX_YEAR}."))
                 continue
             v = d.isoformat()
+        elif f.kind == TEXT:
+            if v is None:
+                v = ""
+            if not isinstance(v, str):
+                errors.append((f.id, "Must be text."))
+                continue
+            v = v.strip()
+            v = v[1:] if v[:1] in ("v", "V") else v
+            if v and not VERSION.fullmatch(v):
+                errors.append((f.id, "A version like 0.2.6, or blank."))
+                continue
         out[f.id] = v
 
     start = out.get("start_date") or today.isoformat()

@@ -6,6 +6,7 @@ from the screens captured on the test rig (15 Oct 2026). The real editor is
 driven by tests/live/test_game_reset.py.
 """
 import hashlib
+import json
 import sys
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -520,6 +521,134 @@ async def test_the_lock_is_waited_for_then_given_up(game, processing):
     r = g.db.get(GameReset, reset.id)
     assert r.status == "failed" and "Nothing was changed" in r.error
     assert g.db.query(GameReset).filter_by(status="draft").count() == 1
+
+
+# ── Immortal Barons ───────────────────────────────────────────────────────
+# Stands in for immortal-barons -league-reset: resets the world to the date and
+# writes the order and the rules as two packets, as v0.2.6 does. A `mode` file
+# beside config.json makes it misbehave.
+FAKE_IB = """#!{python}
+import json, sys
+from pathlib import Path
+on, data = sys.argv[2], Path(sys.argv[4])
+mode = (data / "mode").read_text() if (data / "mode").exists() else ""
+if sys.argv[1] != "-league-reset" or mode == "frozen":
+    print("-league-reset: the league is frozen")
+    sys.exit(1)
+c = json.loads((data / "config.json").read_text())
+if mode == "clamp":
+    c["TurnsPerDay"] = 10
+c["SlappenheimerHandling"] = c.pop("SabreHandling")
+for k in ("DataDir", "IBBS", "IdleTimeoutSecs", "MaxIdleWarnings"):
+    c.pop(k)
+(data / "world.json").write_text(json.dumps({{"StartedDate": on, "LastMaintDate": on}}))
+out = Path({outbound!r})
+out.mkdir(exist_ok=True)
+(out / "L900-001-0041-000.brp").write_text(json.dumps({{"Reset": {{"OnDate": on}}}}))
+(out / "L900-001-0042-000.brp").write_text(json.dumps({{"LeagueConfig": c}}))
+print("League reset declared, starting " + on)
+"""
+
+
+@pytest.fixture
+def ib(tmp_path, db_session, db_engine, monkeypatch):
+    """The hub's IB game: config.json as v0.2.6 writes it, the Coordinator's key,
+    a world, and the stand-in binary. Its outbound is outside the data dir, so
+    a restore can't be what clears it."""
+    from backend.services.ib_packet import config_json
+    folder, outbound = tmp_path / "ib" / "900", tmp_path / "ib_outbound"
+    folder.mkdir(parents=True)
+    outbound.mkdir()
+    (folder / "config.json").write_text(json.dumps(
+        {"DataDir": str(folder), "IBBS": True, "IdleTimeoutSecs": 300,
+         "MaxIdleWarnings": 3, **config_json(defaults("I")), "MoneyCapBillions": 2}, indent=2))
+    (folder / "coord.key").write_text("secret")
+    (folder / "world.json").write_text('{"StartedDate": "2026-09-01"}')
+    binary = tmp_path / "immortal-barons"
+    binary.write_text(FAKE_IB.format(python=sys.executable, outbound=str(outbound)))
+    binary.chmod(0o755)
+    config = {"server": {"data_dir": str(tmp_path / "data")}, "hub": {"bbs_index": "01"},
+              "ib": {"900": {"binary": str(binary), "data_dir": str(folder),
+                             "outbound_dir": str(outbound)}}}
+    league = League(league_id="900", game_type="I", name="900I", is_active=True)
+    db_session.add(league)
+    db_session.commit()
+    Session = sessionmaker(bind=db_engine)
+    monkeypatch.setattr(perform, "get_session", lambda: Session())
+    return SimpleNamespace(folder=folder, outbound=outbound, binary=binary, config=config,
+                           league=league, db=db_session)
+
+
+def ib_draft(g, **settings):
+    s, errors = validate("I", settings, TODAY)
+    assert not errors
+    g.db.add(GameReset(league_id=g.league.id, status="draft", source="console", settings=s,
+                       version=1, created_by="lime", updated_by="lime"))
+    g.db.commit()
+    return perform.start(g.db, g.league, 1, "900I", "lime", g.config, TODAY)
+
+
+@pytest.mark.asyncio
+async def test_an_ib_reset_writes_the_rules_and_orders_the_reset(ib, processing):
+    later = (TODAY + timedelta(days=3)).isoformat()
+    reset = ib_draft(ib, turns_per_day=12, start_date=later, sabre="C", sabre_dial=8,
+                     min_board_version="0.2.6")
+    await perform.run_job(reset.id, ib.config, today=TODAY)
+    ib.db.expire_all()
+    r = ib.db.get(GameReset, reset.id)
+    assert r.status == "applied" and r.error is None, r.error
+    assert [p["stage"] for p in r.progress] == [
+        "queued", "lock", "backup", "editor", "saved", "processing", "sent"]
+    c = json.loads((ib.folder / "config.json").read_text())
+    assert (c["TurnsPerDay"], c["GameStartDate"], c["SabreHandling"],
+            c["SabreConstantDial"]) == (12, later, 3, 8)
+    # The board's own keys, and the one the form doesn't offer, are left alone.
+    assert c["IdleTimeoutSecs"] == 300 and c["MoneyCapBillions"] == 2
+    assert (ib.folder / "ibversion.cfg").read_text().splitlines()[-1] == "0.2.6"
+    assert f"-league-reset {later}" in r.transcript
+    assert sorted(p.name for p in ib.outbound.iterdir()) == [
+        "L900-001-0041-000.brp", "L900-001-0042-000.brp"]
+    assert processing.calls == [(("IB", "900"),)]
+
+
+@pytest.mark.asyncio
+async def test_an_ib_reset_with_no_start_date_starts_today(ib, processing):
+    reset = ib_draft(ib)
+    await perform.run_job(reset.id, ib.config, today=TODAY)
+    ib.db.expire_all()
+    r = ib.db.get(GameReset, reset.id)
+    assert r.status == "applied", r.error
+    assert json.loads((ib.folder / "world.json").read_text())["StartedDate"] == "2026-10-15"
+    assert json.loads((ib.folder / "config.json").read_text())["GameStartDate"] == ""
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode,why", [("frozen", "didn't reset"),
+                                      ("clamp", "turns_per_day 10 not 12")])
+async def test_a_failed_ib_reset_puts_everything_back(ib, processing, mode, why):
+    (ib.folder / "mode").write_text(mode)
+    before = tree(ib.folder)
+    reset = ib_draft(ib, turns_per_day=12)
+    await perform.run_job(reset.id, ib.config, today=TODAY)
+    ib.db.expire_all()
+    r = ib.db.get(GameReset, reset.id)
+    assert r.status == "failed" and why in r.error and "put back" in r.error
+    assert tree(ib.folder) == before
+    assert list(ib.outbound.iterdir()) == []    # nothing reaches the members
+    assert processing.calls == []
+    assert ib.db.query(GameReset).filter_by(status="draft").one().settings == r.settings
+
+
+def test_an_ib_reset_needs_the_game_and_the_coordinators_key(ib):
+    (ib.folder / "coord.key").unlink()
+    with pytest.raises(perform.ResetRefused, match="coord.key"):
+        ib_draft(ib)
+    (ib.folder / "coord.key").write_text("secret")
+    ib.binary.unlink()
+    with pytest.raises(perform.ResetRefused, match="isn't there"):
+        perform.start(ib.db, ib.league, 1, "900I", "lime", ib.config, TODAY)
+    with pytest.raises(perform.ResetRefused, match=r"\[ib.900\]"):
+        perform.start(ib.db, ib.league, 1, "900I", "lime", {"ib": {}}, TODAY)
 
 
 def test_backups_round_trip_and_prune(tmp_path):

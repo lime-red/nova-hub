@@ -97,10 +97,13 @@ const hubEntryLine = computed(() => {
 // The reset history needs the game's fields to label its diffs; the reset
 // API is admin-only, so the card is too.
 const resetFields = ref<ResetField[] | null>(null)
+const resetGameType = ref('B')
 async function loadResetFields() {
   if (!authStore.isAdmin) return
   try {
-    resetFields.value = (await gameResetApi.form(leagueId.value)).data.fields
+    const { data } = await gameResetApi.form(leagueId.value)
+    resetFields.value = data.fields
+    resetGameType.value = data.game_type
   } catch {
     resetFields.value = null // a game the reset editor doesn't know: no card
   }
@@ -513,6 +516,7 @@ async function handleDelete() {
           class="mt-4"
           :league-id="leagueId"
           :fields="resetFields"
+          :game-type="resetGameType"
           :refresh-key="0"
           @open="openReset"
         />

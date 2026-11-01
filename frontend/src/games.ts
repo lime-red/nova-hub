@@ -19,3 +19,15 @@ export function gameForLetter(letter: string): Game | undefined {
 export function gameTypeName(letter: string): string {
   return gameForLetter(letter)?.name ?? letter
 }
+
+// What tells a league's members to reset: BRE and FE send a Game Start, an
+// Immortal Barons Coordinator a signed reset order.
+export function resetSignal(letter: string): string {
+  return letter === 'I' ? 'reset order' : 'Game Start'
+}
+
+// How a reset setting left blank reads: for a date, the game's own "none".
+export function blankResetValue(id: string, kind: string): string {
+  if (kind === 'date') return id === 'join_date' ? 'no cut-off' : 'day of reset'
+  return kind === 'text' ? 'none' : '—'
+}

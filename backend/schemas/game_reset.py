@@ -16,7 +16,7 @@ class ResetField(BaseModel):
     label: str
     page: int
     group: str
-    kind: str = Field(description="number, choice, toggle or date")
+    kind: str = Field(description="number, choice, toggle, date or text")
     default: Any = None
     min: Optional[int] = None
     max: Optional[int] = None

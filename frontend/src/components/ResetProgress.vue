@@ -4,10 +4,11 @@
 // to happen.
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { apiError, gameResetApi, type ResetDetail } from '@/services/api'
+import { resetSignal } from '@/games'
 
 // `embedded`: shown inside a row of the reset history, which already says
 // whose reset it is and how it ended, so no card of its own.
-const props = defineProps<{ leagueId: number; resetId: number; embedded?: boolean }>()
+const props = defineProps<{ leagueId: number; resetId: number; embedded?: boolean; gameType?: string }>()
 const emit = defineEmits<{ finished: [reset: ResetDetail] }>()
 
 const reset = ref<ResetDetail | null>(null)
@@ -15,15 +16,23 @@ const error = ref('')
 const showLog = ref(false)
 let timer: number | undefined
 
-const STEPS = [
+const isIb = computed(() => props.gameType === 'I')
+const signal = computed(() => resetSignal(props.gameType ?? 'B'))
+// Immortal Barons has no editor: the hub writes the rules into its config.json
+// and orders the reset, and the signed packets that come out are the read-back.
+const STEPS = computed(() => [
   { stage: 'queued', label: 'Started' },
   { stage: 'lock', label: 'Processing paused for the reset' },
   { stage: 'backup', label: 'Game backed up' },
-  { stage: 'editor', label: "Settings typed into the game's reset editor" },
-  { stage: 'saved', label: 'Both pages read back and saved, league-wide' },
-  { stage: 'processing', label: 'PLANETARY run' },
-  { stage: 'sent', label: 'Game Start on its way to members' }
-]
+  isIb.value
+    ? { stage: 'editor', label: 'Rules written to config.json, league reset ordered' }
+    : { stage: 'editor', label: "Settings typed into the game's reset editor" },
+  isIb.value
+    ? { stage: 'saved', label: 'The game restarted, and signed the rules as drafted' }
+    : { stage: 'saved', label: 'Both pages read back and saved, league-wide' },
+  { stage: 'processing', label: isIb.value ? 'Hub run' : 'PLANETARY run' },
+  { stage: 'sent', label: `${isIb.value ? 'Reset order' : 'Game Start'} on its way to members` }
+])
 const ENDINGS: Record<string, string> = {
   restored: 'Something was wrong: the game was put back as it was',
   failed: 'Stopped before the game was touched',
@@ -50,7 +59,7 @@ function finished(stage: string): boolean {
 
 function state(stage: string): 'done' | 'active' | 'waiting' | 'skipped' {
   if (finished(stage)) return 'done'
-  if (working.value) return STEPS.find((s) => !finished(s.stage))?.stage === stage ? 'active' : 'waiting'
+  if (working.value) return STEPS.value.find((s) => !finished(s.stage))?.stage === stage ? 'active' : 'waiting'
   // Applied but the run after it failed: the Game Start goes with the next run.
   if (reset.value?.status === 'applied') return 'waiting'
   return 'skipped'
@@ -129,9 +138,9 @@ onBeforeUnmount(() => window.clearTimeout(timer))
 
         <p v-if="reset.game_start" class="mt-2">
           New game started {{ reset.game_start.replace('T', ' ') }}.
-          <span v-if="reset.confirmed === true" class="badge badge-success">Confirmed by the Game Start</span>
+          <span v-if="reset.confirmed === true" class="badge badge-success">Confirmed by the {{ signal }}</span>
           <span v-else-if="reset.confirmed === false" class="badge badge-danger">
-            The Game Start disagrees: {{ reset.mismatches.join(', ') }}
+            The {{ signal }} disagrees: {{ reset.mismatches.join(', ') }}
           </span>
         </p>
 
@@ -158,7 +167,7 @@ onBeforeUnmount(() => window.clearTimeout(timer))
         </template>
 
         <button v-if="reset.transcript" class="btn btn-secondary btn-sm mt-2" @click="showLog = !showLog">
-          {{ showLog ? 'Hide' : 'Show' }} the editor log
+          {{ showLog ? 'Hide' : 'Show' }} {{ isIb ? "the game's log" : 'the editor log' }}
         </button>
         <pre v-if="showLog" class="log">{{ reset.transcript }}</pre>
         <p v-if="reset.backup_path && showLog" class="text-muted small">

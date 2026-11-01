@@ -3,7 +3,8 @@
 // editor's order, with the game's own help always visible. The hub keeps one
 // draft per league; PERFORM RESET hands the saved draft to the hub, which types
 // it into the game's own editor. The server checks everything again: an
-// out-of-range value would throw that driver out of step.
+// out-of-range value would throw that driver out of step. Immortal Barons has
+// no editor: its settings are written into the Coordinator's config.json.
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { onBeforeRouteLeave, useRoute } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
@@ -17,7 +18,7 @@ import {
   type ResetField,
   type ResetValue
 } from '@/services/api'
-import { gameTypeName } from '@/games'
+import { blankResetValue, gameTypeName } from '@/games'
 
 const route = useRoute()
 const leagueId = computed(() => Number(route.params.id))
@@ -139,7 +140,7 @@ const advisories = computed(() =>
 )
 
 function display(f: ResetField, v: ResetValue): string {
-  if (v === null || v === undefined || v === '') return f.kind === 'date' ? 'day of reset' : '—'
+  if (v === null || v === undefined || v === '') return blankResetValue(f.id, f.kind)
   if (f.kind === 'toggle') return v ? 'Enabled' : 'Disabled'
   if (f.kind === 'choice') return f.choices.find((c) => c.letter === v)?.name ?? String(v)
   if (f.kind === 'number') return Number(v).toLocaleString()
@@ -165,6 +166,11 @@ function current(f: ResetField): string | null {
 
 function setNumber(f: ResetField, raw: string) {
   values.value[f.id] = raw.trim() === '' ? null : Number(raw)
+  delete serverErrors.value[f.id]
+}
+
+function setText(f: ResetField, raw: string) {
+  values.value[f.id] = raw.trim()
   delete serverErrors.value[f.id]
 }
 
@@ -310,14 +316,25 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnOnUnload))
               <span>Game reset</span>
             </div>
             <h1>Game reset: {{ form.full_id }}</h1>
-            <p class="text-muted">
+            <p v-if="form.game_type === 'I'" class="text-muted">
+              {{ gameTypeName(form.game_type) }}. Every league rule in the Coordinator's
+              config.json, with the help from the game's own config editor.
+            </p>
+            <p v-else class="text-muted">
               {{ gameTypeName(form.game_type) }}. Every setting the game's reset editor
               offers, with the game's own help.
             </p>
           </div>
         </header>
 
-        <div class="alert alert-warning mb-4">
+        <div v-if="form.game_type === 'I'" class="alert alert-warning mb-4">
+          A reset wipes every player on every board in the league and starts a new
+          game with these rules. Save the draft, then PERFORM RESET: the hub backs up
+          its game, writes the rules into its config.json, orders the league reset,
+          checks the rules the game signed for the members, and puts the game back as
+          it was if anything doesn't match.
+        </div>
+        <div v-else class="alert alert-warning mb-4">
           A reset wipes every player on every board in the league and starts a new
           game with these settings. Save the draft, then PERFORM RESET: the hub backs
           up its game, types the settings into the game's own reset editor, checks
@@ -330,6 +347,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnOnUnload))
             :fields="form.fields"
             :refresh-key="historyKey"
             :open-id="openReset"
+            :game-type="form.game_type"
             inline
             @finished="onFinished"
           />
@@ -427,6 +445,16 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnOnUnload))
                   <input :id="`f-${f.id}`" v-model="values[f.id]" type="checkbox" />
                   <span>{{ values[f.id] ? 'Enabled' : 'Disabled' }}</span>
                 </label>
+
+                <input
+                  v-else-if="f.kind === 'text'"
+                  :id="`f-${f.id}`"
+                  type="text"
+                  class="text-input"
+                  placeholder="none"
+                  :value="values[f.id] ?? ''"
+                  @input="setText(f, ($event.target as HTMLInputElement).value)"
+                />
 
                 <input
                   v-else
@@ -699,7 +727,8 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnOnUnload))
 }
 
 
-.date-input {
+.date-input,
+.text-input {
   display: block;
   width: 100%;
   padding: 0.5rem 0.75rem;

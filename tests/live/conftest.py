@@ -188,6 +188,35 @@ def ib_build(request, rig_available):
 
 
 @pytest.fixture
+def ib_upgrade(rig_available):
+    """(release, trunk): the two builds an upgrade scenario plays, old to new."""
+    from rig.ib_league import Build, builds
+
+    chosen, pair = builds(), []
+    for kind in ("release", "trunk"):
+        entry = chosen.get(kind)
+        if not entry:
+            pytest.skip(f"no IB {kind} build recorded; run.sh makes them (python -m rig.ib_builds)")
+        if "error" in entry:
+            pytest.fail(f"IB {kind} {entry.get('ref', '')}: {entry['error']}", pytrace=False)
+        pair.append(Build(kind=kind, ref=entry["ref"], commit=entry.get("commit", ""),
+                          binary=Path(entry["binary"]), version=entry["version"]))
+    return tuple(pair)
+
+
+@pytest.fixture
+def ib_upgrade_league(tmp_path, ib_upgrade):
+    """League 900I started on the release, as ib_league; the scenario upgrades it."""
+    from rig.ib_league import IbLeague
+
+    league = IbLeague(tmp_path, ib_upgrade[0])
+    try:
+        yield league.start()
+    finally:
+        league.stop()
+
+
+@pytest.fixture
 def ib_league(tmp_path, ib_build):
     """League 900I, started: the hub serving, boards 02 and 03 set up but not synced."""
     from rig.ib_league import IbLeague

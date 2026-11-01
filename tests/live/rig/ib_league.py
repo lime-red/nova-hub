@@ -451,9 +451,12 @@ class Held:
 
 
 def held_packets(data: Path) -> list:
-    """The packets in a game's held/, as the game wrote them (plain JSON)."""
+    """The packets in a game's held/, as the game wrote them (plain JSON). The
+    extension is the game's .brp in any case: the hub delivers .BRP."""
     out = []
-    for path in sorted((data / "held").glob("*.brp")):
+    folder = data / "held"
+    paths = sorted(folder.iterdir()) if folder.is_dir() else []
+    for path in (p for p in paths if p.suffix.lower() == ".brp" and p.is_file()):
         try:
             p = json.loads(path.read_text())
         except ValueError:

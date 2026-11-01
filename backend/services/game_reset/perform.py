@@ -71,6 +71,7 @@ GAME_EXIT_WAIT = 300           # seconds for the game to finish after league-wid
 _jobs: set = set()             # running job tasks, so they aren't collected
 
 
+WRITTEN = "_written"               # drive_ib*'s result: the packets the order wrote
 KINDS = {"reset": "reset", "rules": "rules change", "freeze": "freeze", "thaw": "thaw"}
 DRAFTED = ("reset", "rules")       # the kinds made from the league's draft
 MESSAGE_MAX = 200                  # a freeze's message, shown to every caller
@@ -374,7 +375,7 @@ def _run_ib(setup: IbSetup, args: list, log: Callable[[str], None], transcript: 
         last = output.strip().splitlines()[-1] if output.strip() else ""
         log(f"exit {run.returncode}: {last}")
         log(f"wrote {', '.join(written) or 'no packets'}")
-        return check(written, run.returncode, last)
+        return {**check(written, run.returncode, last), WRITTEN: written}
     except Exception:
         for name in written:
             (setup.outbound / name).unlink(missing_ok=True)
@@ -579,6 +580,7 @@ async def _run(db: Session, reset_id: int, config: dict, drive_fn, lock_wait, to
         try:
             sent = await asyncio.to_thread(drive_fn, setup, league.game_type, reset.settings,
                                            today, log, transcript)
+            written = sent.pop(WRITTEN, None) if isinstance(sent, dict) else None
         except Exception as exc:
             log(f"FAILED: {exc}")
             reset.status = "failed"
@@ -624,7 +626,15 @@ async def _run(db: Session, reset_id: int, config: dict, drive_fn, lock_wait, to
         db.refresh(reset)
         reset.processing_run_id = run.id if run is not None else None
         _stage(db, reset, "processing")
-        if run is None or run.status != "completed":
+        if run is not None and run.status != "completed" and _collected(db, league, written):
+            # IB exits 1 for any fault it reports, after writing its packets: a
+            # board's packet held under old rules, say. The order went out with
+            # the rest; what the game complained of is the run's, not this.
+            reset.transcript = "\n".join(log_lines + [
+                f"{datetime.now():%H:%M:%S} the hub run after it reported a fault, but "
+                f"collected {', '.join(written)}: {run.error_message}"])
+            db.commit()
+        elif run is None or run.status != "completed":
             reset.error = (f"The {noun} is saved, but the processing run after it failed"
                            + (f": {run.error_message}" if run is not None and
                               run.error_message else "")
@@ -634,6 +644,16 @@ async def _run(db: Session, reset_id: int, config: dict, drive_fn, lock_wait, to
         _stage(db, reset, "sent")
     finally:
         _release_lock()
+
+
+def _collected(db: Session, league: League, written: Optional[list]) -> bool:
+    """Whether the hub collected every packet the order wrote, for delivery."""
+    from backend.models.database import Packet
+    if not written:
+        return False
+    return all(db.query(Packet.id).filter(Packet.league_id == league.id,
+                                          Packet.filename == name.upper()).first()
+               for name in written)
 
 
 # ── after a restart ───────────────────────────────────────────────────────

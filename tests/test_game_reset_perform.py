@@ -1012,3 +1012,37 @@ def test_one_order_at_a_time_across_kinds(ib):
     perform.start_order(ib.db, ib.league, "freeze", "900I", "lime", ib.config, "m")
     with pytest.raises(perform.ResetRefused, match="A freeze is already under way"):
         ib_draft(ib, turns_per_day=12)
+
+
+@pytest.mark.asyncio
+async def test_an_order_the_run_collected_is_sent_though_the_run_reported_a_fault(
+        ib, processing, monkeypatch):
+    """IB exits 1 for a fault it reports after writing its packets (rig, trunk
+    3b1c3be: a board's packet re-held under old rules after a rules change).
+    The order went out; the run's fault goes in its log, not its error."""
+    collected = FakeProcessing.process_batch
+
+    async def collect_then_fail(self, also=()):
+        for f in ib.outbound.iterdir():
+            self.db.add(Packet(filename=f.name.upper(), league_id=ib.league.id,
+                               source_bbs_index="01", dest_bbs_index="02",
+                               sequence_number=1, file_size=1))
+        return await collected(self, also)
+    monkeypatch.setattr(FakeProcessing, "process_batch", collect_then_fail)
+    FakeProcessing.status = "failed"
+    order = ib_rules(ib, turns_per_day=12)
+    await perform.run_job(order.id, ib.config, today=TODAY)
+    ib.db.expire_all()
+    r = ib.db.get(GameReset, order.id)
+    assert r.error is None and [p["stage"] for p in r.progress][-1] == "sent"
+    assert "reported a fault, but collected L900-001-0043-000.brp: dosemu exited 1" in r.transcript
+
+
+@pytest.mark.asyncio
+async def test_an_order_the_run_did_not_collect_says_so(ib, processing):
+    FakeProcessing.status = "failed"
+    order = ib_rules(ib, turns_per_day=12)
+    await perform.run_job(order.id, ib.config, today=TODAY)
+    ib.db.expire_all()
+    r = ib.db.get(GameReset, order.id)
+    assert r.status == "applied" and "processing run after it failed" in r.error

@@ -445,7 +445,7 @@ watch([days, leagueId, planet, onlyMit], load)
                             :title="j.stage === 'relay not held' ? `The hub no longer holds the packets it wrote to planet ${j.unheld_relay_to} around then (older hub versions overwrote them), so this journey's next hop cannot be shown. It is not evidence of a loss.` : ''">{{ j.stage }}</span>
                       <div v-if="j.mit" class="mit-text">{{ mitText(j) }}</div>
                       <div v-else-if="j.paused" class="text-muted wait-text"
-                           :title="`The hub's game is holding planet ${j.to_planet}'s packets for a protocol it cannot read. A board on the hub's build holds them too, and stops this attack's lost-forces timer while it does.`">
+                           :title="`The hub is holding planet ${j.to_planet}'s packets: they use a format its copy of the game cannot read. A board on the same version as the hub holds them too, and stops this attack's lost-forces timer while it does.`">
                         Timer paused: target held</div>
                       <div v-else-if="j.days_left != null" class="text-muted wait-text"
                            title="Days before the attacker's board gives the forces back, counted on the hub's date">

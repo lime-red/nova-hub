@@ -555,7 +555,8 @@ export const gameResetApi = {
     api.get<ResetDetail>(`/leagues/${leagueId}/resets/${resetId}`)
 }
 
-// The hub's own Immortal Barons game: the League Coordinator's view.
+// An Immortal Barons league as the hub, its Coordinator, sees it. The hub
+// plays no part in the game.
 export interface IbBoard {
   name: string
   bbs_index: number | null
@@ -583,20 +584,6 @@ export interface IbHeldPacket {
   protocol: number | null
   ruleset: string | null
   version: string | null
-  pauses_lost_forces: boolean
-}
-
-export interface IbFlight {
-  id: number
-  kind: string
-  target_board: string
-  bbs_index: number | null
-  target_empire: string | null
-  launched: string | null
-  wait_days: number
-  held: boolean
-  held_days: number
-  days_left: number | null
 }
 
 export interface IbGameState {
@@ -604,11 +591,9 @@ export interface IbGameState {
   full_id: string
   available: boolean
   saved: string | null
-  game_day: number
   started: string | null
   ruleset: string | null
   min_board_version: string | null
-  lost_forces_days: number
   frozen: boolean
   freeze_serial: number
   freeze_message: string | null
@@ -617,7 +602,6 @@ export interface IbGameState {
   quiet: number
   boards: IbBoard[]
   held: IbHeldPacket[]
-  in_flight: IbFlight[]
   under_way: ResetDetail | null
 }
 

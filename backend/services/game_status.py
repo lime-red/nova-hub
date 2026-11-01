@@ -53,7 +53,7 @@ STATES = {
     "offline": "Client offline",
     "stopped_polling": "Stopped polling this league",
     "backlog": "Packets piling up",
-    "held": "Hub game is holding its packets",
+    "held": "Hub is holding its packets",
     "below_min": "Below the league's minimum version",
     "game_silent": "Hub game has not heard from it",
     "other_rules": "Playing by other rules",
@@ -377,7 +377,7 @@ def game_state(s: LeagueStatus, is_hub: bool) -> Tuple[str, Optional[str]]:
     if g is not None and not is_hub and g.source == "timecheck":
         if g.protocol_held or g.held:
             held = ", ".join(f"{n} for {r}" for r, n in sorted(g.held.items()))
-            return "held", (("its protocol is one this hub's build cannot read; "
+            return "held", (("its packets use a format the hub's copy of the game cannot read; "
                              if g.protocol_held else "") + (held or "")
                             + (f". It was told: {g.notice}" if g.notice else ""))
         if ib_hub_game.below(g.version, g.min_version):

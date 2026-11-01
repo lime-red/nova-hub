@@ -1,11 +1,14 @@
-"""What the hub's own Immortal Barons game knows about its league.
+"""What the hub knows about an Immortal Barons league, as its Coordinator.
 
-The hub's game is node 1, the League Coordinator, and keeps in its world the
-answers the console wants: when each board's packets were last accepted and
-which version and rules they stated, whose packets it is holding and why, the
-round trip to each board, the league freeze and each board's quiet report, and
-every strike or trade of its own still waiting for an answer. Andy's sysop
-panel (ib-sysop) reads the same fields; this is the hub's reading of them.
+The hub runs a copy of the game as node 1, the League Coordinator. Nobody
+plays on it: it signs the league's rules, roster and orders, and it is the
+other end of every board's packets. So its world holds the answers the
+console wants about the boards: when each one's packets were last accepted
+and which version and rules they stated, whose packets it is holding and why,
+the round trip to each, and the league freeze with each board's quiet report.
+Andy's sysop panel (ib-sysop) reads the same fields; this is the hub's
+reading of them. A sysop panel also lists the board's own strikes and trades
+in flight; the hub's board has none, so they are not read.
 
 Read straight from the data dir, never through the game: IB writes world.json
 by rename, so a read sees one save or the next, and none of this needs the
@@ -35,8 +38,6 @@ from backend.models.database import League
 HELD_DIR = "held"
 DEFAULT_HELD_PACKET_DAYS = 14          # game.DefaultHeldPacketDays
 RULESET_GRACE = dt.timedelta(days=7)   # game.RulesetGraceDays
-TRADE_WAIT_DAYS = 3                    # game.IPTradeWaitDays
-HELD_BACKSTOP = 5                      # game.LostForcesHeldBackstop
 PROTOCOL = 5                           # game.Protocol in v0.2.6; the hub's own
                                        # packets say which it speaks now
 
@@ -137,35 +138,21 @@ class HeldPacket:
     protocol: Optional[int] = None
     ruleset: Optional[str] = None
     version: Optional[str] = None
-    pauses_lost_forces: bool = False
-
-
-@dataclass
-class Flight:
-    """One of the hub game's own strikes, trades or deals awaiting its answer."""
-    id: int
-    kind: str
-    target_board: str
-    target_index: Optional[int]
-    target_empire: Optional[str]
-    launched: Optional[dt.datetime]
-    launched_day: int
-    wait_days: int
-    held: bool                       # its timer is paused: the target is held
-    held_days: int
-    days_left: Optional[int]         # None: never given back (LostForcesDays 0)
 
 
 @dataclass
 class Board:
-    """One board as the hub's game knows it."""
+    """One board as the Coordinator knows it."""
     name: str
     index: Optional[int]
     last_packet: Optional[dt.datetime] = None   # last ACCEPTED, a bounce included
     version: Optional[str] = None
     ruleset: Optional[str] = None               # the rules it said it plays by
     held_at: Optional[dt.datetime] = None       # last set aside for its protocol
-    protocol_held: bool = False                 # a hold the board has not talked past
+    # Held for its protocol and not talked past since (ProtocolHoldCurrent): a
+    # board on the hub's build holds its packets too, which stops the lost-
+    # forces timer of any attack sent to it (attack_trace's `paused`).
+    protocol_held: bool = False
     held: Dict[str, int] = field(default_factory=dict)   # reason -> files
     round_trip_days: Optional[float] = None
     round_trip_seen: Optional[dt.datetime] = None
@@ -176,12 +163,10 @@ class Board:
 class HubGame:
     data_dir: Path
     saved: Optional[dt.datetime]                # world.json's mtime
-    game_day: int = 0
     started: Optional[str] = None
     ruleset: Optional[str] = None               # the league's, as the hub states it
     prev_ruleset: Optional[str] = None
     prev_ruleset_at: Optional[dt.datetime] = None
-    lost_forces_days: int = 3
     min_board_version: Optional[str] = None
     protocol: int = PROTOCOL
     frozen: bool = False
@@ -191,7 +176,6 @@ class HubGame:
     thawed_at: Optional[dt.datetime] = None
     boards: Dict[str, Board] = field(default_factory=dict)
     held: List[HeldPacket] = field(default_factory=list)
-    in_flight: List[Flight] = field(default_factory=list)
 
     def board_at(self, index: int) -> Optional[Board]:
         return next((b for b in self.boards.values() if b.index == index), None)
@@ -249,11 +233,10 @@ def read(data_dir: Path, hub_ruleset: Optional[str] = None, hub_protocol: Option
     names = roster(data_dir)
     game = HubGame(
         data_dir=data_dir, saved=_utc_mtime(data_dir / "world.json"),
-        game_day=int(world.get("GameDay") or 0), started=world.get("StartedDate") or None,
+        started=world.get("StartedDate") or None,
         ruleset=hub_ruleset or world.get("LeagueRuleset") or None,
         prev_ruleset=world.get("PrevLeagueRuleset") or None,
         prev_ruleset_at=_stamp(world.get("PrevRulesetAt")),
-        lost_forces_days=int(rules.get("LostForcesDays", 3) or 0),
         min_board_version=(rules.get("MinBoardVersion") or None),
         protocol=hub_protocol or PROTOCOL,
         frozen=bool(world.get("Frozen")), freeze_serial=int(world.get("FreezeSerial") or 0),
@@ -277,7 +260,6 @@ def read(data_dir: Path, hub_ruleset: Optional[str] = None, hub_protocol: Option
         for name, stamp in (world.get("QuietBoards") or {}).items():
             _board(game, names, name).quiet_since = _stamp(stamp)
     _read_held(game, names, now)
-    _read_in_flight(game, names, world)
     return game
 
 
@@ -316,54 +298,13 @@ def _read_held(game: HubGame, names: Dict[str, int], now: dt.datetime) -> None:
                 b = _board(game, names, h.from_board)
                 b.held[h.reason] = b.held.get(h.reason, 0) + 1
                 if h.reason == "protocol" and _protocol_hold_current(b, arrived):
-                    b.protocol_held = h.pauses_lost_forces = True
+                    b.protocol_held = True
         game.held.append(h)
-    # A board's later files pause too once any of its holds is current.
-    for h in game.held:
-        if h.reason == "protocol" and h.from_board and game.boards[h.from_board].protocol_held:
-            h.pauses_lost_forces = True
-
-
-def wait_days(kind: str, lost_forces_days: int) -> int:
-    """game.World.waitDays: a trade or deal waits at least IPTradeWaitDays."""
-    if kind in ("trade", "deal"):
-        return max(TRADE_WAIT_DAYS, lost_forces_days)
-    return lost_forces_days
-
-
-def days_left(today: int, launched_day: int, days: int, held: bool, held_days: int
-              ) -> Optional[int]:
-    """game.InFlightStrike.lostForcesDaysLeft: the launch day does not count, a
-    hold pauses the wait, and the backstop counts from launch regardless."""
-    if days <= 0:
-        return None
-    age = today - launched_day - 1
-    left = days * HELD_BACKSTOP - age
-    if not held:
-        left = min(left, days - (age - held_days))
-    return left
-
-
-def _read_in_flight(game: HubGame, names: Dict[str, int], world: dict) -> None:
-    for f in world.get("InFlight") or []:
-        if not isinstance(f, dict):
-            continue
-        kind = f.get("Kind") or "attack"
-        days = wait_days(kind, game.lost_forces_days)
-        launched_day = int(f.get("LaunchedDay") or 0)
-        held, held_days = bool(f.get("Held")), int(f.get("HeldDays") or 0)
-        target = f.get("TargetBoard") or ""
-        game.in_flight.append(Flight(
-            id=int(f.get("ID") or 0), kind=kind, target_board=target,
-            target_index=names.get(target), target_empire=f.get("TargetEmpire") or None,
-            launched=_instant(f.get("Launched")), launched_day=launched_day,
-            wait_days=days, held=held, held_days=held_days,
-            days_left=days_left(game.game_day, launched_day, days, held, held_days)))
 
 
 def for_league(config: dict, league: League, hub_ruleset: Optional[str] = None,
                hub_protocol: Optional[int] = None) -> Optional[HubGame]:
-    """The hub's game for an IB league, from [ib.<league>] data_dir."""
+    """The hub's Coordinator game for an IB league, from [ib.<league>] data_dir."""
     if league.game_type != "I":
         return None
     from backend.services.providers import provider_for

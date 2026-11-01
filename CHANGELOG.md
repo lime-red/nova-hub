@@ -24,22 +24,24 @@ All notable changes to Nova Hub will be documented in this file.
   with the version it now runs, so you can tell when to thaw. Freezes and
   thaws are listed in the reset history and run as a reset does: lock,
   backup, the game's own command, its signed order checked, put back if not.
-- **The hub's own IB game is on the league page**: each board's version,
-  rules fingerprint, last packet taken and round trip; the packets the game
-  is holding, why (protocol, rules, signature) and when they are deleted; and
-  its own strikes and trades still waiting for an answer, with days left.
-  Read from the game's files, as Andy's sysop panel reads them.
-- **League Status has three new IB states**: *held*, when the hub's game is
+- **An IB league page shows what the hub knows as League Coordinator**:
+  each board's version, rules fingerprint, last packet accepted and round
+  trip; and the packets the hub is holding, why (protocol, rules, signature)
+  and when they are deleted unread. Read from the Coordinator game's files,
+  as Andy's sysop panel reads them. The hub plays no part in the game, so its
+  own board, and the panel's list of the board's own strikes in flight, are
+  left out.
+- **League Status has three new IB states**: *held*, when the hub is
   holding the board's packets (with the notice it bounced to the board);
   *below minimum*, against the league's MinBoardVersion; and *playing by
   other rules*, when the board's rules fingerprint is not the league's. The
   board's round trip is shown with the game's view.
-- **Copy as TSV** on the League Status table and the hub-game tables.
+- **Copy as TSV** on the League Status table and the League Coordinator tables.
 
 ### Changed
 - An IB board on a version unlike the hub's is no longer "out of date": any
   version from the league's minimum up may play. BRE and FE are unchanged.
-- An IB attack whose target's packets the hub's game holds for their protocol
+- An IB attack whose target's packets the hub holds for their protocol
   is shown with its lost-forces timer paused, not overdue, as a board on the
   hub's build pauses it (IB #190); one still running shows its days left.
 - The Coordinator's settings that IB has and BRE doesn't (Game Length, Idle

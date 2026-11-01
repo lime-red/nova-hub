@@ -410,7 +410,8 @@ def test_ib_held_when_the_hubs_game_holds_its_packets(world):
                {"FromBoard": "Nova Hub", "Notice": "your packets are being held here: " + "x" * 600})
     s = _ib_status(w, config)
     assert s.state == "held", s.state_detail
-    assert s.state_detail.startswith("its protocol is one this hub's build cannot read; "
+    assert s.state_detail.startswith("its packets use a format the hub's copy of the game "
+                                     "cannot read; "
                                      "1 for protocol. It was told: your packets are being held")
     assert s.game.protocol_held and s.game.held == {"protocol": 1}
     assert len(s.game.notice) == game_status.NOTICE_KEPT

@@ -88,6 +88,8 @@ class ResetMember(BaseModel):
 class ResetSummary(BaseModel):
     """One row of a league's reset history."""
     id: int
+    kind: str = Field("reset", description="reset; or, for an Immortal Barons league, "
+                                           "rules (changed without a reset), freeze or thaw")
     status: str = Field(description="applying, applied or failed")
     source: str = Field(description="console, or observed: seen in a Game Start "
                                     "packet, not performed from here")
@@ -118,6 +120,87 @@ class ResetDetail(ResetSummary):
 class ResetPerform(BaseModel):
     version: int = Field(description="The draft version being performed")
     confirm: str = Field(description="The league's code, typed by hand (for example 015B)")
+
+
+class LeagueOrder(BaseModel):
+    """A freeze or thaw of an Immortal Barons league."""
+    confirm: str = Field(description="The league's code, typed by hand (for example 015I)")
+    message: Optional[str] = Field(None, description="Freeze only: what every caller is "
+                                                     "shown while the league is frozen")
+
+
+class IbBoard(BaseModel):
+    """One board as the hub's Immortal Barons game knows it."""
+    name: str = Field(description="The board's name in the game's roster")
+    bbs_index: Optional[int] = None
+    bbs_name: Optional[str] = Field(None, description="The hub's name for its client")
+    last_packet: Optional[str] = Field(None, description="The hub game last accepted a "
+                                                         "packet from it (a bounce included)")
+    version: Optional[str] = None
+    ruleset: Optional[str] = Field(None, description="The rules it last said it plays by")
+    other_rules: bool = False
+    below_min: bool = False
+    protocol_held: bool = Field(False, description="Its packets are held for a protocol "
+                                                   "the hub's build cannot read, and it "
+                                                   "has not talked past that since")
+    held: Dict[str, int] = {}
+    round_trip_days: Optional[float] = None
+    round_trip_seen: Optional[str] = None
+    quiet_since: Optional[str] = Field(None, description="Frozen: its quiet report, when "
+                                                         "it last applied real traffic")
+
+
+class IbHeldPacket(BaseModel):
+    file: str
+    reason: str = Field(description="protocol, rules, signature or unreadable")
+    arrived: Optional[str] = None
+    expires: Optional[str] = Field(None, description="When the game deletes it unread")
+    from_board: Optional[str] = None
+    bbs_index: Optional[int] = None
+    type: Optional[str] = None
+    protocol: Optional[int] = None
+    ruleset: Optional[str] = None
+    version: Optional[str] = None
+    pauses_lost_forces: bool = Field(False, description="Its sender's strikes from here "
+                                                        "wait without their timer running")
+
+
+class IbFlight(BaseModel):
+    """One of the hub game's own strikes, trades or deals awaiting an answer."""
+    id: int
+    kind: str
+    target_board: str
+    bbs_index: Optional[int] = None
+    target_empire: Optional[str] = None
+    launched: Optional[str] = None
+    wait_days: int
+    held: bool
+    held_days: int
+    days_left: Optional[int] = Field(None, description="Game days before it is given "
+                                                       "back; null: never")
+
+
+class IbGameState(BaseModel):
+    """The hub's own Immortal Barons game: the Coordinator's view of the league."""
+    league_id: int
+    full_id: str
+    available: bool = Field(description="False when the hub's game has no world yet")
+    saved: Optional[str] = None
+    game_day: int = 0
+    started: Optional[str] = None
+    ruleset: Optional[str] = None
+    min_board_version: Optional[str] = None
+    lost_forces_days: int = 0
+    frozen: bool = False
+    freeze_serial: int = 0
+    freeze_message: Optional[str] = None
+    frozen_at: Optional[str] = None
+    thawed_at: Optional[str] = None
+    quiet: int = Field(0, description="Frozen: boards whose quiet report is in")
+    boards: List[IbBoard] = []
+    held: List[IbHeldPacket] = []
+    in_flight: List[IbFlight] = []
+    under_way: Optional[ResetDetail] = None
 
 
 class HubTimezone(BaseModel):

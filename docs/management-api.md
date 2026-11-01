@@ -2009,6 +2009,168 @@ Validation Error
 
 ---
 
+### POST `/management/api/v1/leagues/{league_id}/rules/perform`
+
+**Apply the Draft's Rules Without a Reset**
+
+Immortal Barons only: send the draft's rules to every board **without**
+resetting the league. The game being played carries on under them; its
+Start Date is not used.
+
+The hub backs up its game, writes the rules into its config.json and runs
+`-league-config`, which signs and broadcasts them, and checks the rules it
+sent against the draft. Anything unexpected puts the game back and returns
+the settings to the draft. A processing run then delivers them; each board
+adopts them on its next run.
+
+Answers 202 at once; follow it with `GET /leagues/{id}/resets/{reset_id}`.
+409 and 422 as for performing a reset.
+
+#### Parameters
+
+**league_id**
+  - Type: `integer`
+  - Location: path *(required)*
+
+### Request Body
+
+**Content-Type:** `application/json`
+
+#### Responses
+
+#### 202
+
+Successful Response
+
+
+**Content-Type:** `application/json`
+
+#### 422
+
+Validation Error
+
+
+**Content-Type:** `application/json`
+
+---
+
+### POST `/management/api/v1/leagues/{league_id}/freeze`
+
+**Freeze the League**
+
+Immortal Barons only: stop play on every board, so the packets in flight
+can land before a change the boards must make together, such as a new
+packet protocol. Every caller is shown `message`.
+
+While frozen, each board still applies what reaches it, and reports to the
+hub's game once nothing but the freeze has moved there (its quiet report);
+`GET /leagues/{id}/ib-game` lists the reports. Thaw when they are all in
+and every board has updated.
+
+The hub backs up its game, runs `-league-freeze`, and checks the game froze
+and wrote the signed order; anything else puts the game back. Answers 202;
+follow it with `GET /leagues/{id}/resets/{reset_id}`. 409 when the league is
+already frozen or another order is under way.
+
+#### Parameters
+
+**league_id**
+  - Type: `integer`
+  - Location: path *(required)*
+
+### Request Body
+
+**Content-Type:** `application/json`
+
+#### Responses
+
+#### 202
+
+Successful Response
+
+
+**Content-Type:** `application/json`
+
+#### 422
+
+Validation Error
+
+
+**Content-Type:** `application/json`
+
+---
+
+### POST `/management/api/v1/leagues/{league_id}/thaw`
+
+**Thaw the League**
+
+Immortal Barons only: end the freeze. Play resumes on each board as the
+order reaches it, and every deadline moves on by the time spent frozen.
+409 when the league is not frozen.
+
+#### Parameters
+
+**league_id**
+  - Type: `integer`
+  - Location: path *(required)*
+
+### Request Body
+
+**Content-Type:** `application/json`
+
+#### Responses
+
+#### 202
+
+Successful Response
+
+
+**Content-Type:** `application/json`
+
+#### 422
+
+Validation Error
+
+
+**Content-Type:** `application/json`
+
+---
+
+### GET `/management/api/v1/leagues/{league_id}/ib-game`
+
+**The Hub's Immortal Barons Game**
+
+What the hub's own game, the League Coordinator, knows of the league:
+each board's last accepted packet, version, rules and round trip; the
+freeze and each board's quiet report; the packets it is holding and why;
+and its own strikes and trades still waiting for an answer, with the game
+days left before they are given back. Read from the game's files, as of
+its last save (`saved`).
+
+#### Parameters
+
+**league_id**
+  - Type: `integer`
+  - Location: path *(required)*
+
+#### Responses
+
+#### 200
+
+Successful Response
+
+
+**Content-Type:** `application/json`
+
+#### 422
+
+Validation Error
+
+
+**Content-Type:** `application/json`
+
+---
+
 ## Management API - Leagues
 
 ### GET `/management/api/v1/leagues`

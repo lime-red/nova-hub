@@ -147,6 +147,15 @@ textarea:focus {
   background-color: #dc2626;
 }
 
+.btn-warning {
+  background-color: var(--color-warning);
+  color: white;
+}
+
+.btn-warning:hover:not(:disabled) {
+  filter: brightness(0.92);
+}
+
 .btn-sm {
   padding: 0.25rem 0.5rem;
   font-size: 0.75rem;

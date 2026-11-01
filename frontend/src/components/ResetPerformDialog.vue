@@ -1,6 +1,8 @@
 <script setup lang="ts">
 // The last stop before a reset: what changes, what's below the usual minimum,
-// what happens to every player, and the league code typed by hand.
+// what happens to every player, and the league code typed by hand. For an
+// Immortal Barons league, `rules` is the same stop before its rules change
+// without a reset.
 import { computed, ref } from 'vue'
 import {
   apiError,
@@ -12,7 +14,8 @@ import {
 } from '@/services/api'
 import { blankResetValue, resetSignal } from '@/games'
 
-const props = defineProps<{ form: GameResetForm }>()
+const props = defineProps<{ form: GameResetForm; mode?: 'reset' | 'rules' }>()
+const rulesOnly = computed(() => props.mode === 'rules')
 const emit = defineEmits<{ close: []; performed: [reset: ResetDetail] }>()
 
 const typed = ref('')
@@ -29,6 +32,10 @@ const OBSERVED: Record<string, 'protection_turns' | 'indiv_attacks' | 'lost_atta
   lost_attack_days: 'lost_attack_days'
 }
 const baseline = computed<Record<string, ResetValue>>(() => {
+  // IB's rules are sent on every run, so the newest the hub passed is what the
+  // league plays by, whoever changed them.
+  if (props.form.game_type === 'I' && props.form.observed?.settings)
+    return { ...props.form.defaults, ...props.form.observed.settings }
   if (props.form.last_applied) return props.form.last_applied.settings
   const seen: Record<string, ResetValue> = {}
   for (const [fid, key] of Object.entries(OBSERVED)) {
@@ -49,8 +56,9 @@ function display(f: ResetField, v: ResetValue | undefined): string {
 const changes = computed(() =>
   props.form.fields
     .filter((f) => f.id in draft.value.settings)
-    // A start date belongs to its own game, so only a chosen one is news.
-    .filter((f) => f.id !== 'start_date' || draft.value.settings.start_date)
+    // A start date belongs to its own game, so only a chosen one is news; a
+    // rules change starts no game.
+    .filter((f) => f.id !== 'start_date' || (!rulesOnly.value && draft.value.settings.start_date))
     .filter((f) => draft.value.settings[f.id] !== baseline.value[f.id])
     .map((f) => ({
       label: f.label,
@@ -67,13 +75,14 @@ async function perform() {
   busy.value = true
   error.value = ''
   try {
-    const { data } = await gameResetApi.perform(props.form.league_id, {
+    const send = rulesOnly.value ? gameResetApi.performRules : gameResetApi.perform
+    const { data } = await send(props.form.league_id, {
       version: draft.value.version,
       confirm: typed.value.trim()
     })
     emit('performed', data)
   } catch (e) {
-    error.value = apiError(e, 'Could not start the reset')
+    error.value = apiError(e, rulesOnly.value ? 'Could not start the rules change' : 'Could not start the reset')
   } finally {
     busy.value = false
   }
@@ -84,11 +93,17 @@ async function perform() {
   <div class="modal-overlay" @click.self="!busy && emit('close')">
     <div class="modal" role="dialog" aria-labelledby="perform-title">
       <div class="modal-header">
-        <h3 id="perform-title">Reset {{ form.full_id }}?</h3>
+        <h3 id="perform-title">{{ rulesOnly ? `Change ${form.full_id}'s rules?` : `Reset ${form.full_id}?` }}</h3>
         <button class="modal-close" :disabled="busy" @click="emit('close')">&times;</button>
       </div>
       <div class="modal-body">
-        <div class="alert alert-error mb-4">
+        <div v-if="rulesOnly" class="alert alert-warning mb-4">
+          <strong>Nobody is wiped.</strong> The hub sends these rules to every board in
+          {{ form.full_id }} now, and each board plays by them from its next run. The game
+          in progress carries on under them, so a change to its length or its daily turns
+          applies from there. The Start Date isn't used.
+        </div>
+        <div v-else class="alert alert-error mb-4">
           <strong>Every player on every board in {{ form.full_id }} is wiped.</strong>
           The hub resets its own game now, and each member's game resets on its next
           run after it downloads the {{ resetSignal(form.game_type) }}. This can't be undone once members
@@ -98,7 +113,9 @@ async function perform() {
         <h4>What changes</h4>
         <p class="text-muted small">
           Against
-          <template v-if="form.last_applied">the last reset from the console.</template>
+          <template v-if="form.game_type === 'I' && form.observed?.settings">the rules the
+            hub's game last sent the league.</template>
+          <template v-else-if="form.last_applied">the last reset from the console.</template>
           <template v-else>
             the game's defaults: no reset has been performed from the console yet<template
               v-if="form.observed"
@@ -108,7 +125,7 @@ async function perform() {
         </p>
         <table v-if="changes.length" class="table changes">
           <thead>
-            <tr><th>Setting</th><th>Now</th><th>After the reset</th></tr>
+            <tr><th>Setting</th><th>Now</th><th>{{ rulesOnly ? 'After' : 'After the reset' }}</th></tr>
           </thead>
           <tbody>
             <tr v-for="c in changes" :key="c.label">
@@ -118,7 +135,8 @@ async function perform() {
             </tr>
           </tbody>
         </table>
-        <p v-else class="small">Nothing: the same settings as now, with a new game.</p>
+        <p v-else class="small">{{ rulesOnly ? 'Nothing: these are the rules now. They go out again regardless.'
+          : 'Nothing: the same settings as now, with a new game.' }}</p>
 
         <template v-if="draft.warnings.length">
           <h4>Below the usual minimum</h4>
@@ -145,8 +163,9 @@ async function perform() {
       </div>
       <div class="modal-footer">
         <button class="btn btn-secondary" :disabled="busy" @click="emit('close')">Cancel</button>
-        <button class="btn btn-danger" :disabled="!matches || busy" @click="perform">
-          {{ busy ? 'Starting...' : `Reset ${form.full_id}` }}
+        <button class="btn" :class="rulesOnly ? 'btn-primary' : 'btn-danger'"
+                :disabled="!matches || busy" @click="perform">
+          {{ busy ? 'Starting...' : rulesOnly ? `Apply rules to ${form.full_id}` : `Reset ${form.full_id}` }}
         </button>
       </div>
     </div>

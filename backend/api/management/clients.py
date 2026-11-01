@@ -85,7 +85,7 @@ async def list_clients(
     for client in clients:
         client_stats = stats_service.get_client_stats(client.id, days=1)
         issues = [f"{s.league.league_id}{s.league.game_type}: {game_status.STATES[s.state]}"
-                  for s in game_status.for_client(db, client, hub_index, data_dir)
+                  for s in game_status.for_client(db, client, hub_index, data_dir, config)
                   if s.state != "ok"]
         client_list.append(
             ClientResponse(
@@ -270,7 +270,7 @@ async def get_client_league_status(
     config = get_config()
     found = game_status.for_client(
         db, client, game_status.hub_index_from(config),
-        Path(config.get("server", {}).get("data_dir", "./data")))
+        Path(config.get("server", {}).get("data_dir", "./data")), config)
     return LeagueStatusResponse(tracking_since=utc(game_status.tracking_since(db)),
                                 rows=[LeagueStatusRow.of(s) for s in found])
 

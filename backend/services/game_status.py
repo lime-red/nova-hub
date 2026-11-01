@@ -17,7 +17,9 @@ Three sources, none of them new:
   for BRE and FE, the BBSINFO and ROUTEINFO listings the last processing run
   stored (bbsinfo.lst, routes.lst); for IB, which writes neither, the newest
   TimeCheck the board answered in a packet to the hub, and the Version it
-  stamped on that packet.
+  stamped on that packet. Since #117 also the hub's own IB game, which keeps
+  what its sysop panel shows (ib_hub_game): whose packets it holds and why,
+  the version and rules each board states, and the round trip to it.
 
 The state is the first that applies, most actionable first (STATES).
 """
@@ -35,7 +37,7 @@ from backend.core.clock import utcnow
 from backend.models.database import (
     Client, ClientLeaguePoll, League, LeagueMembership, Packet, ProcessingRunFile,
 )
-from backend.services import ib_packet
+from backend.services import ib_hub_game, ib_packet
 
 OFFLINE_AFTER = dt.timedelta(hours=1)        # no token at all
 STOPPED_AFTER = dt.timedelta(hours=1)        # no listing of this league
@@ -43,6 +45,7 @@ BACKLOG_AFTER = dt.timedelta(days=1)         # oldest waiting packet
 SILENT_AFTER = dt.timedelta(days=2)          # the game's last recon from the board
 WAITING_LISTED = 20                          # packets named in the expandable list
 IB_PACKETS_READ = 5                          # newest board->hub packets searched
+NOTICE_KEPT = 500                            # characters of an IB bounce shown
 
 # In order: the first that applies is the row's state.
 STATES = {
@@ -50,7 +53,10 @@ STATES = {
     "offline": "Client offline",
     "stopped_polling": "Stopped polling this league",
     "backlog": "Packets piling up",
+    "held": "Hub game is holding its packets",
+    "below_min": "Below the league's minimum version",
     "game_silent": "Hub game has not heard from it",
+    "other_rules": "Playing by other rules",
     "out_of_date": "Game version differs from the hub's",
     "ok": "OK",
     "not_member": "Polls a league it is not a member of",
@@ -123,6 +129,17 @@ class GameView:
     hub_version: Optional[str] = None
     routing_missing: Optional[bool] = None        # None: no routes listing (IB)
     line: Optional[str] = None                    # the BBSINFO line, verbatim
+    # IB only, from the board's packets and the hub's game (ib_hub_game).
+    ruleset: Optional[str] = None                 # the rules the board says it plays
+    league_ruleset: Optional[str] = None          # the rules the hub's game sends
+    min_version: Optional[str] = None             # the league's MinBoardVersion
+    notice: Optional[str] = None                  # the hub game's last bounce to it
+    notice_at: Optional[dt.datetime] = None
+    last_accepted: Optional[dt.datetime] = None   # its last packet the game took
+    held: Dict[str, int] = field(default_factory=dict)   # reason -> held files
+    protocol_held: bool = False
+    round_trip_days: Optional[float] = None
+    round_trip_seen: Optional[dt.datetime] = None
 
 
 @dataclass
@@ -240,7 +257,7 @@ def _sent(item: dict) -> Optional[dt.datetime]:
 
 
 def _ib_view(db: Session, league: League, board: str, hub: str,
-             data_dir: Optional[Path]) -> GameView:
+             data_dir: Optional[Path], hub_game: Optional["ib_hub_game.HubGame"]) -> GameView:
     view = GameView(source="timecheck")
     from_board = (db.query(Packet)
                   .filter(Packet.league_id == league.id, Packet.source_bbs_index == board,
@@ -251,6 +268,7 @@ def _ib_view(db: Session, league: League, board: str, hub: str,
         if p is None:
             continue
         name = p.get("FromBoard")
+        view.ruleset = view.ruleset or ib_packet._str(p.get("Ruleset"))
         replies = [s for s in (_sent(i) for i in ib_packet._items(p, "TimeChecks")
                                if i.get("From") == name) if s]
         if view.version is None:
@@ -268,7 +286,35 @@ def _ib_view(db: Session, league: League, board: str, hub: str,
         p = _stored_json(packet, data_dir)
         if p is not None and p.get("Version"):
             view.hub_version = ib_packet._str(p.get("Version"))
+            view.league_ruleset = ib_packet._str(p.get("Ruleset"))
             break
+    # A bounce: the hub's game refused the board's packet and said why, to it.
+    bounced = (db.query(Packet)
+               .filter(Packet.league_id == league.id, Packet.source_bbs_index == hub,
+                       Packet.dest_bbs_index == board)
+               .order_by(Packet.id.desc()).limit(IB_PACKETS_READ).all())
+    for packet in bounced:
+        p = _stored_json(packet, data_dir)
+        if p is not None and p.get("Notice"):
+            view.notice = str(p["Notice"]).strip()[:NOTICE_KEPT] or None
+            view.notice_at = packet.processed_at or packet.uploaded_at
+            break
+    if hub_game is not None:
+        view.min_version = hub_game.min_board_version
+        view.league_ruleset = view.league_ruleset or hub_game.ruleset
+        b = hub_game.board_at(int(board, 16))
+        if b is not None:
+            view.last_accepted = b.last_packet
+            view.version = view.version or b.version
+            view.ruleset = b.ruleset or view.ruleset
+            view.held = dict(b.held)
+            view.protocol_held = b.protocol_held
+            view.round_trip_days = b.round_trip_days
+            view.round_trip_seen = b.round_trip_seen
+        # Bounced since: the board has been heard since and the notice is stale.
+        if view.notice and view.notice_at and view.last_accepted \
+                and view.last_accepted > view.notice_at and not view.held:
+            view.notice = view.notice_at = None
     return view
 
 
@@ -328,6 +374,14 @@ def _state(s: LeagueStatus, now: dt.datetime, since: Optional[dt.datetime],
 def game_state(s: LeagueStatus, is_hub: bool) -> Tuple[str, Optional[str]]:
     """The state from the game's view alone: what anyone in the league may see."""
     g = s.game
+    if g is not None and not is_hub and g.source == "timecheck":
+        if g.protocol_held or g.held:
+            held = ", ".join(f"{n} for {r}" for r, n in sorted(g.held.items()))
+            return "held", (("its protocol is one this hub's build cannot read; "
+                             if g.protocol_held else "") + (held or "")
+                            + (f". It was told: {g.notice}" if g.notice else ""))
+        if ib_hub_game.below(g.version, g.min_version):
+            return "below_min", f"{g.version}, league requires {g.min_version}"
     if g is not None and not is_hub:
         if not g.heard:
             return "game_silent", ("no recons received" if g.source == "bbsinfo"
@@ -341,6 +395,13 @@ def game_state(s: LeagueStatus, is_hub: bool) -> Tuple[str, Optional[str]]:
                                    + ("before the last run" if g.source == "bbsinfo" else "ago"))
         if g.routing_missing:
             return "game_silent", "routing information missing"
+    if g is not None and g.source == "timecheck":
+        # IB boards may run any version from the league's minimum up, so a
+        # version unlike the hub's is not a fault; rules unlike the league's are.
+        if not is_hub and g.ruleset and g.league_ruleset and g.ruleset != g.league_ruleset:
+            return "other_rules", (f"plays {g.ruleset}, league {g.league_ruleset}"
+                                   + (f". It was told: {g.notice}" if g.notice else ""))
+        return "ok", None
     if g is not None and g.version and g.hub_version and g.version != g.hub_version:
         return "out_of_date", f"{g.version}, hub {g.hub_version}"
     return "ok", None
@@ -348,12 +409,39 @@ def game_state(s: LeagueStatus, is_hub: bool) -> Tuple[str, Optional[str]]:
 
 # ── assembly ──────────────────────────────────────────────────────────────
 
+def hub_ib_stated(db: Session, league: League, hub: str, data_dir: Optional[Path]):
+    """The rules fingerprint and protocol the hub's game last stated."""
+    for packet in (db.query(Packet)
+                   .filter(Packet.league_id == league.id, Packet.source_bbs_index == hub)
+                   .order_by(Packet.id.desc()).limit(IB_PACKETS_READ).all()):
+        p = _stored_json(packet, data_dir)
+        if p is not None and p.get("Ruleset"):
+            return ib_packet._str(p.get("Ruleset")), ib_packet._int(p.get("Protocol"))
+    return None, None
+
+
+def hub_games(db: Session, leagues, hub: str, data_dir: Optional[Path],
+              config: Optional[dict]) -> Dict[int, "ib_hub_game.HubGame"]:
+    """league id -> the hub's IB game, for each IB league that has one."""
+    out = {}
+    for league in leagues:
+        if league.game_type != "I" or not config:
+            continue
+        ruleset, protocol = hub_ib_stated(db, league, hub, data_dir)
+        game = ib_hub_game.for_league(config, league, ruleset, protocol)
+        if game is not None:
+            out[league.id] = game
+    return out
+
+
 def statuses(db: Session, pairs: List[Tuple[Client, League, Optional[LeagueMembership]]],
-             hub_index: int, data_dir: Optional[Path] = None) -> List[LeagueStatus]:
+             hub_index: int, data_dir: Optional[Path] = None,
+             config: Optional[dict] = None) -> List[LeagueStatus]:
     """A LeagueStatus per (client, league, membership-or-None)."""
     now = utcnow()
     since = tracking_since(db)
     hub = _hex(hub_index)
+    games = hub_games(db, {l.id: l for _, l, _ in pairs}.values(), hub, data_dir, config)
     listings = _latest_listings(db, sorted({l.id for _, l, _ in pairs if l.game_type != "I"}))
     last_polls = dict(db.query(ClientLeaguePoll.client_id, func.max(ClientLeaguePoll.last_poll_at))
                       .filter(ClientLeaguePoll.client_id.in_({c.id for c, _, _ in pairs}))
@@ -372,7 +460,7 @@ def statuses(db: Session, pairs: List[Tuple[Client, League, Optional[LeagueMembe
                 _fill_queue(db, s, board)
             _fill_uploaded(db, s, board)
             if league.game_type == "I":
-                s.game = _ib_view(db, league, board, hub, data_dir)
+                s.game = _ib_view(db, league, board, hub, data_dir, games.get(league.id))
             else:
                 s.game = _sr_view(listings, league, index, hub_index)
         s.state, s.state_detail = _state(s, now, since, is_hub)
@@ -381,7 +469,8 @@ def statuses(db: Session, pairs: List[Tuple[Client, League, Optional[LeagueMembe
 
 
 def for_client(db: Session, client: Client, hub_index: int,
-               data_dir: Optional[Path] = None) -> List[LeagueStatus]:
+               data_dir: Optional[Path] = None, config: Optional[dict] = None
+               ) -> List[LeagueStatus]:
     """Every league the client is an active member of, then any it polls without being one."""
     members = (db.query(LeagueMembership)
                .filter(LeagueMembership.client_id == client.id, LeagueMembership.is_active == True)
@@ -394,15 +483,16 @@ def for_client(db: Session, client: Client, hub_index: int,
             if league is not None:
                 pairs.append((client, league, None))
     pairs.sort(key=lambda p: (p[2] is None, p[1].league_id, p[1].game_type))
-    return statuses(db, pairs, hub_index, data_dir)
+    return statuses(db, pairs, hub_index, data_dir, config)
 
 
 def for_league(db: Session, league: League, hub_index: int,
-               data_dir: Optional[Path] = None) -> List[LeagueStatus]:
+               data_dir: Optional[Path] = None, config: Optional[dict] = None
+               ) -> List[LeagueStatus]:
     """Every active member of the league, by BBS index."""
     members = (db.query(LeagueMembership)
                .filter(LeagueMembership.league_id == league.id, LeagueMembership.is_active == True)
                .all())
     pairs = [(m.client, league, m) for m in members if m.client is not None]
     pairs.sort(key=lambda p: (p[2].bbs_index is None, p[2].bbs_index or 0))
-    return statuses(db, pairs, hub_index, data_dir)
+    return statuses(db, pairs, hub_index, data_dir, config)

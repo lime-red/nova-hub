@@ -500,6 +500,11 @@ class Journey:
     # The board whose relay from the hub should be the next hop, when the hub no
     # longer holds any packet it wrote to that board around then (see _unheld).
     unheld_relay_to: Optional[int] = None
+    # IB: the hub's game is holding the target board's packets for a protocol
+    # it cannot read, and has not heard past it. A board on the hub's build
+    # holds them too and stops this attack's lost-forces timer while it does
+    # (IB #190), so it is not overdue whatever the date says.
+    paused: bool = False
     hops: List[Hop] = field(default_factory=list)
 
     @property
@@ -536,6 +541,19 @@ class Journey:
         return day + timedelta(days=self.lost_attack_days)
 
     @property
+    def days_left(self) -> Optional[int]:
+        """IB: whole days before the attacker's board gives the forces back,
+        while no result has been delivered; None once one has, when it never
+        will (LostForcesDays 0), or while paused. Counted on the hub's date:
+        IB's packets carry dates, not times, so no board clock is measured."""
+        if self.game_type != "I" or self.result_delivered or self.paused:
+            return None
+        due = self.mit_due_local
+        if due is None:
+            return None
+        return max(0, (due.date() - _now().date()).days)
+
+    @property
     def mit_due(self) -> Optional[datetime]:
         """The same moment on the hub's clock, which is what hops are timed by."""
         due = self.mit_due_local
@@ -568,6 +586,8 @@ class Journey:
         """
         due = self.mit_due
         if due is None or self.unheld_relay_to is not None:
+            return None
+        if self.result_delivered is None and self.paused:
             return None
         if self.result_delivered is None:
             return "overdue" if _now() >= due else None
@@ -715,7 +735,10 @@ def _bbs(hexstr: str) -> Optional[int]:
 
 def journeys(db: Session, hub_index: str, league_id: Optional[int] = None,
              since: Optional[datetime] = None, planet: Optional[int] = None,
-             attack_id: Optional[str] = None, limit: int = 500) -> List[Journey]:
+             attack_id: Optional[str] = None, limit: int = 500,
+             held: Optional[Dict[int, set]] = None) -> List[Journey]:
+    """`held`: league id -> the boards the hub's IB game holds for their
+    protocol (ib_hub_game), whose attacks are paused."""
     q = db.query(AttackSighting, Packet).join(Packet, AttackSighting.packet_id == Packet.id)
     if league_id is not None:
         q = q.filter(AttackSighting.league_id == league_id)
@@ -793,6 +816,9 @@ def journeys(db: Session, hub_index: str, league_id: Optional[int] = None,
             j.attacker_clock = _clock_at(clocks.get((j.league_id, j.from_planet)), when)
     _rollovers(db, bre, hub)
     _unheld(db, bre, hub)
+    for j in out:
+        if j.game_type == "I" and held and j.to_planet in held.get(j.league_id, ()):
+            j.paused = True
     out.sort(key=lambda j: j.launched or j.attack_at_hub or datetime.min, reverse=True)
     return out[:limit]
 

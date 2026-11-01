@@ -33,6 +33,7 @@ const error = ref('')
 const message = ref('')
 const serverErrors = ref<Record<string, string>>({})
 const performing = ref(false) // the confirmation dialog is open
+const performMode = ref<'reset' | 'rules'>('reset')
 const openReset = ref<number | null>(null) // the history row opened, with its progress
 const historyKey = ref(0)
 
@@ -154,9 +155,15 @@ function changedFromDefault(f: ResetField): boolean {
 // What the current game runs with: the last reset from the console, or failing
 // that what the hub has decoded from the league's packets.
 function current(f: ResetField): string | null {
+  const observed = form.value?.observed
+  // IB's rules go out on every run, so the newest the hub passed is what the
+  // league plays by, even when they were changed by hand.
+  if (form.value?.game_type === 'I' && observed?.settings && f.id in observed.settings) {
+    const v = observed.settings[f.id]
+    return v === null || v === undefined ? null : display(f, v)
+  }
   const applied = form.value?.last_applied?.settings
   if (applied && f.id in applied) return display(f, applied[f.id])
-  const observed = form.value?.observed
   const key = OBSERVED[f.id]
   const seen = observed?.settings && f.id in observed.settings
     ? observed.settings[f.id]
@@ -183,6 +190,20 @@ function useDefaults() {
   if (!form.value) return
   values.value = { ...form.value.defaults }
   serverErrors.value = {}
+}
+
+// IB: start from the rules the league plays by now, to change some of them.
+function copyCurrent() {
+  if (!form.value?.observed?.settings) return
+  const rest = { ...form.value.observed.settings }
+  delete rest.start_date
+  values.value = { ...form.value.defaults, ...rest }
+  serverErrors.value = {}
+}
+
+function openPerform(mode: 'reset' | 'rules') {
+  performMode.value = mode
+  performing.value = true
 }
 
 function copyLast() {
@@ -251,7 +272,7 @@ function formatTime(iso: string | null): string {
 // Why PERFORM RESET can't be pressed, or '' when it can.
 const performBlocked = computed(() => {
   if (!form.value) return 'Loading'
-  if (form.value.under_way) return 'A reset of this league is under way.'
+  if (form.value.under_way) return 'A reset or other order for this league is under way.'
   if (!form.value.draft) return 'Save a draft first: a reset performs the saved draft.'
   if (dirty.value) return 'Save or undo your changes first: a reset performs the saved draft.'
   if (problems.value) return 'Fix the settings marked below first.'
@@ -366,6 +387,16 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnOnUnload))
               @click="copyLast"
             >
               Copy from last reset
+            </button>
+            <button
+              v-if="form.game_type === 'I'"
+              class="btn btn-secondary btn-sm"
+              :disabled="!form.observed?.settings"
+              :title="form.observed?.settings ? 'The rules the hub\'s game last sent the league'
+                : 'The hub has not passed the league\'s rules yet'"
+              @click="copyCurrent"
+            >
+              Current rules
             </button>
             <button class="btn btn-secondary btn-sm" @click="setAll(!allOpen)">
               {{ allOpen ? 'Collapse all' : 'Expand all' }}
@@ -539,10 +570,19 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnOnUnload))
                 {{ saving ? 'Saving...' : 'Save draft' }}
               </button>
               <button
+                v-if="form.game_type === 'I'"
+                class="btn btn-primary btn-sm"
+                :disabled="!!performBlocked"
+                :title="performBlocked || 'Send these rules to every board now, without a reset'"
+                @click="openPerform('rules')"
+              >
+                APPLY RULES NOW
+              </button>
+              <button
                 class="btn btn-danger btn-sm perform"
                 :disabled="!!performBlocked"
                 :title="performBlocked"
-                @click="performing = true"
+                @click="openPerform('reset')"
               >
                 PERFORM RESET
               </button>
@@ -553,6 +593,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnOnUnload))
         <ResetPerformDialog
           v-if="performing && form.draft"
           :form="form"
+          :mode="performMode"
           @close="performing = false"
           @performed="onPerformed"
         />

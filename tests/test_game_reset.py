@@ -361,3 +361,85 @@ def test_one_draft_per_league_in_the_database(db_session, sample_league):
     db_session.add(GameReset(league_id=sample_league.id, status="draft", settings={}))
     with pytest.raises(IntegrityError):
         db_session.commit()
+
+
+# --- an IB league's other orders, through the API ---------------------------
+
+@pytest.fixture
+def ib_api(api, tmp_path, monkeypatch):
+    """902I with a hub game on disk: a world, the Coordinator key, a binary
+    that is never run (the job is not scheduled), and one held packet."""
+    import json
+    from types import SimpleNamespace
+    from backend.api.management import game_reset as game_reset_api
+    from backend.services.game_reset import perform
+    client, db, _ = api
+    league = League(league_id="902", game_type="I", name="902I", is_active=True)
+    db.add(league)
+    db.commit()
+    folder = tmp_path / "ib902"
+    (folder / "held").mkdir(parents=True)
+    (folder / "world.json").write_text(json.dumps({
+        "GameDay": 4, "LeagueRuleset": "9d74df21", "BoardVersion": {"Alpha #1": "0.2.6"},
+        "TravelTimes": {"Alpha #1": 0.25}}))
+    (folder / "config.json").write_text(json.dumps(ib_packet.config_json(defaults("I"))))
+    (folder / "coord.key").write_text("secret")
+    (folder / "ibnodes.dat").write_text("1\nNova Hub\n-\n-\n-\n-\n\n2\nAlpha #1\n-\n-\n-\n-\n")
+    (folder / "held" / "L902-2-1-0.brp").write_text(json.dumps(
+        {"FromBoard": "Alpha #1", "FromNode": 2, "Protocol": 6}))
+    binary = tmp_path / "immortal-barons"
+    binary.write_text("#!/bin/sh\nexit 9\n")
+    binary.chmod(0o755)
+    raw = {"server": {"data_dir": str(tmp_path / "data")}, "hub": {"bbs_index": "01"},
+           "ib": {"902": {"binary": str(binary), "data_dir": str(folder)}}}
+    monkeypatch.setattr(game_reset_api, "get_config",
+                        lambda: SimpleNamespace(_raw=raw, get=raw.get))
+    scheduled = []
+    monkeypatch.setattr(perform, "schedule", lambda rid, config: scheduled.append(rid))
+    return SimpleNamespace(client=client, db=db, lid=league.id, folder=folder,
+                           scheduled=scheduled)
+
+
+def test_the_hub_game_endpoint_reads_the_coordinators_world(ib_api):
+    r = ib_api.client.get(f"{BASE}/{ib_api.lid}/ib-game")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["available"] and body["game_day"] == 4 and body["frozen"] is False
+    alpha = next(b for b in body["boards"] if b["name"] == "Alpha #1")
+    assert (alpha["bbs_index"], alpha["version"], alpha["round_trip_days"],
+            alpha["protocol_held"]) == (2, "0.2.6", 0.25, True)
+    assert [(h["file"], h["reason"], h["pauses_lost_forces"]) for h in body["held"]] == [
+        ("L902-2-1-0.brp", "protocol", True)]
+
+
+def test_freeze_and_thaw_through_the_api(ib_api):
+    c, lid = ib_api.client, ib_api.lid
+    assert c.post(f"{BASE}/{lid}/freeze", json={"confirm": "902I"}).status_code == 422
+    assert c.post(f"{BASE}/{lid}/thaw", json={"confirm": "902I"}).status_code == 409
+    r = c.post(f"{BASE}/{lid}/freeze", json={"confirm": "902i", "message": "Updating"})
+    assert r.status_code == 202, r.text
+    assert (r.json()["kind"], r.json()["status"], r.json()["notes"]) == (
+        "freeze", "applying", "Updating")
+    assert ib_api.scheduled == [r.json()["id"]]
+    # One order at a time, of any kind.
+    again = c.post(f"{BASE}/{lid}/thaw", json={"confirm": "902I"})
+    assert again.status_code == 409 and "freeze is already under way" in again.text
+    assert c.get(f"{BASE}/{lid}/ib-game").json()["under_way"]["kind"] == "freeze"
+    assert [e.action for e in ib_api.db.query(AuditEvent).all()] == ["game_reset.freeze"]
+
+
+def test_rules_change_through_the_api(ib_api):
+    c, lid = ib_api.client, ib_api.lid
+    r = c.put(f"{BASE}/{lid}/reset/draft", json={"settings": {"dupe_checking": False}})
+    assert r.status_code == 200, r.text
+    r = c.post(f"{BASE}/{lid}/rules/perform", json={"version": 1, "confirm": "902I"})
+    assert r.status_code == 202, r.text
+    assert (r.json()["kind"], r.json()["status"]) == ("rules", "applying")
+    assert c.get(f"{BASE}/{lid}/resets").json()[0]["kind"] == "rules"
+
+
+def test_a_bre_league_has_no_freeze_or_hub_game(api):
+    client, _, lid = api
+    assert client.get(f"{BASE}/{lid}/ib-game").status_code == 404
+    assert client.post(f"{BASE}/{lid}/freeze",
+                       json={"confirm": "015B", "message": "m"}).status_code == 404

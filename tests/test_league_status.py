@@ -360,7 +360,8 @@ def test_ib_is_heard_by_the_timecheck_it_answers(world):
     s = _status(w, "902I")
     assert s.game.source == "timecheck" and s.game.heard
     assert s.game.last_heard == answered.replace(microsecond=0)   # its answer, not the hub's ping
-    assert (s.state, s.state_detail) == ("out_of_date", "0.2.5, hub 0.2.6")
+    # Any version from the league's minimum up may play: unlike the hub's is fine.
+    assert (s.state, s.state_detail) == ("ok", None)
 
 
 def test_ib_with_no_answer_is_silent(world):
@@ -369,6 +370,78 @@ def test_ib_with_no_answer_is_silent(world):
     _ib_packet(w, "L902-2-1-0.BRP", "02", "01",
                {"FromBoard": "Alpha #1", "Version": "0.2.6", "TimeChecks": []})
     assert _status(w, "902I").state == "game_silent"
+
+
+def _hub_game(w, world, rules=None, held=()):
+    """The hub's own IB game for 902I, and a config naming it."""
+    folder = w.data_dir / "ib902"
+    (folder / "held").mkdir(parents=True, exist_ok=True)
+    (folder / "world.json").write_text(json.dumps(world))
+    (folder / "config.json").write_text(json.dumps(rules or {"LostForcesDays": 3}))
+    (folder / "ibnodes.dat").write_text("1\nNova Hub\n-\n-\n-\n-\n\n2\nAlpha #1\n-\n-\n-\n-\n")
+    for name, body in held:
+        (folder / "held" / name).write_text(json.dumps(body))
+    return {"server": {"data_dir": str(w.data_dir)}, "hub": {"bbs_index": "01"},
+            "ib": {"902": {"data_dir": str(folder)}}}
+
+
+def _ib_status(w, config):
+    return next(r for r in game_status.for_client(w.db, w.alpha, 1, w.data_dir, config)
+                if r.league.id == w.ib.id)
+
+
+def _answering(w, version="0.2.6", ruleset="9d74df21"):
+    _poll(w, w.ib.id)
+    _ib_packet(w, "L902-1-1-0.BRP", "01", "00",
+               {"FromBoard": "Nova Hub", "Version": "0.2.7", "Ruleset": "9d74df21",
+                "Protocol": 5})
+    _ib_packet(w, "L902-2-1-0.BRP", "02", "01", {
+        "FromBoard": "Alpha #1", "Version": version, "Ruleset": ruleset,
+        "TimeChecks": [{"From": "Alpha #1", "To": "Nova Hub",
+                        "Sent": utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")}]})
+
+
+def test_ib_held_when_the_hubs_game_holds_its_packets(world):
+    w = world
+    _answering(w)
+    config = _hub_game(w, {"LastPacketFrom": {"Alpha #1": "01/01/2026  00:00:00 UTC"}}, held=[
+        ("L902-2-9-0.brp", {"FromBoard": "Alpha #1", "FromNode": 2, "Protocol": 6})])
+    _ib_packet(w, "L902-1-2-2.BRP", "01", "02",
+               {"FromBoard": "Nova Hub", "Notice": "your packets are being held here: " + "x" * 600})
+    s = _ib_status(w, config)
+    assert s.state == "held", s.state_detail
+    assert s.state_detail.startswith("its protocol is one this hub's build cannot read; "
+                                     "1 for protocol. It was told: your packets are being held")
+    assert s.game.protocol_held and s.game.held == {"protocol": 1}
+    assert len(s.game.notice) == game_status.NOTICE_KEPT
+
+
+def test_ib_below_the_leagues_minimum_not_the_hubs_version(world):
+    w = world
+    _answering(w, version="0.2.6")
+    s = _ib_status(w, _hub_game(w, {}, rules={"MinBoardVersion": "0.2.7"}))
+    assert (s.state, s.state_detail) == ("below_min", "0.2.6, league requires 0.2.7")
+    # The hub runs 0.2.7 too, but only the league's minimum is a requirement.
+    s = _ib_status(w, _hub_game(w, {}, rules={"MinBoardVersion": "0.2.5"}))
+    assert s.state == "ok"
+
+
+def test_ib_other_rules_when_its_ruleset_is_not_the_leagues(world):
+    w = world
+    _answering(w, ruleset="11111111")
+    s = _ib_status(w, _hub_game(w, {"BoardRuleset": {"Alpha #1": "11111111"},
+                                    "TravelTimes": {"Alpha #1": 0.5},
+                                    "TravelSeen": {"Alpha #1": "2026-11-01T04:54:02Z"}}))
+    assert (s.state, s.state_detail) == ("other_rules", "plays 11111111, league 9d74df21")
+    assert s.game.round_trip_days == 0.5
+    assert s.game.round_trip_seen == dt.datetime(2026, 11, 1, 4, 54, 2)
+
+
+def test_ib_with_no_hub_game_configured_reads_the_packets_alone(world):
+    w = world
+    _answering(w, ruleset="11111111")
+    s = _ib_status(w, {"server": {"data_dir": str(w.data_dir)}})
+    assert s.state == "other_rules" and s.game.round_trip_days is None
 
 
 # ── the API, and who sees what ────────────────────────────────────────────

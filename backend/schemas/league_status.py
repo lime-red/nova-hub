@@ -1,7 +1,7 @@
 """League Status: each BBS's polls, queue and the hub game's view, per league"""
 
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel
 
@@ -28,6 +28,17 @@ class GameViewInfo(BaseModel):
     hub_version: Optional[str] = None
     routing_missing: Optional[bool] = None
     line: Optional[str] = None  # the BBSINFO line, verbatim
+    # Immortal Barons only: from the board's packets and the hub's own game.
+    ruleset: Optional[str] = None  # the rules fingerprint the board says it plays by
+    league_ruleset: Optional[str] = None  # the fingerprint of the rules the hub's game sends
+    min_version: Optional[str] = None  # the league's MinBoardVersion
+    notice: Optional[str] = None  # the hub game's last bounce to the board, verbatim
+    notice_at: Optional[datetime] = None
+    last_accepted: Optional[datetime] = None  # the board's last packet the hub's game took
+    held: Dict[str, int] = {}  # why the hub's game holds its packets -> how many
+    protocol_held: bool = False  # held for a protocol the hub's build cannot read
+    round_trip_days: Optional[float] = None  # the game's average packet round trip
+    round_trip_seen: Optional[datetime] = None  # when its last probe came home
 
 
 class LeagueStatusRow(BaseModel):
@@ -80,6 +91,10 @@ class LeagueStatusRow(BaseModel):
                 source=g.source, as_of=_utc(g.as_of), heard=g.heard,
                 last_heard=_utc(g.last_heard), version=g.version, hub_version=g.hub_version,
                 routing_missing=g.routing_missing, line=g.line,
+                ruleset=g.ruleset, league_ruleset=g.league_ruleset, min_version=g.min_version,
+                notice=g.notice, notice_at=_utc(g.notice_at), last_accepted=_utc(g.last_accepted),
+                held=g.held, protocol_held=g.protocol_held, round_trip_days=g.round_trip_days,
+                round_trip_seen=_utc(g.round_trip_seen),
             ) if g else None,
             state=s.state,
             state_label=game_status.STATES[s.state],

@@ -666,6 +666,11 @@ class GameReset(Base):
     `settings` is keyed by the field ids in game_reset/fields.py. A league has
     at most one draft. Every reset is league-wide.
 
+    `kind` "reset" is that. An Immortal Barons league's other console orders
+    are kept here too, since they run as a reset does (perform.py): "rules",
+    the draft's rules sent without a reset; "freeze", with its message in
+    `notes`; and "thaw". Only a reset starts or ends a game.
+
     A reset's end is the next applied reset's `applied_at`; it is worked out
     when read, never stored, so it cannot go stale.
     """
@@ -684,6 +689,7 @@ class GameReset(Base):
     id = Column(Integer, primary_key=True, index=True)
     league_id = Column(Integer, ForeignKey("leagues.id"), nullable=False, index=True)
     status = Column(String(10), nullable=False, default="draft")  # draft/applying/applied/failed
+    kind = Column(String(10), nullable=False, default="reset", server_default="reset")
     source = Column(String(10), nullable=False, default="console")  # console/observed
     settings = Column(JSON, nullable=False)
     notes = Column(Text, nullable=True)

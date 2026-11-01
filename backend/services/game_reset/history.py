@@ -89,6 +89,7 @@ def record_game_start(db: Session, league: League, packet: Packet,
     pending = (db.query(GameReset)
                .filter(GameReset.league_id == league.id,
                        GameReset.source == "console",
+                       GameReset.kind == "reset",
                        GameReset.status == "applied",
                        GameReset.game_start.is_(None),
                        GameReset.applied_at >= seen - CONFIRM_WINDOW,
@@ -114,7 +115,9 @@ def record_game_start(db: Session, league: League, packet: Packet,
 
 def history(db: Session, league: League) -> list:
     """Every reset but the draft, newest first, each with when its game ended
-    (the next reset's start), or None for the game being played now."""
+    (the next reset's start), or None for the game being played now. An IB
+    league's other orders (GameReset.kind) are listed among them and end
+    nothing; their `ended` is None."""
     rows = (db.query(GameReset)
             .filter(GameReset.league_id == league.id, GameReset.status != "draft")
             .all())
@@ -125,7 +128,7 @@ def history(db: Session, league: League) -> list:
     out, after = [], None
     for r in rows:
         ended = None
-        if r.status == "applied":
+        if r.status == "applied" and r.kind == "reset":
             ended = began(after) if after is not None else None
             after = r
         out.append((r, ended))

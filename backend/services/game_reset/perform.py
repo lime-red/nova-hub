@@ -24,6 +24,20 @@ written into the Coordinator's config.json and the game is ordered to reset
 the league (`-league-reset`), which resets the hub's own game and writes the
 signed order and the new rules for every member. Those packets are the
 read-back. The run after it only delivers them.
+
+An IB league takes three more orders from the console, each a GameReset row
+of its own `kind`, run by the same job with the same lock, backup and
+put-back, its own drive step in place of the editor:
+
+  rules   the draft's rules without a reset (drive_ib_rules): config.json, then
+          `-league-config`, which signs and broadcasts them. Boards adopt them
+          on their next run; games in progress carry on under them.
+  freeze  `-league-freeze <message>` (drive_ib_freeze): every board stops play
+          and shows the message, and reports to the hub's game once nothing
+          but the freeze has moved there for a while (its quiet report). The
+          league page lists the reports as they come in (ib_hub_game).
+  thaw    `-league-thaw`: play resumes, and every deadline moves on by the
+          time spent frozen.
 """
 import asyncio
 import json
@@ -55,6 +69,11 @@ LOCK_WAIT = 15 * 60            # seconds to wait for a running batch to finish
 GAME_EXIT_WAIT = 300           # seconds for the game to finish after league-wide
 
 _jobs: set = set()             # running job tasks, so they aren't collected
+
+
+KINDS = {"reset": "reset", "rules": "rules change", "freeze": "freeze", "thaw": "thaw"}
+DRAFTED = ("reset", "rules")       # the kinds made from the league's draft
+MESSAGE_MAX = 200                  # a freeze's message, shown to every caller
 
 
 class ResetRefused(Exception):
@@ -135,26 +154,90 @@ def _stage(db: Session, reset: GameReset, stage: str):
 
 
 # ── starting one ──────────────────────────────────────────────────────────
-def start(db: Session, league: League, version: int, code: str, username: str,
-          config: dict, today: date) -> GameReset:
-    """Check everything that can be checked without touching the game, then
-    turn the draft into a reset under way. The caller schedules run_job()."""
+def _not_busy(db: Session):
+    busy = db.query(GameReset).filter(GameReset.status == "applying").first()
+    if busy is not None:
+        raise ResetRefused(f"A {KINDS.get(busy.kind, 'reset')} is already under way (league "
+                           f"{busy.league.full_id if busy.league else busy.league_id}).")
+
+
+def _confirmed(league: League, code: str):
     if (code or "").strip().upper() != league.full_id.upper():
         raise ResetRefused(f"Type the league code, {league.full_id}, to confirm.", 422)
+
+
+def start(db: Session, league: League, version: int, code: str, username: str,
+          config: dict, today: date, kind: str = "reset") -> GameReset:
+    """Check everything that can be checked without touching the game, then
+    turn the draft into a reset (or, IB, a rules change) under way. The caller
+    schedules run_job()."""
+    _confirmed(league, code)
+    if kind not in DRAFTED:
+        raise ResetRefused(f"A {kind} is not made from a draft.", 422)
+    if kind == "rules" and league.game_type != "I":
+        raise ResetRefused("Only an Immortal Barons league's rules can change "
+                           "without a reset.", 422)
     draft = drafts.current_draft(db, league)
     if draft is None:
         raise ResetRefused("There is no draft to perform.", 404)
     if draft.version != version:
         raise ResetRefused(f"{draft.updated_by} saved this draft since you opened it. "
                            f"Check their changes before performing it.")
-    busy = db.query(GameReset).filter(GameReset.status == "applying").first()
-    if busy is not None:
-        raise ResetRefused(f"A reset is already under way (league "
-                           f"{busy.league.full_id if busy.league else busy.league_id}).")
+    _not_busy(db)
     settings, errors = drafts.validate(league.game_type, draft.settings, today)
     if errors:
         raise ResetRefused("The draft no longer passes the game's limits: " +
                            "; ".join(f"{f}: {m}" for f, m in errors), 422)
+    setup = _checked_setup(config, league)
+    if kind == "rules":
+        settings = {k: v for k, v in settings.items() if k != "start_date"}
+
+    draft.status = "applying"
+    draft.kind = kind
+    draft.settings = settings
+    draft.applied_by = username
+    draft.progress = []
+    draft.error = None
+    _stage(db, draft, "queued")
+    logger.info(f"{KINDS[kind].capitalize()} {draft.id} of {league.full_id} started by {username}")
+    return draft
+
+
+def start_order(db: Session, league: League, kind: str, code: str, username: str,
+                config: dict, message: Optional[str] = None) -> GameReset:
+    """A freeze or thaw of an IB league, under way. The caller schedules
+    run_job()."""
+    _confirmed(league, code)
+    if league.game_type != "I" or kind not in ("freeze", "thaw"):
+        raise ResetRefused("Only an Immortal Barons league can be frozen or thawed.", 422)
+    message = " ".join((message or "").split())
+    if kind == "freeze" and not message:
+        raise ResetRefused("Say what callers are told while the league is frozen.", 422)
+    if len(message) > MESSAGE_MAX:
+        raise ResetRefused(f"Keep the message to {MESSAGE_MAX} characters.", 422)
+    _not_busy(db)
+    setup = _checked_setup(config, league)
+    try:
+        frozen = bool(json.loads((setup.folder / "world.json").read_text()).get("Frozen"))
+    except (OSError, ValueError) as exc:
+        raise ResetRefused(f"The hub's game can't be read ({exc}).", 422)
+    if kind == "freeze" and frozen:
+        raise ResetRefused("The league is already frozen.")
+    if kind == "thaw" and not frozen:
+        raise ResetRefused("The league isn't frozen.")
+    order = GameReset(league_id=league.id, status="applying", kind=kind, source="console",
+                      settings={}, notes=message or None, version=1, created_by=username,
+                      created_at=_now(), updated_by=username, updated_at=_now(),
+                      applied_by=username, progress=[])
+    db.add(order)
+    db.flush()
+    _stage(db, order, "queued")
+    logger.info(f"{KINDS[kind].capitalize()} {order.id} of {league.full_id} started by {username}")
+    return order
+
+
+def _checked_setup(config: dict, league: League):
+    """The game's setup, with everything the job needs there."""
     setup = game_setup(config, league)
     if not setup.folder.is_dir():
         raise ResetRefused(f"The game folder {setup.folder} isn't there.", 422)
@@ -171,15 +254,7 @@ def start(db: Session, league: League, version: int, code: str, username: str,
         raise ResetRefused("The game's inuse.flg is there: either the game is running, "
                            "or a run was killed and left it behind. Check before "
                            "resetting.", 409)
-
-    draft.status = "applying"
-    draft.settings = settings
-    draft.applied_by = username
-    draft.progress = []
-    draft.error = None
-    _stage(db, draft, "queued")
-    logger.info(f"Reset {draft.id} of {league.full_id} started by {username}")
-    return draft
+    return setup
 
 
 def schedule(reset_id: int, config: dict, **kw) -> asyncio.Task:
@@ -275,18 +350,13 @@ def _packets(outbound: Path) -> set:
     return {p.name for p in outbound.iterdir() if is_packet_file(p)} if outbound.is_dir() else set()
 
 
-def drive_ib(setup: IbSetup, game_type: str, settings: dict, today: date,
-             log: Callable[[str], None], transcript: Path) -> dict:
-    """Write `settings` into the Coordinator's config.json and order the league
-    reset, starting on the Start Date (blank: today). Blocking; run it in a
-    thread. Returns what the signed LeagueConfig carries, as history.sent()
-    gives it, or raises EditorError having removed any packet the run wrote;
-    the caller puts the data dir back."""
-    on = settings.get("start_date") or today.isoformat()
-    _write_ib_config(setup.folder, settings)
-    log("config.json written")
+def _run_ib(setup: IbSetup, args: list, log: Callable[[str], None], transcript: Path,
+            check: Callable[[list, int, str], dict]) -> dict:
+    """Run the hub's game with `args` and judge it with check(written, exit
+    code, last line). Whatever goes wrong, the packets the run wrote are
+    removed before the error goes on; the caller puts the data dir back."""
     before = _packets(setup.outbound)
-    argv = [setup.binary, "-league-reset", on, "-data", str(setup.folder)]
+    argv = [setup.binary, *args, "-data", str(setup.folder)]
     log(" ".join(argv))
     transcript.parent.mkdir(parents=True, exist_ok=True)
     written = []
@@ -304,12 +374,93 @@ def drive_ib(setup: IbSetup, game_type: str, settings: dict, today: date,
         last = output.strip().splitlines()[-1] if output.strip() else ""
         log(f"exit {run.returncode}: {last}")
         log(f"wrote {', '.join(written) or 'no packets'}")
-        return _check_ib(setup, settings, on, written, run.returncode, last)
+        return check(written, run.returncode, last)
     except Exception:
         for name in written:
             (setup.outbound / name).unlink(missing_ok=True)
             log(f"removed {name}")
         raise
+
+
+def drive_ib(setup: IbSetup, game_type: str, settings: dict, today: date,
+             log: Callable[[str], None], transcript: Path) -> dict:
+    """Write `settings` into the Coordinator's config.json and order the league
+    reset, starting on the Start Date (blank: today). Blocking; run it in a
+    thread. Returns what the signed LeagueConfig carries, as history.sent()
+    gives it, or raises EditorError having removed any packet the run wrote;
+    the caller puts the data dir back."""
+    on = settings.get("start_date") or today.isoformat()
+    _write_ib_config(setup.folder, settings)
+    log("config.json written")
+    return _run_ib(setup, ["-league-reset", on], log, transcript,
+                   lambda written, code, last: _check_ib(setup, settings, on, written,
+                                                         code, last))
+
+
+def _world(setup: IbSetup) -> dict:
+    try:
+        return json.loads((setup.folder / "world.json").read_text())
+    except (OSError, ValueError) as exc:
+        raise EditorError(f"the game's world.json can't be read: {exc}")
+
+
+def _written(setup: IbSetup, written: list):
+    for name in written:
+        try:
+            yield ib_packet.parse((setup.outbound / name).read_bytes())
+        except (OSError, ib_packet.PacketFormatError):
+            continue
+
+
+def _sent_rules(setup: IbSetup, settings: dict, written: list, exited: str) -> dict:
+    rules = next((p["LeagueConfig"] for p in _written(setup, written)
+                  if isinstance(p.get("LeagueConfig"), dict)), None)
+    if rules is None:
+        raise EditorError(f"the game wrote no rules for the members{exited}")
+    got = history.sent(ib_packet.league_settings(rules))
+    wrong = history.mismatches(settings, got)
+    if wrong:
+        raise EditorError("the rules the game sent differ from the draft: " +
+                          ", ".join(f"{f} {got.get(f)!r} not {settings.get(f)!r}"
+                                    for f in wrong))
+    return got
+
+
+def drive_ib_rules(setup: IbSetup, game_type: str, settings: dict, today: date,
+                   log: Callable[[str], None], transcript: Path) -> dict:
+    """Write `settings` into the Coordinator's config.json and broadcast them
+    now (`-league-config`), the game going on. Returns what the signed
+    LeagueConfig carries, as drive_ib does."""
+    started = _world(setup).get("StartedDate")
+    _write_ib_config(setup.folder, settings)
+    log("config.json written")
+
+    def check(written, code, last):
+        exited = f" (it exited {code}: {last})" if code else ""
+        if _world(setup).get("StartedDate") != started:
+            raise EditorError(f"the game restarted, which a rules change must not do{exited}")
+        return _sent_rules(setup, settings, written, exited)
+    return _run_ib(setup, ["-league-config"], log, transcript, check)
+
+
+def drive_ib_freeze(setup: IbSetup, frozen: bool, message: Optional[str],
+                    log: Callable[[str], None], transcript: Path) -> dict:
+    """Freeze the league with `message`, or thaw it. Returns the order as sent:
+    {"serial", "frozen", "message"}."""
+    args = ["-league-freeze", message or ""] if frozen else ["-league-thaw"]
+
+    def check(written, code, last):
+        exited = f" (it exited {code}: {last})" if code else ""
+        if bool(_world(setup).get("Frozen")) != frozen:
+            raise EditorError(f"the game didn't {'freeze' if frozen else 'thaw'}{exited}")
+        order = next((p["Freeze"] for p in _written(setup, written)
+                      if isinstance(p.get("Freeze"), dict)), None)
+        if order is None or bool(order.get("Frozen")) != frozen:
+            raise EditorError(f"the game wrote no {'freeze' if frozen else 'thaw'} order "
+                              f"for the members{exited}")
+        return {"serial": order.get("Serial"), "frozen": frozen,
+                "message": order.get("Message")}
+    return _run_ib(setup, args, log, transcript, check)
 
 
 def _check_ib(setup: IbSetup, settings: dict, on: str, written: list,
@@ -318,33 +469,13 @@ def _check_ib(setup: IbSetup, settings: dict, on: str, written: list,
     it met on the way, after doing the rest. The world must have restarted on
     `on`, and the order and the rules be on their way, as the draft has them."""
     exited = f" (it exited {returncode}: {last})" if returncode else ""
-    try:
-        world = json.loads((setup.folder / "world.json").read_text())
-    except (OSError, ValueError) as exc:
-        raise EditorError(f"the game's world.json can't be read after the reset: {exc}")
-    if world.get("StartedDate") != on:
+    if _world(setup).get("StartedDate") != on:
         raise EditorError(f"the game didn't reset{exited}")
-    reset_on, rules = None, None
-    for name in written:
-        try:
-            p = ib_packet.parse((setup.outbound / name).read_bytes())
-        except (OSError, ib_packet.PacketFormatError):
-            continue
-        if isinstance(p.get("Reset"), dict):
-            reset_on = p["Reset"].get("OnDate")
-        if isinstance(p.get("LeagueConfig"), dict):
-            rules = p["LeagueConfig"]
+    reset_on = next((p["Reset"].get("OnDate") for p in _written(setup, written)
+                     if isinstance(p.get("Reset"), dict)), None)
     if reset_on != on:
         raise EditorError(f"the game reset itself but wrote no order for the members{exited}")
-    if rules is None:
-        raise EditorError(f"the game wrote the reset order but not the rules{exited}")
-    got = history.sent(ib_packet.league_settings(rules))
-    wrong = history.mismatches(settings, got)
-    if wrong:
-        raise EditorError("the rules the game sent differ from the draft: " +
-                          ", ".join(f"{f} {got.get(f)!r} not {settings.get(f)!r}"
-                                    for f in wrong))
-    return got
+    return _sent_rules(setup, settings, written, exited)
 
 
 # ── the job ───────────────────────────────────────────────────────────────
@@ -365,7 +496,9 @@ def _release_lock():
 
 def _keep_as_draft(db: Session, reset: GameReset):
     """A failed reset's settings come back as the league's draft, unless someone
-    has started a new one meanwhile."""
+    has started a new one meanwhile. A freeze or thaw had no draft."""
+    if reset.kind not in DRAFTED:
+        return
     league = reset.league or db.get(League, reset.league_id)
     if drafts.current_draft(db, league) is None:
         now = _now()
@@ -393,19 +526,32 @@ async def run_job(reset_id: int, config: dict, drive_fn=None,
             _keep_as_draft(db, reset)
             _stage(db, reset, "failed")
         elif reset.status == "applied" and not reset.error:
-            reset.error = (f"The reset is saved, but the hub hit an error after it: "
-                           f"{exc}. It reaches the members with the next run that works.")
+            reset.error = (f"The {KINDS.get(reset.kind, 'reset')} is saved, but the hub hit "
+                           f"an error after it: {exc}. It reaches the members with the next "
+                           f"run that works.")
             db.commit()
     finally:
         db.close()
+
+
+def _drive_for(reset: GameReset, setup):
+    """The step that changes the game, for this kind of order."""
+    if reset.kind == "rules":
+        return drive_ib_rules
+    if reset.kind in ("freeze", "thaw"):
+        frozen, message = reset.kind == "freeze", reset.notes
+        return lambda setup, game_type, settings, today, log, transcript: \
+            drive_ib_freeze(setup, frozen, message, log, transcript)
+    return drive_ib if isinstance(setup, IbSetup) else drive
 
 
 async def _run(db: Session, reset_id: int, config: dict, drive_fn, lock_wait, today):
     reset = db.get(GameReset, reset_id)
     league = reset.league or db.get(League, reset.league_id)
     setup = game_setup(config, league)
+    noun = KINDS.get(reset.kind, "reset")
     if drive_fn is None:
-        drive_fn = drive_ib if isinstance(setup, IbSetup) else drive
+        drive_fn = _drive_for(reset, setup)
     data_dir = Path(config.get("server", {}).get("data_dir", "./data"))
     stamp = _now().strftime("%Y%m%d-%H%M%S")
     log_lines = []
@@ -431,8 +577,8 @@ async def _run(db: Session, reset_id: int, config: dict, drive_fn, lock_wait, to
         transcript = data_dir / "logs" / "reset" / f"{league.full_id}_{stamp}.log"
         log(f"transcript: {transcript}")
         try:
-            await asyncio.to_thread(drive_fn, setup, league.game_type, reset.settings,
-                                    today, log, transcript)
+            sent = await asyncio.to_thread(drive_fn, setup, league.game_type, reset.settings,
+                                           today, log, transcript)
         except Exception as exc:
             log(f"FAILED: {exc}")
             reset.status = "failed"
@@ -440,7 +586,8 @@ async def _run(db: Session, reset_id: int, config: dict, drive_fn, lock_wait, to
                 await asyncio.to_thread(restore, archive, setup.folder)
                 log(f"restored {setup.folder} from {archive}")
                 reset.error = (f"{exc}. The game was put back as it was before the "
-                               f"reset, and the settings are back in the draft.")
+                               f"{noun}" + (", and the settings are back in the draft."
+                                            if reset.kind in DRAFTED else "."))
                 ending = "restored"
             except Exception as restore_exc:
                 log(f"RESTORE FAILED: {restore_exc}")
@@ -451,16 +598,24 @@ async def _run(db: Session, reset_id: int, config: dict, drive_fn, lock_wait, to
             reset.transcript = "\n".join(log_lines)
             _keep_as_draft(db, reset)
             _stage(db, reset, ending)
-            logger.warning(f"Reset {reset.id} of {league.full_id} failed ({ending}): "
-                           f"{reset.error}")
+            logger.warning(f"{noun.capitalize()} {reset.id} of {league.full_id} failed "
+                           f"({ending}): {reset.error}")
             return
 
         reset.status = "applied"
         reset.applied_at = _now()
         reset.transcript = "\n".join(log_lines)
+        if reset.kind == "rules" and isinstance(sent, dict):
+            # A reset is confirmed by its order passing through the hub
+            # (history.record_game_start); a rules change has no order, and
+            # drive_ib_rules has already checked what it sent.
+            reset.sent_config = {**sent, "mismatches": []}
+        elif reset.kind in ("freeze", "thaw") and isinstance(sent, dict):
+            reset.sent_config = sent
         _stage(db, reset, "saved")
         prune(into)
-        logger.info(f"Reset {reset.id} of {league.full_id} saved; running PLANETARY")
+        logger.info(f"{noun.capitalize()} {reset.id} of {league.full_id} saved; "
+                    f"running PLANETARY")
 
         from backend.services.processing_service import ProcessingService
         game = game_for_letter(league.game_type)
@@ -470,7 +625,7 @@ async def _run(db: Session, reset_id: int, config: dict, drive_fn, lock_wait, to
         reset.processing_run_id = run.id if run is not None else None
         _stage(db, reset, "processing")
         if run is None or run.status != "completed":
-            reset.error = ("The reset is saved, but the processing run after it failed"
+            reset.error = (f"The {noun} is saved, but the processing run after it failed"
                            + (f": {run.error_message}" if run is not None and
                               run.error_message else "")
                            + ". It reaches the members with the next run that works.")
@@ -492,21 +647,22 @@ def recover(db: Session, config: dict):
     for reset in db.query(GameReset).filter(GameReset.status == "applying").all():
         stages = [p["stage"] for p in reset.progress or []]
         last = stages[-1] if stages else "queued"
+        noun = KINDS.get(reset.kind, "reset")
         if "saved" in stages:
             reset.status = "applied"
-            reset.error = ("The hub stopped before the processing run after the reset. "
+            reset.error = (f"The hub stopped before the processing run after the {noun}. "
                            "It reaches the members with the next run.")
         elif last == "editor":
             league = reset.league or db.get(League, reset.league_id)
             try:
                 folder = game_setup(config, league).folder
                 restore(Path(reset.backup_path), folder)
-                reset.error = ("The hub stopped while the game was being reset. The game was "
-                               "put back as it was before the reset.")
+                reset.error = (f"The hub stopped while the game was being changed. The game "
+                               f"was put back as it was before the {noun}.")
             except Exception as exc:
-                reset.error = (f"The hub stopped while the game was being reset, and putting "
-                               f"the game back failed: {exc}. Restore {reset.backup_path} "
-                               f"by hand before the next run.")
+                reset.error = (f"The hub stopped while the game was being changed, and "
+                               f"putting the game back failed: {exc}. Restore "
+                               f"{reset.backup_path} by hand before the next run.")
             reset.status = "failed"
             _keep_as_draft(db, reset)
         else:

@@ -257,7 +257,7 @@ async def get_league_member_status(
     config = get_config()
     found = game_status.for_league(
         db, league, game_status.hub_index_from(config),
-        Path(config.get("server", {}).get("data_dir", "./data")))
+        Path(config.get("server", {}).get("data_dir", "./data")), config)
     since = game_status.tracking_since(db)
     return LeagueStatusResponse(
         tracking_since=since.replace(tzinfo=timezone.utc) if since else None,

@@ -53,6 +53,10 @@ class AttackJourney(BaseModel):
     rollover_after: Optional[str] = None
     rollover_before: Optional[str] = None
     mit: Optional[str] = None       # "late" | "possible" | "overdue" | None
+    # IB: the target's packets are held for their protocol, which stops the
+    # attacker's lost-forces timer; and the days left on it, while it runs.
+    paused: bool = False
+    days_left: Optional[int] = None
     # Set when the stage is "relay not held": the board the hub's missing relay was for.
     unheld_relay_to: Optional[int] = None
     hops: List[AttackHop] = []

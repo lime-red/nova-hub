@@ -4,6 +4,7 @@
 // the client page (a row per league) and the league page (a row per member).
 import { ref } from 'vue'
 import { leaguesApi, type LeagueStatusRow } from '@/services/api'
+import CopyTsvButton from '@/components/CopyTsvButton.vue'
 
 defineProps<{
   rows: LeagueStatusRow[]
@@ -12,6 +13,7 @@ defineProps<{
   loading?: boolean
 }>()
 
+const tableEl = ref<HTMLElement | null>(null)
 const expanded = ref<Set<string>>(new Set())
 const key = (r: LeagueStatusRow) => `${r.league_id}:${r.client_id}`
 
@@ -43,6 +45,7 @@ function index(r: LeagueStatusRow): string {
 const STATE_BADGE: Record<string, string> = {
   ok: 'badge-success',
   out_of_date: 'badge-info',
+  other_rules: 'badge-warning',
   game_silent: 'badge-warning',
   backlog: 'badge-warning',
   not_member: 'badge-info',
@@ -67,13 +70,30 @@ function gameTitle(r: LeagueStatusRow): string {
   if (g.last_heard) lines.push(`Last heard ${at(g.last_heard)}`)
   if (g.as_of) lines.push(`As of ${at(g.as_of)}`)
   if (g.routing_missing) lines.push('ROUTEINFO: information missing')
+  if (g.last_accepted) lines.push(`Hub game last took a packet from it ${at(g.last_accepted)}`)
+  if (g.ruleset) lines.push(`Plays rules ${g.ruleset}` + (g.league_ruleset ? `, league ${g.league_ruleset}` : ''))
+  if (g.min_version) lines.push(`League requires v${g.min_version}`)
+  if (g.round_trip_days != null) lines.push(`Round trip ${roundTrip(g.round_trip_days)}`
+    + (g.round_trip_seen ? `, last probe home ${at(g.round_trip_seen)}` : ''))
+  if (g.notice) lines.push(`Told ${at(g.notice_at ?? null)}: ${g.notice}`)
   return lines.join('\n')
+}
+
+// The game's own average, in days; a LAN link comes back in under a minute.
+function roundTrip(days: number): string {
+  const mins = days * 1440
+  if (mins < 90) return `${Math.max(1, Math.round(mins))} min`
+  if (days < 2) return `${(days * 24).toFixed(1)} h`
+  return `${days.toFixed(1)} days`
 }
 
 </script>
 
 <template>
-  <table class="table league-status">
+  <div class="status-tools">
+    <CopyTsvButton :table="tableEl" />
+  </div>
+  <table ref="tableEl" class="table league-status">
     <thead>
       <tr>
         <th v-if="by === 'client'">League</th>
@@ -133,6 +153,10 @@ function gameTitle(r: LeagueStatusRow): string {
           <td :title="gameTitle(r)">
             {{ gameText(r) }}
             <div v-if="r.game?.version" class="sub font-mono">{{ r.game.version }}</div>
+            <div v-if="r.game?.round_trip_days != null" class="sub">
+              round trip {{ roundTrip(r.game.round_trip_days) }}
+              <span v-if="r.game.round_trip_seen">({{ ago(r.game.round_trip_seen) }})</span>
+            </div>
           </td>
           <td>
             <span class="badge" :class="badge(r)">{{ r.state_label }}</span>
@@ -154,6 +178,11 @@ function gameTitle(r: LeagueStatusRow): string {
 </template>
 
 <style scoped>
+.status-tools {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0.5rem;
+}
 .sub {
   font-size: 0.8rem;
   color: var(--color-text-muted);

@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from backend.models.database import GameReset, League, Packet, ProcessingRun
 from backend.services import bre_packet
-from backend.services.game_reset import editor, history, perform
+from backend.services.game_reset import drafts, editor, history, perform
 from backend.services.game_reset.drafts import validate
 from backend.services.game_reset.editor import EditorDriver, EditorError
 from backend.services.game_reset.fields import CHOICE, DATE, NUMBER, TOGGLE, defaults, fields_for
@@ -530,23 +530,50 @@ async def test_the_lock_is_waited_for_then_given_up(game, processing):
 FAKE_IB = """#!{python}
 import json, sys
 from pathlib import Path
-on, data = sys.argv[2], Path(sys.argv[4])
+args = sys.argv[1:]
+data = Path(args[args.index("-data") + 1])
 mode = (data / "mode").read_text() if (data / "mode").exists() else ""
-if sys.argv[1] != "-league-reset" or mode == "frozen":
-    print("-league-reset: the league is frozen")
-    sys.exit(1)
-c = json.loads((data / "config.json").read_text())
-if mode == "clamp":
-    c["TurnsPerDay"] = 10
-c["SlappenheimerHandling"] = c.pop("SabreHandling")
-for k in ("DataDir", "IBBS", "IdleTimeoutSecs", "MaxIdleWarnings"):
-    c.pop(k)
-(data / "world.json").write_text(json.dumps({{"StartedDate": on, "LastMaintDate": on}}))
+world = json.loads((data / "world.json").read_text())
 out = Path({outbound!r})
 out.mkdir(exist_ok=True)
-(out / "L900-001-0041-000.brp").write_text(json.dumps({{"Reset": {{"OnDate": on}}}}))
-(out / "L900-001-0042-000.brp").write_text(json.dumps({{"LeagueConfig": c}}))
-print("League reset declared, starting " + on)
+
+
+def rules():
+    c = json.loads((data / "config.json").read_text())
+    if mode == "clamp":
+        c["TurnsPerDay"] = 10
+    c["SlappenheimerHandling"] = c.pop("SabreHandling")
+    for k in ("DataDir", "IBBS", "IdleTimeoutSecs", "MaxIdleWarnings"):
+        c.pop(k)
+    return c
+
+
+if args[0] == "-league-reset":
+    on = args[1]
+    if mode == "frozen" or world.get("Frozen"):
+        print("-league-reset: the league is frozen")
+        sys.exit(1)
+    (data / "world.json").write_text(json.dumps({{"StartedDate": on, "LastMaintDate": on}}))
+    (out / "L900-001-0041-000.brp").write_text(json.dumps({{"Reset": {{"OnDate": on}}}}))
+    (out / "L900-001-0042-000.brp").write_text(json.dumps({{"LeagueConfig": rules()}}))
+    print("League reset declared, starting " + on)
+elif args[0] == "-league-config":
+    if mode == "restart":
+        world["StartedDate"] = "2099-01-01"
+        (data / "world.json").write_text(json.dumps(world))
+    (out / "L900-001-0043-000.brp").write_text(json.dumps({{"LeagueConfig": rules()}}))
+    print("Broadcast league config")
+elif args[0] in ("-league-freeze", "-league-thaw"):
+    frozen = args[0] == "-league-freeze"
+    if mode == "silent":
+        sys.exit(0)
+    world.update(Frozen=frozen, FreezeSerial=44, FreezeMessage=args[1] if frozen else "")
+    (data / "world.json").write_text(json.dumps(world))
+    (out / ("L900-001-0044-000.brp" if frozen else "L900-001-0045-000.brp")).write_text(json.dumps(
+        {{"Freeze": {{"Serial": 44, "Frozen": frozen, "Message": args[1] if frozen else ""}}}}))
+    print("League " + ("frozen" if frozen else "thawed"))
+else:
+    sys.exit(2)
 """
 
 
@@ -855,3 +882,133 @@ def test_perform_over_the_api(api, monkeypatch, tmp_path):
     assert client.get(f"{BASE}/{lid}/resets/999").status_code == 404
     from backend.models.database import AuditEvent
     assert db.query(AuditEvent).filter_by(action="game_reset.performed").count() == 1
+
+
+# ── an IB league's other orders ──────────────────────────────────────────
+
+def ib_rules(g, **settings):
+    s, errors = validate("I", settings, TODAY)
+    assert not errors
+    g.db.add(GameReset(league_id=g.league.id, status="draft", source="console", settings=s,
+                       version=1, created_by="lime", updated_by="lime"))
+    g.db.commit()
+    return perform.start(g.db, g.league, 1, "900I", "lime", g.config, TODAY, kind="rules")
+
+
+@pytest.mark.asyncio
+async def test_an_ib_rules_change_sends_the_rules_without_a_reset(ib, processing):
+    order = ib_rules(ib, dupe_checking=False, turns_per_day=12,
+                     start_date=(TODAY + timedelta(days=3)).isoformat())
+    await perform.run_job(order.id, ib.config, today=TODAY)
+    ib.db.expire_all()
+    r = ib.db.get(GameReset, order.id)
+    assert (r.kind, r.status, r.error) == ("rules", "applied", None), r.error
+    assert [p["stage"] for p in r.progress][-1] == "sent"
+    c = json.loads((ib.folder / "config.json").read_text())
+    assert (c["DupeChecking"], c["TurnsPerDay"]) == (False, 12)
+    assert "start_date" not in r.settings              # no game starts
+    assert json.loads((ib.folder / "world.json").read_text())["StartedDate"] == "2026-09-01"
+    assert "-league-config" in r.transcript
+    assert r.sent_config["mismatches"] == [] and r.sent_config["turns_per_day"] == 12
+    assert [p.name for p in ib.outbound.iterdir()] == ["L900-001-0043-000.brp"]
+    assert processing.calls == [(("IB", "900"),)]
+    # It is what the league plays by now, but it starts and ends no game.
+    assert drafts.last_applied(ib.db, ib.league).id == r.id
+    assert [(x.id, ended) for x, ended in history.history(ib.db, ib.league)] == [(r.id, None)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode,why", [("restart", "restarted"),
+                                      ("clamp", "turns_per_day 10 not 12")])
+async def test_a_failed_ib_rules_change_puts_everything_back(ib, processing, mode, why):
+    (ib.folder / "mode").write_text(mode)
+    before = tree(ib.folder)
+    order = ib_rules(ib, turns_per_day=12)
+    await perform.run_job(order.id, ib.config, today=TODAY)
+    ib.db.expire_all()
+    r = ib.db.get(GameReset, order.id)
+    assert r.status == "failed" and why in r.error and "put back" in r.error, r.error
+    assert "back in the draft" in r.error
+    assert tree(ib.folder) == before
+    assert list(ib.outbound.iterdir()) == []
+    assert processing.calls == []
+    assert drafts.current_draft(ib.db, ib.league).settings["turns_per_day"] == 12
+
+
+def test_only_an_ib_league_changes_rules_without_a_reset(game):
+    make_draft(game)
+    with pytest.raises(perform.ResetRefused, match="Immortal Barons"):
+        perform.start(game.db, game.league, 3, "900B", "mantis", game.config, TODAY,
+                      kind="rules")
+
+
+@pytest.mark.asyncio
+async def test_an_ib_freeze_then_thaw(ib, processing):
+    order = perform.start_order(ib.db, ib.league, "freeze", "900I", "lime", ib.config,
+                                "  Updating to 0.2.7,\n back soon ")
+    assert order.notes == "Updating to 0.2.7, back soon"
+    await perform.run_job(order.id, ib.config, today=TODAY)
+    ib.db.expire_all()
+    r = ib.db.get(GameReset, order.id)
+    assert (r.kind, r.status, r.error) == ("freeze", "applied", None), r.error
+    assert r.sent_config == {"serial": 44, "frozen": True,
+                             "message": "Updating to 0.2.7, back soon"}
+    assert "-league-freeze" in r.transcript
+    assert json.loads((ib.folder / "world.json").read_text())["Frozen"] is True
+    assert processing.calls == [(("IB", "900"),)]
+    # Not a game: the reset before it is still the current one, and no draft
+    # comes of it.
+    assert drafts.current_draft(ib.db, ib.league) is None
+
+    with pytest.raises(perform.ResetRefused, match="already frozen"):
+        perform.start_order(ib.db, ib.league, "freeze", "900I", "lime", ib.config, "again")
+    # A frozen league refuses a reset (ErrLeagueFrozen), and the job puts it back.
+    reset = ib_draft(ib, turns_per_day=12)
+    await perform.run_job(reset.id, ib.config, today=TODAY)
+    ib.db.expire_all()
+    assert "the league is frozen" in ib.db.get(GameReset, reset.id).error
+
+    thaw = perform.start_order(ib.db, ib.league, "thaw", "900I", "lime", ib.config)
+    await perform.run_job(thaw.id, ib.config, today=TODAY)
+    ib.db.expire_all()
+    t = ib.db.get(GameReset, thaw.id)
+    assert (t.status, t.sent_config["frozen"]) == ("applied", False), t.error
+    assert json.loads((ib.folder / "world.json").read_text())["Frozen"] is False
+
+
+@pytest.mark.parametrize("kind,message,why", [
+    ("freeze", "", "Say what callers are told"),
+    ("freeze", "x" * 201, "200 characters"),
+    ("thaw", None, "isn't frozen"),
+])
+def test_a_freeze_or_thaw_is_refused_up_front(ib, kind, message, why):
+    with pytest.raises(perform.ResetRefused, match=why):
+        perform.start_order(ib.db, ib.league, kind, "900I", "lime", ib.config, message)
+    assert ib.db.query(GameReset).count() == 0
+
+
+def test_a_freeze_needs_the_league_code_and_an_ib_league(ib, game):
+    with pytest.raises(perform.ResetRefused, match="Type the league code"):
+        perform.start_order(ib.db, ib.league, "freeze", "900B", "lime", ib.config, "m")
+    with pytest.raises(perform.ResetRefused, match="Immortal Barons"):
+        perform.start_order(game.db, game.league, "freeze", "900B", "lime", game.config, "m")
+
+
+@pytest.mark.asyncio
+async def test_a_freeze_the_game_does_not_take_puts_everything_back(ib, processing):
+    (ib.folder / "mode").write_text("silent")
+    before = tree(ib.folder)
+    order = perform.start_order(ib.db, ib.league, "freeze", "900I", "lime", ib.config, "m")
+    await perform.run_job(order.id, ib.config, today=TODAY)
+    ib.db.expire_all()
+    r = ib.db.get(GameReset, order.id)
+    assert r.status == "failed" and "didn't freeze" in r.error and "put back" in r.error
+    assert "draft" not in r.error
+    assert tree(ib.folder) == before and processing.calls == []
+    assert drafts.current_draft(ib.db, ib.league) is None
+
+
+def test_one_order_at_a_time_across_kinds(ib):
+    perform.start_order(ib.db, ib.league, "freeze", "900I", "lime", ib.config, "m")
+    with pytest.raises(perform.ResetRefused, match="A freeze is already under way"):
+        ib_draft(ib, turns_per_day=12)

@@ -980,6 +980,17 @@
             ],
             "title": "Attacker Name"
           },
+          "days_left": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Days Left"
+          },
           "from_planet": {
             "title": "From Planet",
             "type": "integer"
@@ -1054,6 +1065,11 @@
               }
             ],
             "title": "Mit Due Local"
+          },
+          "paused": {
+            "default": false,
+            "title": "Paused",
+            "type": "boolean"
           },
           "resolved": {
             "anyOf": [
@@ -2306,6 +2322,14 @@
             "title": "Heard",
             "type": "boolean"
           },
+          "held": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "default": {},
+            "title": "Held",
+            "type": "object"
+          },
           "hub_version": {
             "anyOf": [
               {
@@ -2316,6 +2340,18 @@
               }
             ],
             "title": "Hub Version"
+          },
+          "last_accepted": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Accepted"
           },
           "last_heard": {
             "anyOf": [
@@ -2329,6 +2365,17 @@
             ],
             "title": "Last Heard"
           },
+          "league_ruleset": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "League Ruleset"
+          },
           "line": {
             "anyOf": [
               {
@@ -2340,6 +2387,68 @@
             ],
             "title": "Line"
           },
+          "min_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Version"
+          },
+          "notice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notice"
+          },
+          "notice_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notice At"
+          },
+          "protocol_held": {
+            "default": false,
+            "title": "Protocol Held",
+            "type": "boolean"
+          },
+          "round_trip_days": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Round Trip Days"
+          },
+          "round_trip_seen": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Round Trip Seen"
+          },
           "routing_missing": {
             "anyOf": [
               {
@@ -2350,6 +2459,17 @@
               }
             ],
             "title": "Routing Missing"
+          },
+          "ruleset": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ruleset"
           },
           "source": {
             "title": "Source",
@@ -2473,6 +2593,497 @@
           "today"
         ],
         "title": "HubTimezone",
+        "type": "object"
+      },
+      "IbBoard": {
+        "description": "One board as the hub's Immortal Barons game knows it.",
+        "properties": {
+          "bbs_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bbs Index"
+          },
+          "bbs_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The hub's name for its client",
+            "title": "Bbs Name"
+          },
+          "below_min": {
+            "default": false,
+            "title": "Below Min",
+            "type": "boolean"
+          },
+          "held": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "default": {},
+            "title": "Held",
+            "type": "object"
+          },
+          "last_packet": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The hub game last accepted a packet from it (a bounce included)",
+            "title": "Last Packet"
+          },
+          "name": {
+            "description": "The board's name in the game's roster",
+            "title": "Name",
+            "type": "string"
+          },
+          "other_rules": {
+            "default": false,
+            "title": "Other Rules",
+            "type": "boolean"
+          },
+          "protocol_held": {
+            "default": false,
+            "description": "Its packets are held for a protocol the hub's build cannot read, and it has not talked past that since",
+            "title": "Protocol Held",
+            "type": "boolean"
+          },
+          "quiet_since": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Frozen: its quiet report, when it last applied real traffic",
+            "title": "Quiet Since"
+          },
+          "round_trip_days": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Round Trip Days"
+          },
+          "round_trip_seen": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Round Trip Seen"
+          },
+          "ruleset": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The rules it last said it plays by",
+            "title": "Ruleset"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "IbBoard",
+        "type": "object"
+      },
+      "IbFlight": {
+        "description": "One of the hub game's own strikes, trades or deals awaiting an answer.",
+        "properties": {
+          "bbs_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bbs Index"
+          },
+          "days_left": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Game days before it is given back; null: never",
+            "title": "Days Left"
+          },
+          "held": {
+            "title": "Held",
+            "type": "boolean"
+          },
+          "held_days": {
+            "title": "Held Days",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "launched": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Launched"
+          },
+          "target_board": {
+            "title": "Target Board",
+            "type": "string"
+          },
+          "target_empire": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Empire"
+          },
+          "wait_days": {
+            "title": "Wait Days",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "target_board",
+          "wait_days",
+          "held",
+          "held_days"
+        ],
+        "title": "IbFlight",
+        "type": "object"
+      },
+      "IbGameState": {
+        "description": "The hub's own Immortal Barons game: the Coordinator's view of the league.",
+        "properties": {
+          "available": {
+            "description": "False when the hub's game has no world yet",
+            "title": "Available",
+            "type": "boolean"
+          },
+          "boards": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/IbBoard"
+            },
+            "title": "Boards",
+            "type": "array"
+          },
+          "freeze_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Freeze Message"
+          },
+          "freeze_serial": {
+            "default": 0,
+            "title": "Freeze Serial",
+            "type": "integer"
+          },
+          "frozen": {
+            "default": false,
+            "title": "Frozen",
+            "type": "boolean"
+          },
+          "frozen_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frozen At"
+          },
+          "full_id": {
+            "title": "Full Id",
+            "type": "string"
+          },
+          "game_day": {
+            "default": 0,
+            "title": "Game Day",
+            "type": "integer"
+          },
+          "held": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/IbHeldPacket"
+            },
+            "title": "Held",
+            "type": "array"
+          },
+          "in_flight": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/IbFlight"
+            },
+            "title": "In Flight",
+            "type": "array"
+          },
+          "league_id": {
+            "title": "League Id",
+            "type": "integer"
+          },
+          "lost_forces_days": {
+            "default": 0,
+            "title": "Lost Forces Days",
+            "type": "integer"
+          },
+          "min_board_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Board Version"
+          },
+          "quiet": {
+            "default": 0,
+            "description": "Frozen: boards whose quiet report is in",
+            "title": "Quiet",
+            "type": "integer"
+          },
+          "ruleset": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ruleset"
+          },
+          "saved": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Saved"
+          },
+          "started": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started"
+          },
+          "thawed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thawed At"
+          },
+          "under_way": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResetDetail"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "league_id",
+          "full_id",
+          "available"
+        ],
+        "title": "IbGameState",
+        "type": "object"
+      },
+      "IbHeldPacket": {
+        "properties": {
+          "arrived": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Arrived"
+          },
+          "bbs_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bbs Index"
+          },
+          "expires": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the game deletes it unread",
+            "title": "Expires"
+          },
+          "file": {
+            "title": "File",
+            "type": "string"
+          },
+          "from_board": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Board"
+          },
+          "pauses_lost_forces": {
+            "default": false,
+            "description": "Its sender's strikes from here wait without their timer running",
+            "title": "Pauses Lost Forces",
+            "type": "boolean"
+          },
+          "protocol": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Protocol"
+          },
+          "reason": {
+            "description": "protocol, rules, signature or unreadable",
+            "title": "Reason",
+            "type": "string"
+          },
+          "ruleset": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ruleset"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "file",
+          "reason"
+        ],
+        "title": "IbHeldPacket",
         "type": "object"
       },
       "JoinApplicationRequest": {
@@ -2923,6 +3534,33 @@
           "bbs_index"
         ],
         "title": "LeagueMembershipInfo",
+        "type": "object"
+      },
+      "LeagueOrder": {
+        "description": "A freeze or thaw of an Immortal Barons league.",
+        "properties": {
+          "confirm": {
+            "description": "The league's code, typed by hand (for example 015I)",
+            "title": "Confirm",
+            "type": "string"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Freeze only: what every caller is shown while the league is frozen",
+            "title": "Message"
+          }
+        },
+        "required": [
+          "confirm"
+        ],
+        "title": "LeagueOrder",
         "type": "object"
       },
       "LeagueRequest": {
@@ -4561,6 +5199,12 @@
             "title": "Id",
             "type": "integer"
           },
+          "kind": {
+            "default": "reset",
+            "description": "reset; or, for an Immortal Barons league, rules (changed without a reset), freeze or thaw",
+            "title": "Kind",
+            "type": "string"
+          },
           "members": {
             "default": [],
             "items": {
@@ -5083,6 +5727,12 @@
           "id": {
             "title": "Id",
             "type": "integer"
+          },
+          "kind": {
+            "default": "reset",
+            "description": "reset; or, for an Immortal Barons league, rules (changed without a reset), freeze or thaw",
+            "title": "Kind",
+            "type": "string"
           },
           "mismatches": {
             "default": [],
@@ -8220,6 +8870,59 @@
         ]
       }
     },
+    "/api/v1/leagues/{league_id}/freeze": {
+      "post": {
+        "description": "Immortal Barons only: stop play on every board, so the packets in flight\ncan land before a change the boards must make together, such as a new\npacket protocol. Every caller is shown `message`.\n\nWhile frozen, each board still applies what reaches it, and reports to the\nhub's game once nothing but the freeze has moved there (its quiet report);\n`GET /leagues/{id}/ib-game` lists the reports. Thaw when they are all in\nand every board has updated.\n\nThe hub backs up its game, runs `-league-freeze`, and checks the game froze\nand wrote the signed order; anything else puts the game back. Answers 202;\nfollow it with `GET /leagues/{id}/resets/{reset_id}`. 409 when the league is\nalready frozen or another order is under way.",
+        "operationId": "freeze_league_api_v1_leagues__league_id__freeze_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "league_id",
+            "required": true,
+            "schema": {
+              "title": "League Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeagueOrder"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResetDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Freeze the League",
+        "tags": [
+          "Management API - Game Reset"
+        ]
+      }
+    },
     "/api/v1/leagues/{league_id}/generate-nodelist": {
       "post": {
         "description": "Generate the league's nodelist from the current membership (admin only):\nBRNODES/FENODES for the SR games, IBNODES (ibnodes.dat) for Immortal Barons.\n\nThe file is written to the nodelists directory, where the console and the\nservice API's bootstrap download serve it, and into the hub's own game as\nits nodes file (only if that changes it). The game sends it to every member\non its next run, as it does when the file is edited by hand.\n\nA nodelist the same as the current one is not rewritten: the game sends one\nwhen its file changes, so rewriting it would change nothing, or send the\nsame nodelist to every member again. `changed` says which happened.\n\n**Path Parameters:**\n- `league_id`: Database ID of the league\n\n**Returns:** `{\"filename\": ..., \"members\": <count>, \"changed\": <bool>,\n\"warnings\": [...]}`; `changed` is false when the membership gave the same\nnodelist as before, so nothing was written. A warning means the hub's game was not given the nodelist (no `game_folder`,\nsay), so the members will not receive it.",
@@ -8258,6 +8961,49 @@
         "summary": "Generate Nodelist",
         "tags": [
           "Management API - Leagues"
+        ]
+      }
+    },
+    "/api/v1/leagues/{league_id}/ib-game": {
+      "get": {
+        "description": "What the hub's own game, the League Coordinator, knows of the league:\neach board's last accepted packet, version, rules and round trip; the\nfreeze and each board's quiet report; the packets it is holding and why;\nand its own strikes and trades still waiting for an answer, with the game\ndays left before they are given back. Read from the game's files, as of\nits last save (`saved`).",
+        "operationId": "get_ib_game_api_v1_leagues__league_id__ib_game_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "league_id",
+            "required": true,
+            "schema": {
+              "title": "League Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IbGameState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "The Hub's Immortal Barons Game",
+        "tags": [
+          "Management API - Game Reset"
         ]
       }
     },
@@ -8793,6 +9539,112 @@
           }
         },
         "summary": "Get One Reset",
+        "tags": [
+          "Management API - Game Reset"
+        ]
+      }
+    },
+    "/api/v1/leagues/{league_id}/rules/perform": {
+      "post": {
+        "description": "Immortal Barons only: send the draft's rules to every board **without**\nresetting the league. The game being played carries on under them; its\nStart Date is not used.\n\nThe hub backs up its game, writes the rules into its config.json and runs\n`-league-config`, which signs and broadcasts them, and checks the rules it\nsent against the draft. Anything unexpected puts the game back and returns\nthe settings to the draft. A processing run then delivers them; each board\nadopts them on its next run.\n\nAnswers 202 at once; follow it with `GET /leagues/{id}/resets/{reset_id}`.\n409 and 422 as for performing a reset.",
+        "operationId": "perform_rules_change_api_v1_leagues__league_id__rules_perform_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "league_id",
+            "required": true,
+            "schema": {
+              "title": "League Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetPerform"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResetDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Apply the Draft's Rules Without a Reset",
+        "tags": [
+          "Management API - Game Reset"
+        ]
+      }
+    },
+    "/api/v1/leagues/{league_id}/thaw": {
+      "post": {
+        "description": "Immortal Barons only: end the freeze. Play resumes on each board as the\norder reaches it, and every deadline moves on by the time spent frozen.\n409 when the league is not frozen.",
+        "operationId": "thaw_league_api_v1_leagues__league_id__thaw_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "league_id",
+            "required": true,
+            "schema": {
+              "title": "League Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeagueOrder"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResetDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Thaw the League",
         "tags": [
           "Management API - Game Reset"
         ]

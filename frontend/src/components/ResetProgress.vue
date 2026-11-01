@@ -20,7 +20,29 @@ const isIb = computed(() => props.gameType === 'I')
 const signal = computed(() => resetSignal(props.gameType ?? 'B'))
 // Immortal Barons has no editor: the hub writes the rules into its config.json
 // and orders the reset, and the signed packets that come out are the read-back.
-const STEPS = computed(() => [
+// An IB league's other orders (kind) run the same steps with their own drive.
+const ORDER_STEPS: Record<string, [string, string, string]> = {
+  rules: ['Rules written to config.json and sent with -league-config',
+    'The game carried on, and signed the rules as drafted', 'Rules on their way to members'],
+  freeze: ['Freeze ordered with -league-freeze', 'The game froze, and signed the order',
+    'Freeze order on its way to members'],
+  thaw: ['Thaw ordered with -league-thaw', 'The game thawed, and signed the order',
+    'Thaw order on its way to members']
+}
+const STEPS = computed(() => {
+  const order = ORDER_STEPS[reset.value?.kind ?? 'reset']
+  if (order) return [
+    { stage: 'queued', label: 'Started' },
+    { stage: 'lock', label: 'Processing paused for the order' },
+    { stage: 'backup', label: 'Game backed up' },
+    { stage: 'editor', label: order[0] },
+    { stage: 'saved', label: order[1] },
+    { stage: 'processing', label: 'Hub run' },
+    { stage: 'sent', label: order[2] }
+  ]
+  return resetSteps.value
+})
+const resetSteps = computed(() => [
   { stage: 'queued', label: 'Started' },
   { stage: 'lock', label: 'Processing paused for the reset' },
   { stage: 'backup', label: 'Game backed up' },

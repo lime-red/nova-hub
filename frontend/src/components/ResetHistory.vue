@@ -34,6 +34,10 @@ const Signal = computed(() => signal.value[0].toUpperCase() + signal.value.slice
 const emit = defineEmits<{ open: [resetId: number]; finished: [] }>()
 
 const SHOWN = 2
+// An IB league's other orders, listed among its resets.
+const ORDER_NAMES: Record<string, string> = {
+  rules: 'Rules changed', freeze: 'Frozen', thaw: 'Thawed'
+}
 
 const rows = ref<ResetSummary[]>([])
 const loading = ref(true)
@@ -77,7 +81,8 @@ function display(f: ResetField, v: ResetValue | undefined): string {
 // compare with, so it lists what it set.
 function diff(row: ResetSummary) {
   const i = rows.value.indexOf(row)
-  const before = rows.value.slice(i + 1).find((r) => r.status === 'applied')
+  const before = rows.value.slice(i + 1)
+    .find((r) => r.status === 'applied' && r.kind !== 'freeze' && r.kind !== 'thaw')
   return props.fields
     .filter((f) => f.id in row.settings)
     .filter((f) => !before || !(f.id in before.settings) || before.settings[f.id] !== row.settings[f.id])
@@ -130,9 +135,12 @@ onMounted(load)
           <tbody>
             <template v-for="r in visible" :key="r.id">
               <tr class="row" :class="{ open: expanded === r.id }" @click="expanded = expanded === r.id ? null : r.id">
-                <td>{{ when(r.game_start) || `performed ${when(r.applied_at)}` }}</td>
+                <td v-if="r.kind && r.kind !== 'reset'">
+                  {{ ORDER_NAMES[r.kind] }} {{ when(r.applied_at) }}
+                </td>
+                <td v-else>{{ when(r.game_start) || `performed ${when(r.applied_at)}` }}</td>
                 <td>
-                  <span v-if="r.status !== 'applied'" class="text-muted">—</span>
+                  <span v-if="r.status !== 'applied' || (r.kind && r.kind !== 'reset')" class="text-muted">—</span>
                   <span v-else-if="r.ended">{{ when(r.ended) }}</span>
                   <span v-else class="badge badge-info">current</span>
                 </td>
@@ -165,7 +173,10 @@ onMounted(load)
                     @finished="onFinished"
                   />
                   <p v-else-if="r.error" class="alert alert-error">{{ r.error }}</p>
-                  <p v-if="r.notes" class="notes"><strong>Notes:</strong> {{ r.notes }}</p>
+                  <p v-if="r.notes" class="notes">
+                    <strong>{{ r.kind === 'freeze' ? 'Callers were told:' : 'Notes:' }}</strong> {{ r.notes }}
+                  </p>
+                  <template v-if="r.kind !== 'freeze' && r.kind !== 'thaw'">
                   <h4>What it set</h4>
                   <table class="table diff">
                     <thead>
@@ -182,6 +193,7 @@ onMounted(load)
                       </tr>
                     </tbody>
                   </table>
+                  </template>
                   <button
                     v-if="!inline && r.source === 'console'"
                     class="btn btn-secondary btn-sm"

@@ -36,6 +36,17 @@ def _iso(t: Optional[datetime]) -> Optional[str]:
     return t.isoformat() if t else None
 
 
+def _ib_held(db: Session) -> dict:
+    """league id -> the boards each hub IB game holds for their protocol."""
+    from backend.services import game_status
+    config = get_config()._raw
+    hub = game_status._hex(game_status.hub_index_from(config))
+    data_dir = Path(config.get("server", {}).get("data_dir", "./data"))
+    leagues = db.query(League).filter(League.game_type == "I").all()
+    return {lid: {b.index for b in game.boards.values() if b.protocol_held and b.index}
+            for lid, game in game_status.hub_games(db, leagues, hub, data_dir, config).items()}
+
+
 @router.get("/", response_model=List[AttackJourney], summary="List Attack Journeys")
 async def list_attacks(
     days: int = Query(DEFAULT_WINDOW_DAYS, ge=1, le=MAX_WINDOW_DAYS),
@@ -63,7 +74,8 @@ async def list_attacks(
     hub_index = get_config().get("hub", {}).get("bbs_index", "01")
     since = None if attack_id else utcnow() - timedelta(days=days)
     found = attack_trace.journeys(db, hub_index, league_id=league_id, since=since,
-                                  planet=planet, attack_id=attack_id, limit=2000)
+                                  planet=planet, attack_id=attack_id, limit=2000,
+                                  held=_ib_held(db))
     if stage:
         found = [j for j in found if j.stage == stage]
     if mit:
@@ -98,6 +110,8 @@ async def list_attacks(
             rollover_before=_iso(j.rollover[1]) if j.rollover else None,
             unheld_relay_to=j.unheld_relay_to,
             mit=j.mit,
+            paused=j.paused,
+            days_left=j.days_left,
             hops=[AttackHop(is_result=h.is_result, packet_id=h.packet_id,
                             filename=h.filename, source_bbs=h.source_bbs,
                             dest_bbs=h.dest_bbs, at_hub=_iso(h.at_hub),

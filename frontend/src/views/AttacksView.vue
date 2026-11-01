@@ -444,6 +444,12 @@ watch([days, leagueId, planet, onlyMit], load)
                       <span class="badge" :class="stageClass(j)"
                             :title="j.stage === 'relay not held' ? `The hub no longer holds the packets it wrote to planet ${j.unheld_relay_to} around then (older hub versions overwrote them), so this journey's next hop cannot be shown. It is not evidence of a loss.` : ''">{{ j.stage }}</span>
                       <div v-if="j.mit" class="mit-text">{{ mitText(j) }}</div>
+                      <div v-else-if="j.paused" class="text-muted wait-text"
+                           :title="`The hub's game is holding planet ${j.to_planet}'s packets for a protocol it cannot read. A board on the hub's build holds them too, and stops this attack's lost-forces timer while it does.`">
+                        Timer paused: target held</div>
+                      <div v-else-if="j.days_left != null" class="text-muted wait-text"
+                           title="Days before the attacker's board gives the forces back, counted on the hub's date">
+                        {{ j.days_left === 1 ? '1 day' : `${j.days_left} days` }} left</div>
                     </td>
                     <td class="font-mono text-muted">{{ j.attack_id }}</td>
                   </tr>
@@ -772,6 +778,11 @@ tr.mit td:first-child {
   width: 0.9rem;
   height: 2px;
   background: var(--color-border);
+}
+
+.wait-text {
+  font-size: 0.8rem;
+  margin-top: 0.2rem;
 }
 
 .mit-text {

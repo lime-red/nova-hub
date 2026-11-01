@@ -1,6 +1,10 @@
 """A league's game reset: the form, with every setting's help; the league's one
 saved draft; performing it; and the league's reset history. See
-backend/services/game_reset/."""
+backend/services/game_reset/.
+
+An Immortal Barons league's other orders live here too, since they run as a
+reset does: its draft's rules sent without a reset, the league freeze and
+thaw, and the hub game's view of the league that the freeze is watched by."""
 import os
 from datetime import date, datetime
 from pathlib import Path
@@ -17,11 +21,11 @@ from backend.models.database import (
     GameReset, League, LeagueGameSettings, LeagueMembership, Packet, SysopUser,
 )
 from backend.schemas.game_reset import (
-    GameResetForm, HubTimezone, ObservedSettings, ResetApplied, ResetChoice, ResetDetail,
-    ResetDraft, ResetDraftSave, ResetField, ResetMember, ResetPerform, ResetStep,
-    ResetSummary, ResetWarning,
+    GameResetForm, HubTimezone, IbBoard, IbFlight, IbGameState, IbHeldPacket, LeagueOrder,
+    ObservedSettings, ResetApplied, ResetChoice, ResetDetail, ResetDraft, ResetDraftSave,
+    ResetField, ResetMember, ResetPerform, ResetStep, ResetSummary, ResetWarning,
 )
-from backend.services import audit
+from backend.services import audit, ib_hub_game
 from backend.services.game_reset import drafts, history, perform
 from backend.services.game_reset.fields import defaults, fields_for
 
@@ -60,7 +64,8 @@ def _summary(r: GameReset, ended: Optional[datetime] = None) -> dict:
     sent = r.sent_config or {}
     wrong = sent.get("mismatches", [])
     return dict(
-        id=r.id, status=r.status, source=r.source, settings=r.settings, notes=r.notes,
+        id=r.id, kind=r.kind or "reset", status=r.status, source=r.source,
+        settings=r.settings, notes=r.notes,
         applied_by=r.applied_by, applied_at=_iso(r.applied_at),
         game_start=_iso(r.game_start), ended=_iso(ended), error=r.error,
         confirmed=None if r.source != "console" or not sent else not wrong,
@@ -283,3 +288,176 @@ async def get_reset(
         if r.id == reset_id:
             return _detail(db, league, r, ended)
     raise HTTPException(status_code=404, detail="No such reset in this league")
+
+
+def _ib_league(db: Session, league_id: int) -> League:
+    league = _league(db, league_id)
+    if league.game_type != "I":
+        raise HTTPException(status_code=404,
+                            detail=f"League {league.full_id} is not an Immortal Barons league")
+    return league
+
+
+@router.post("/{league_id}/rules/perform", response_model=ResetDetail, status_code=202,
+             summary="Apply the Draft's Rules Without a Reset")
+async def perform_rules_change(
+    league_id: int,
+    body: ResetPerform,
+    request: Request,
+    current_user: SysopUser = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Immortal Barons only: send the draft's rules to every board **without**
+    resetting the league. The game being played carries on under them; its
+    Start Date is not used.
+
+    The hub backs up its game, writes the rules into its config.json and runs
+    `-league-config`, which signs and broadcasts them, and checks the rules it
+    sent against the draft. Anything unexpected puts the game back and returns
+    the settings to the draft. A processing run then delivers them; each board
+    adopts them on its next run.
+
+    Answers 202 at once; follow it with `GET /leagues/{id}/resets/{reset_id}`.
+    409 and 422 as for performing a reset.
+    """
+    league = _ib_league(db, league_id)
+    config = get_config()._raw
+    try:
+        order = perform.start(db, league, body.version, body.confirm,
+                              current_user.username, config, date.today(), kind="rules")
+    except perform.ResetRefused as e:
+        raise HTTPException(status_code=e.status, detail=str(e))
+    audit.record(db, "game_reset.rules_changed", actor=current_user, target=league,
+                 detail=f"order {order.id} from draft version {body.version}", request=request)
+    db.commit()
+    perform.schedule(order.id, config)
+    return _detail(db, league, order)
+
+
+async def _order(league_id: int, kind: str, body: LeagueOrder, request: Request,
+                 current_user: SysopUser, db: Session) -> ResetDetail:
+    league = _ib_league(db, league_id)
+    config = get_config()._raw
+    try:
+        order = perform.start_order(db, league, kind, body.confirm, current_user.username,
+                                    config, body.message)
+    except perform.ResetRefused as e:
+        raise HTTPException(status_code=e.status, detail=str(e))
+    audit.record(db, f"game_reset.{kind}", actor=current_user, target=league,
+                 detail=f"order {order.id}" + (f": {order.notes}" if order.notes else ""),
+                 request=request)
+    db.commit()
+    perform.schedule(order.id, config)
+    return _detail(db, league, order)
+
+
+@router.post("/{league_id}/freeze", response_model=ResetDetail, status_code=202,
+             summary="Freeze the League")
+async def freeze_league(
+    league_id: int,
+    body: LeagueOrder,
+    request: Request,
+    current_user: SysopUser = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Immortal Barons only: stop play on every board, so the packets in flight
+    can land before a change the boards must make together, such as a new
+    packet protocol. Every caller is shown `message`.
+
+    While frozen, each board still applies what reaches it, and reports to the
+    hub's game once nothing but the freeze has moved there (its quiet report);
+    `GET /leagues/{id}/ib-game` lists the reports. Thaw when they are all in
+    and every board has updated.
+
+    The hub backs up its game, runs `-league-freeze`, and checks the game froze
+    and wrote the signed order; anything else puts the game back. Answers 202;
+    follow it with `GET /leagues/{id}/resets/{reset_id}`. 409 when the league is
+    already frozen or another order is under way.
+    """
+    return await _order(league_id, "freeze", body, request, current_user, db)
+
+
+@router.post("/{league_id}/thaw", response_model=ResetDetail, status_code=202,
+             summary="Thaw the League")
+async def thaw_league(
+    league_id: int,
+    body: LeagueOrder,
+    request: Request,
+    current_user: SysopUser = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Immortal Barons only: end the freeze. Play resumes on each board as the
+    order reaches it, and every deadline moves on by the time spent frozen.
+    409 when the league is not frozen."""
+    return await _order(league_id, "thaw", body, request, current_user, db)
+
+
+def _iso_utc(t: Optional[datetime]) -> Optional[str]:
+    return t.isoformat() + "Z" if t else None
+
+
+@router.get("/{league_id}/ib-game", response_model=IbGameState,
+            summary="The Hub's Immortal Barons Game")
+async def get_ib_game(
+    league_id: int,
+    current_user: SysopUser = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """What the hub's own game, the League Coordinator, knows of the league:
+    each board's last accepted packet, version, rules and round trip; the
+    freeze and each board's quiet report; the packets it is holding and why;
+    and its own strikes and trades still waiting for an answer, with the game
+    days left before they are given back. Read from the game's files, as of
+    its last save (`saved`)."""
+    from backend.services import game_status
+    league = _ib_league(db, league_id)
+    config = get_config()._raw
+    hub = game_status._hex(game_status.hub_index_from(config))
+    data_dir = Path(config.get("server", {}).get("data_dir", "./data"))
+    ruleset, protocol = game_status.hub_ib_stated(db, league, hub, data_dir)
+    game = ib_hub_game.for_league(config, league, ruleset, protocol)
+    under_way = (db.query(GameReset)
+                 .filter(GameReset.league_id == league.id, GameReset.status == "applying")
+                 .first())
+    state = IbGameState(league_id=league.id, full_id=league.full_id, available=game is not None,
+                        under_way=_detail(db, league, under_way) if under_way else None)
+    if game is None:
+        return state
+    members = {m.bbs_index: m.client.bbs_name for m in
+               db.query(LeagueMembership).filter(LeagueMembership.league_id == league.id,
+                                                 LeagueMembership.is_active == True)
+               if m.bbs_index is not None and m.client is not None}
+    boards = dict(game.boards)
+    # Every member is on the checklist, heard from or not.
+    names = ib_hub_game.roster(game.data_dir)
+    for name, index in names.items():
+        if index in members and name not in boards:
+            boards[name] = ib_hub_game.Board(name, index)
+    state.saved = _iso_utc(game.saved)
+    state.game_day, state.started = game.game_day, game.started
+    state.ruleset, state.min_board_version = game.ruleset, game.min_board_version
+    state.lost_forces_days = game.lost_forces_days
+    state.frozen, state.freeze_serial = game.frozen, game.freeze_serial
+    state.freeze_message = game.freeze_message
+    state.frozen_at, state.thawed_at = _iso_utc(game.frozen_at), _iso_utc(game.thawed_at)
+    state.boards = [IbBoard(
+        name=b.name, bbs_index=b.index, bbs_name=members.get(b.index),
+        last_packet=_iso_utc(b.last_packet), version=b.version, ruleset=b.ruleset,
+        other_rules=bool(b.ruleset and game.ruleset and b.ruleset != game.ruleset),
+        below_min=ib_hub_game.below(b.version, game.min_board_version),
+        protocol_held=b.protocol_held, held=b.held,
+        round_trip_days=b.round_trip_days, round_trip_seen=_iso_utc(b.round_trip_seen),
+        quiet_since=_iso_utc(b.quiet_since),
+    ) for b in sorted(boards.values(), key=lambda b: (b.index is None, b.index or 0, b.name))]
+    state.quiet = sum(1 for b in state.boards if b.quiet_since)
+    state.held = [IbHeldPacket(
+        file=h.file, reason=h.reason, arrived=_iso_utc(h.arrived), expires=_iso_utc(h.expires),
+        from_board=h.from_board, bbs_index=h.from_index, type=h.type, protocol=h.protocol,
+        ruleset=h.ruleset, version=h.version, pauses_lost_forces=h.pauses_lost_forces,
+    ) for h in game.held]
+    state.in_flight = [IbFlight(
+        id=f.id, kind=f.kind, target_board=f.target_board, bbs_index=f.target_index,
+        target_empire=f.target_empire, launched=_iso_utc(f.launched), wait_days=f.wait_days,
+        held=f.held, held_days=f.held_days, days_left=f.days_left,
+    ) for f in game.in_flight]
+    return state

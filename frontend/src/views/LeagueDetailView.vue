@@ -6,6 +6,7 @@ import { useAuthStore } from '@/stores/auth'
 import AppLayout from '@/components/AppLayout.vue'
 import ResetHistory from '@/components/ResetHistory.vue'
 import LeagueStatusTable from '@/components/LeagueStatusTable.vue'
+import IbHubGame from '@/components/IbHubGame.vue'
 import { gameResetApi, leaguesApi, type LeagueStatusResponse, type ResetField } from '@/services/api'
 import { gameForLetter, gameTypeName } from '@/games'
 
@@ -37,6 +38,7 @@ const editMemberFtnAddressId = ref<number | null>(null)
 const editMemberBoardKey = ref('')
 // Immortal Barons: no FTN address needed, and each board has a signing key
 const isImmortalBarons = computed(() => leaguesStore.currentLeague?.game_type === 'I')
+const historyKey = ref(0) // bumped when the hub-game card starts or finishes an order
 const boardKeyValid = computed(() => /^[0-9a-fA-F]{64}$/.test(editMemberBoardKey.value.trim()) || editMemberBoardKey.value.trim() === '')
 
 const selectedClientAddresses = computed(() => {
@@ -511,13 +513,20 @@ async function handleDelete() {
           </div>
         </div>
 
+        <IbHubGame
+          v-if="isImmortalBarons && authStore.isAdmin"
+          :league-id="leagueId"
+          :full-id="`${leaguesStore.currentLeague.league_id}I`"
+          @ordered="historyKey++; loadMemberStatus()"
+        />
+
         <ResetHistory
           v-if="resetFields"
           class="mt-4"
           :league-id="leagueId"
           :fields="resetFields"
           :game-type="resetGameType"
-          :refresh-key="0"
+          :refresh-key="historyKey"
           @open="openReset"
         />
       </template>

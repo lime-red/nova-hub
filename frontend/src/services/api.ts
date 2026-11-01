@@ -121,11 +121,22 @@ export interface GameView {
   hub_version: string | null
   routing_missing: boolean | null
   line: string | null
+  // Immortal Barons only
+  ruleset?: string | null
+  league_ruleset?: string | null
+  min_version?: string | null
+  notice?: string | null
+  notice_at?: string | null
+  last_accepted?: string | null
+  held?: Record<string, number>
+  protocol_held?: boolean
+  round_trip_days?: number | null
+  round_trip_seen?: string | null
 }
 
 export type LeagueState =
   | 'not_polling' | 'offline' | 'stopped_polling' | 'backlog'
-  | 'game_silent' | 'out_of_date' | 'ok' | 'not_member'
+  | 'held' | 'below_min' | 'game_silent' | 'other_rules' | 'out_of_date' | 'ok' | 'not_member'
 
 // One BBS in one league. `restricted`: a sysop's view of a BBS they do not
 // own, which carries the game's view only.
@@ -468,8 +479,12 @@ export interface GameResetForm {
 
 // One row of a league's reset history. `source` is 'observed' for a reset
 // only seen in a Game Start packet, not performed from the console.
+// A reset; or, for an Immortal Barons league, the console's other orders.
+export type LeagueOrderKind = 'reset' | 'rules' | 'freeze' | 'thaw'
+
 export interface ResetSummary {
   id: number
+  kind: LeagueOrderKind
   status: 'applying' | 'applied' | 'failed'
   source: 'console' | 'observed'
   settings: Record<string, ResetValue>
@@ -519,11 +534,91 @@ export const gameResetApi = {
   perform: (leagueId: number, body: { version: number; confirm: string }) =>
     api.post<ResetDetail>(`/leagues/${leagueId}/reset/perform`, body),
 
+  // Immortal Barons only: the draft's rules, sent without a reset.
+  performRules: (leagueId: number, body: { version: number; confirm: string }) =>
+    api.post<ResetDetail>(`/leagues/${leagueId}/rules/perform`, body),
+
+  // Immortal Barons only. 409 when already frozen (or not frozen, to thaw).
+  freeze: (leagueId: number, body: { confirm: string; message: string }) =>
+    api.post<ResetDetail>(`/leagues/${leagueId}/freeze`, body),
+
+  thaw: (leagueId: number, body: { confirm: string }) =>
+    api.post<ResetDetail>(`/leagues/${leagueId}/thaw`, body),
+
+  ibGame: (leagueId: number) =>
+    api.get<IbGameState>(`/leagues/${leagueId}/ib-game`),
+
   history: (leagueId: number) =>
     api.get<ResetSummary[]>(`/leagues/${leagueId}/resets`),
 
   reset: (leagueId: number, resetId: number) =>
     api.get<ResetDetail>(`/leagues/${leagueId}/resets/${resetId}`)
+}
+
+// The hub's own Immortal Barons game: the League Coordinator's view.
+export interface IbBoard {
+  name: string
+  bbs_index: number | null
+  bbs_name: string | null
+  last_packet: string | null
+  version: string | null
+  ruleset: string | null
+  other_rules: boolean
+  below_min: boolean
+  protocol_held: boolean
+  held: Record<string, number>
+  round_trip_days: number | null
+  round_trip_seen: string | null
+  quiet_since: string | null
+}
+
+export interface IbHeldPacket {
+  file: string
+  reason: 'protocol' | 'rules' | 'signature' | 'unreadable'
+  arrived: string | null
+  expires: string | null
+  from_board: string | null
+  bbs_index: number | null
+  type: string | null
+  protocol: number | null
+  ruleset: string | null
+  version: string | null
+  pauses_lost_forces: boolean
+}
+
+export interface IbFlight {
+  id: number
+  kind: string
+  target_board: string
+  bbs_index: number | null
+  target_empire: string | null
+  launched: string | null
+  wait_days: number
+  held: boolean
+  held_days: number
+  days_left: number | null
+}
+
+export interface IbGameState {
+  league_id: number
+  full_id: string
+  available: boolean
+  saved: string | null
+  game_day: number
+  started: string | null
+  ruleset: string | null
+  min_board_version: string | null
+  lost_forces_days: number
+  frozen: boolean
+  freeze_serial: number
+  freeze_message: string | null
+  frozen_at: string | null
+  thawed_at: string | null
+  quiet: number
+  boards: IbBoard[]
+  held: IbHeldPacket[]
+  in_flight: IbFlight[]
+  under_way: ResetDetail | null
 }
 
 // Processing API functions
@@ -638,6 +733,10 @@ export interface AttackJourney {
   rollover_before: string | null
   unheld_relay_to: number | null
   mit: 'late' | 'possible' | 'overdue' | null
+  // IB: the target's packets are held for their protocol, which stops the
+  // timer; and the days left on it while it runs.
+  paused?: boolean
+  days_left?: number | null
   hops: AttackHop[]
 }
 

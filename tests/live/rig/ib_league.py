@@ -110,7 +110,9 @@ class Board:
         self.data = self.root / "data"
         self.config = self.root / "config.toml"
         self.secret = f"{self.node.user}-ib-secret"
-        self.key = _new_game(league.build.binary, self.data, self.name)
+        # The board's own build: the league's, until a scenario upgrades it.
+        self.build = league.build
+        self.key = _new_game(self.build.binary, self.data, self.name)
         self.last_sync = None
 
     def write_config(self) -> None:
@@ -126,7 +128,7 @@ class Board:
                 "enabled": True, "bbs_index": self.index, "runner": "native",
                 "game_folder": data, "inbound_dir": f"{data}/inbound",
                 "outbound_dir": f"{data}/outbound",
-                "game_command": str(self.league.build.binary),
+                "game_command": str(self.build.binary),
                 "maintenance_args": f"-maint -data {data}",
             }}},
         }))
@@ -147,7 +149,12 @@ class Board:
         return result
 
     def maint(self, clock: str = None) -> subprocess.CompletedProcess:
-        return ib(self.league.build.binary, self.data, "-maint", clock=clock)
+        return ib(self.build.binary, self.data, "-maint", clock=clock)
+
+    def upgrade(self, build: Build) -> None:
+        """What a sysop does to take a new build: swap the binary, keep the data."""
+        self.build = build
+        self.write_config()
 
     # -- what the board holds ------------------------------------------------------
 
@@ -190,12 +197,15 @@ class Board:
         path = self.data / "planetary.log"
         return path.read_text(errors="replace") if path.exists() else ""
 
+    def held(self) -> list:
+        return held_packets(self.data)
+
     def roster_boards(self) -> list:
         """The node numbers in this board's ibnodes.dat, as the game would read them."""
         return roster_numbers(self.data / "ibnodes.dat")
 
     def league_check(self) -> str:
-        result = ib(self.league.build.binary, self.data, "-league-check")
+        result = ib(self.build.binary, self.data, "-league-check")
         return result.stdout + result.stderr
 
 
@@ -310,7 +320,16 @@ class IbLeague:
                 time.sleep(0.5)
         raise RuntimeError(f"the hub did not answer on {self.url}:\n{self.hub_log()}")
 
-    def stop(self) -> None:
+    def upgrade_hub(self, build: Build) -> None:
+        """Take a new build for the hub's game: [ib.900] binary, and a restart of
+        the server, which reads its config once, as production's does."""
+        self.wait_idle()
+        self.config["ib"][LEAGUE]["binary"] = str(build.binary)
+        self.config_path.write_text(toml.dumps(self.config))
+        self._stop_server()
+        self._serve()
+
+    def _stop_server(self) -> None:
         if self._server and self._server.poll() is None:
             self._server.terminate()
             try:
@@ -319,6 +338,10 @@ class IbLeague:
                 self._server.kill()
         if self._server:
             self._log.close()
+        self._server = None
+
+    def stop(self) -> None:
+        self._stop_server()
         if self._hub:
             self._hub.stop()
 
@@ -413,6 +436,33 @@ class IbLeague:
 
     def game_file(self, name: str) -> Path:
         return self.game / name
+
+    def held(self) -> list:
+        return held_packets(self.game)
+
+
+@dataclass(frozen=True)
+class Held:
+    """A packet a game set aside in held/: who sent it and in what format."""
+    file: str
+    from_board: str
+    protocol: int
+    version: str
+
+
+def held_packets(data: Path) -> list:
+    """The packets in a game's held/, as the game wrote them (plain JSON). The
+    extension is the game's .brp in any case: the hub delivers .BRP."""
+    out = []
+    folder = data / "held"
+    paths = sorted(folder.iterdir()) if folder.is_dir() else []
+    for path in (p for p in paths if p.suffix.lower() == ".brp" and p.is_file()):
+        try:
+            p = json.loads(path.read_text())
+        except ValueError:
+            p = {}
+        out.append(Held(path.name, p.get("FromBoard"), p.get("Protocol"), p.get("Version")))
+    return out
 
 
 def roster_numbers(path: Path) -> list:

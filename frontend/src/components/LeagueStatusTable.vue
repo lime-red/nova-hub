@@ -70,7 +70,7 @@ function gameTitle(r: LeagueStatusRow): string {
   if (g.last_heard) lines.push(`Last heard ${at(g.last_heard)}`)
   if (g.as_of) lines.push(`As of ${at(g.as_of)}`)
   if (g.routing_missing) lines.push('ROUTEINFO: information missing')
-  if (g.last_accepted) lines.push(`Hub game last took a packet from it ${at(g.last_accepted)}`)
+  if (g.last_accepted) lines.push(`Hub last accepted a packet from it ${at(g.last_accepted)}`)
   if (g.ruleset) lines.push(`Plays rules ${g.ruleset}` + (g.league_ruleset ? `, league ${g.league_ruleset}` : ''))
   if (g.min_version) lines.push(`League requires v${g.min_version}`)
   if (g.round_trip_days != null) lines.push(`Round trip ${roundTrip(g.round_trip_days)}`

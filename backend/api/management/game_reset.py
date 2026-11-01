@@ -4,7 +4,8 @@ backend/services/game_reset/.
 
 An Immortal Barons league's other orders live here too, since they run as a
 reset does: its draft's rules sent without a reset, the league freeze and
-thaw, and the hub game's view of the league that the freeze is watched by."""
+thaw, and what the hub knows of the boards as the league's Coordinator, which
+the freeze is watched by."""
 import os
 from datetime import date, datetime
 from pathlib import Path
@@ -21,7 +22,7 @@ from backend.models.database import (
     GameReset, League, LeagueGameSettings, LeagueMembership, Packet, SysopUser,
 )
 from backend.schemas.game_reset import (
-    GameResetForm, HubTimezone, IbBoard, IbFlight, IbGameState, IbHeldPacket, LeagueOrder,
+    GameResetForm, HubTimezone, IbBoard, IbGameState, IbHeldPacket, LeagueOrder,
     ObservedSettings, ResetApplied, ResetChoice, ResetDetail, ResetDraft, ResetDraftSave,
     ResetField, ResetMember, ResetPerform, ResetStep, ResetSummary, ResetWarning,
 )
@@ -397,18 +398,18 @@ def _iso_utc(t: Optional[datetime]) -> Optional[str]:
 
 
 @router.get("/{league_id}/ib-game", response_model=IbGameState,
-            summary="The Hub's Immortal Barons Game")
+            summary="The League as Its Coordinator Sees It")
 async def get_ib_game(
     league_id: int,
     current_user: SysopUser = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    """What the hub's own game, the League Coordinator, knows of the league:
-    each board's last accepted packet, version, rules and round trip; the
-    freeze and each board's quiet report; the packets it is holding and why;
-    and its own strikes and trades still waiting for an answer, with the game
-    days left before they are given back. Read from the game's files, as of
-    its last save (`saved`)."""
+    """Immortal Barons only. The hub runs the league's game as its Coordinator
+    (node 1) and plays no part in it; this is what it knows of the boards:
+    each one's last accepted packet, version, rules and round trip; the freeze
+    and each board's quiet report; and the packets the hub is holding and why.
+    Read from the Coordinator game's files, as of its last save (`saved`). The
+    hub's own board is left out."""
     from backend.services import game_status
     league = _ib_league(db, league_id)
     config = get_config()._raw
@@ -427,16 +428,16 @@ async def get_ib_game(
                db.query(LeagueMembership).filter(LeagueMembership.league_id == league.id,
                                                  LeagueMembership.is_active == True)
                if m.bbs_index is not None and m.client is not None}
-    boards = dict(game.boards)
+    hub_index = int(hub, 16)
+    boards = {n: b for n, b in game.boards.items() if b.index != hub_index}
     # Every member is on the checklist, heard from or not.
     names = ib_hub_game.roster(game.data_dir)
     for name, index in names.items():
-        if index in members and name not in boards:
+        if index in members and index != hub_index and name not in boards:
             boards[name] = ib_hub_game.Board(name, index)
     state.saved = _iso_utc(game.saved)
-    state.game_day, state.started = game.game_day, game.started
+    state.started = game.started
     state.ruleset, state.min_board_version = game.ruleset, game.min_board_version
-    state.lost_forces_days = game.lost_forces_days
     state.frozen, state.freeze_serial = game.frozen, game.freeze_serial
     state.freeze_message = game.freeze_message
     state.frozen_at, state.thawed_at = _iso_utc(game.frozen_at), _iso_utc(game.thawed_at)
@@ -453,11 +454,6 @@ async def get_ib_game(
     state.held = [IbHeldPacket(
         file=h.file, reason=h.reason, arrived=_iso_utc(h.arrived), expires=_iso_utc(h.expires),
         from_board=h.from_board, bbs_index=h.from_index, type=h.type, protocol=h.protocol,
-        ruleset=h.ruleset, version=h.version, pauses_lost_forces=h.pauses_lost_forces,
+        ruleset=h.ruleset, version=h.version,
     ) for h in game.held]
-    state.in_flight = [IbFlight(
-        id=f.id, kind=f.kind, target_board=f.target_board, bbs_index=f.target_index,
-        target_empire=f.target_empire, launched=_iso_utc(f.launched), wait_days=f.wait_days,
-        held=f.held, held_days=f.held_days, days_left=f.days_left,
-    ) for f in game.in_flight]
     return state

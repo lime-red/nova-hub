@@ -2596,7 +2596,7 @@
         "type": "object"
       },
       "IbBoard": {
-        "description": "One board as the hub's Immortal Barons game knows it.",
+        "description": "One board as the hub, the league's Coordinator, knows it.",
         "properties": {
           "bbs_index": {
             "anyOf": [
@@ -2643,7 +2643,7 @@
                 "type": "null"
               }
             ],
-            "description": "The hub game last accepted a packet from it (a bounce included)",
+            "description": "When the hub last accepted a packet from it (a bounce included)",
             "title": "Last Packet"
           },
           "name": {
@@ -2726,95 +2726,11 @@
         "title": "IbBoard",
         "type": "object"
       },
-      "IbFlight": {
-        "description": "One of the hub game's own strikes, trades or deals awaiting an answer.",
-        "properties": {
-          "bbs_index": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Bbs Index"
-          },
-          "days_left": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Game days before it is given back; null: never",
-            "title": "Days Left"
-          },
-          "held": {
-            "title": "Held",
-            "type": "boolean"
-          },
-          "held_days": {
-            "title": "Held Days",
-            "type": "integer"
-          },
-          "id": {
-            "title": "Id",
-            "type": "integer"
-          },
-          "kind": {
-            "title": "Kind",
-            "type": "string"
-          },
-          "launched": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Launched"
-          },
-          "target_board": {
-            "title": "Target Board",
-            "type": "string"
-          },
-          "target_empire": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Target Empire"
-          },
-          "wait_days": {
-            "title": "Wait Days",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "id",
-          "kind",
-          "target_board",
-          "wait_days",
-          "held",
-          "held_days"
-        ],
-        "title": "IbFlight",
-        "type": "object"
-      },
       "IbGameState": {
-        "description": "The hub's own Immortal Barons game: the Coordinator's view of the league.",
+        "description": "An Immortal Barons league as the hub, its Coordinator, sees it. The hub\nplays no part in the game; this is what it knows of the boards.",
         "properties": {
           "available": {
-            "description": "False when the hub's game has no world yet",
+            "description": "False when the hub's Coordinator game has no world yet",
             "title": "Available",
             "type": "boolean"
           },
@@ -2862,11 +2778,6 @@
             "title": "Full Id",
             "type": "string"
           },
-          "game_day": {
-            "default": 0,
-            "title": "Game Day",
-            "type": "integer"
-          },
           "held": {
             "default": [],
             "items": {
@@ -2875,21 +2786,8 @@
             "title": "Held",
             "type": "array"
           },
-          "in_flight": {
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/IbFlight"
-            },
-            "title": "In Flight",
-            "type": "array"
-          },
           "league_id": {
             "title": "League Id",
-            "type": "integer"
-          },
-          "lost_forces_days": {
-            "default": 0,
-            "title": "Lost Forces Days",
             "type": "integer"
           },
           "min_board_version": {
@@ -3022,12 +2920,6 @@
               }
             ],
             "title": "From Board"
-          },
-          "pauses_lost_forces": {
-            "default": false,
-            "description": "Its sender's strikes from here wait without their timer running",
-            "title": "Pauses Lost Forces",
-            "type": "boolean"
           },
           "protocol": {
             "anyOf": [
@@ -8966,7 +8858,7 @@
     },
     "/api/v1/leagues/{league_id}/ib-game": {
       "get": {
-        "description": "What the hub's own game, the League Coordinator, knows of the league:\neach board's last accepted packet, version, rules and round trip; the\nfreeze and each board's quiet report; the packets it is holding and why;\nand its own strikes and trades still waiting for an answer, with the game\ndays left before they are given back. Read from the game's files, as of\nits last save (`saved`).",
+        "description": "Immortal Barons only. The hub runs the league's game as its Coordinator\n(node 1) and plays no part in it; this is what it knows of the boards:\neach one's last accepted packet, version, rules and round trip; the freeze\nand each board's quiet report; and the packets the hub is holding and why.\nRead from the Coordinator game's files, as of its last save (`saved`). The\nhub's own board is left out.",
         "operationId": "get_ib_game_api_v1_leagues__league_id__ib_game_get",
         "parameters": [
           {
@@ -9001,7 +8893,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "The Hub's Immortal Barons Game",
+        "summary": "The League as Its Coordinator Sees It",
         "tags": [
           "Management API - Game Reset"
         ]

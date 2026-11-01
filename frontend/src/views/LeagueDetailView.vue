@@ -38,7 +38,7 @@ const editMemberFtnAddressId = ref<number | null>(null)
 const editMemberBoardKey = ref('')
 // Immortal Barons: no FTN address needed, and each board has a signing key
 const isImmortalBarons = computed(() => leaguesStore.currentLeague?.game_type === 'I')
-const historyKey = ref(0) // bumped when the hub-game card starts or finishes an order
+const historyKey = ref(0) // bumped when the Coordinator card starts or finishes an order
 const boardKeyValid = computed(() => /^[0-9a-fA-F]{64}$/.test(editMemberBoardKey.value.trim()) || editMemberBoardKey.value.trim() === '')
 
 const selectedClientAddresses = computed(() => {

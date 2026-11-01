@@ -1,9 +1,10 @@
 <script setup lang="ts">
-// An Immortal Barons league as the hub's own game, the League Coordinator,
-// sees it: each board's version, rules and round trip; the freeze, with each
-// board's quiet report as it comes in; the packets the game is holding and
-// why; and its own strikes and trades still waiting for an answer. Freezing
-// and thawing the league start here, and run as a reset does (ResetProgress).
+// An Immortal Barons league as the hub sees it from the Coordinator's seat.
+// The hub runs the league's game as node 1 to sign its rules and orders, and
+// plays no part in it. Shown: each board's version, rules and round trip; the
+// freeze, with each board's quiet report as it comes in; and the packets the
+// hub is holding and why. Freezing and thawing the league start here, and run
+// as a reset does (ResetProgress).
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import CopyTsvButton from '@/components/CopyTsvButton.vue'
 import ResetProgress from '@/components/ResetProgress.vue'
@@ -22,7 +23,6 @@ const orderError = ref('')
 const orderId = ref<number | null>(null)   // the order started here, shown until dismissed
 const boardsEl = ref<HTMLElement | null>(null)
 const heldEl = ref<HTMLElement | null>(null)
-const flightEl = ref<HTMLElement | null>(null)
 let timer: number | undefined
 
 const POLL_MS = 30_000
@@ -33,7 +33,7 @@ async function load() {
     error.value = ''
     if (state.value.under_way && orderId.value === null) orderId.value = state.value.under_way.id
   } catch (e) {
-    error.value = apiError(e, "Could not read the hub's game")
+    error.value = apiError(e, "Could not read the league's Coordinator game")
   }
 }
 
@@ -70,7 +70,7 @@ function held(h: Record<string, number>): string {
 }
 
 const REASONS: Record<string, string> = {
-  protocol: "A packet format this hub's build cannot read. Kept until the hub updates, or it expires.",
+  protocol: "A packet format the hub's copy of the game cannot read. Kept until the hub updates, or it expires.",
   rules: "States rules that are neither the league's nor, within a week of a change, the ones before.",
   signature: "Its sender's roster key did not verify it (or the next run will apply it).",
   unreadable: 'Not a packet at all.'
@@ -118,25 +118,27 @@ onBeforeUnmount(() => window.clearInterval(timer))
 <template>
   <div class="card mt-4">
     <div class="card-header">
-      <h3>Hub's game</h3>
+      <h3>League Coordinator</h3>
       <span v-if="state?.saved" class="text-muted small" :title="at(state.saved)">
-        as of its last save, {{ ago(state.saved) }}
+        as of the hub's last run, {{ ago(state.saved) }}
       </span>
     </div>
     <div class="card-body">
       <div v-if="error" class="alert alert-error">{{ error }}</div>
       <p v-else-if="!state" class="text-muted">Loading...</p>
       <p v-else-if="!state.available" class="text-muted">
-        The hub's game has no world yet: it is written on the game's first run.
+        The hub's copy of the game has no world yet: it is written on its first run.
       </p>
       <template v-else>
+        <p class="text-muted small intro">
+          The hub runs this league's game as its Coordinator, node 1, to sign the rules, roster
+          and orders. Nobody plays on it. This is what it knows of the boards.
+        </p>
         <dl class="facts">
-          <div><dt>Game day</dt><dd>{{ state.game_day }}<span v-if="state.started" class="text-muted">
-            (started {{ state.started }})</span></dd></div>
-          <div><dt>Rules</dt><dd class="font-mono">{{ state.ruleset || '-' }}</dd></div>
+          <div><dt>Game started</dt><dd>{{ state.started || '-' }}</dd></div>
+          <div title="Every board's packets state the fingerprint of the rules they play by">
+            <dt>League rules</dt><dd class="font-mono">{{ state.ruleset || '-' }}</dd></div>
           <div><dt>Minimum version</dt><dd>{{ state.min_board_version || 'none' }}</dd></div>
-          <div><dt>Lost forces</dt><dd>{{ state.lost_forces_days ? `${state.lost_forces_days} days` : 'never' }}
-            <span class="text-muted">(trades {{ Math.max(3, state.lost_forces_days) }})</span></dd></div>
         </dl>
 
         <!-- The freeze -->
@@ -147,10 +149,11 @@ onBeforeUnmount(() => window.clearInterval(timer))
               since {{ at(state.frozen_at) }}.
               Callers are told: <em>{{ state.freeze_message }}</em>
               <div class="small mt-2">
-                <strong>{{ state.quiet }} of {{ members.length }}</strong> boards have reported quiet.
-                A board reports once nothing but the freeze has reached it for a while, and again
-                after it updates, so its version below is what it runs now. Thaw once every board
-                is quiet and on the new version.
+                <strong>{{ state.quiet }} of {{ members.length }}</strong> boards have reported.
+                A frozen board reports when it last applied real traffic, and reports again when
+                that changes or when it is updated, so its version below is what it runs now.
+                Thaw once every board has reported, none has applied anything for a while, and
+                all are on the new version.
               </div>
             </template>
             <template v-else>
@@ -158,8 +161,8 @@ onBeforeUnmount(() => window.clearInterval(timer))
               <span v-if="state.thawed_at" class="text-muted small">last thawed {{ at(state.thawed_at) }}</span>
               <div class="small mt-2 text-muted">
                 Freeze the league before an update every board must make together, such as a new
-                packet protocol: play stops everywhere and the packets in flight land, and each
-                board reports when it has gone quiet.
+                packet protocol: play stops everywhere, the packets already in flight land, and
+                each board reports to the hub when it has gone quiet.
               </div>
             </template>
           </div>
@@ -211,7 +214,7 @@ onBeforeUnmount(() => window.clearInterval(timer))
             <thead>
               <tr>
                 <th>Index</th><th>BBS</th><th>Board</th><th>Version</th><th>Rules</th>
-                <th>Last packet taken</th><th>Round trip</th><th>Held here</th>
+                <th>Last packet accepted</th><th>Round trip</th><th>Held at the hub</th>
                 <th v-if="state.frozen">Quiet since</th>
               </tr>
             </thead>
@@ -235,7 +238,7 @@ onBeforeUnmount(() => window.clearInterval(timer))
                 </td>
                 <td>
                   <span v-if="b.protocol_held" class="badge badge-danger"
-                        title="Held for a protocol this hub's build cannot read, and not talked past since">
+                        title="Its packets use a format the hub's copy of the game cannot read, and none has got through since">
                     protocol</span>
                   {{ held(b.held) }}
                 </td>
@@ -253,12 +256,11 @@ onBeforeUnmount(() => window.clearInterval(timer))
           <h4>Held packets <span class="text-muted small">({{ state.held.length }})</span></h4>
           <CopyTsvButton v-if="state.held.length" :table="heldEl" />
         </div>
-        <p v-if="!state.held.length" class="text-muted small">The hub's game is holding nothing.</p>
+        <p v-if="!state.held.length" class="text-muted small">The hub is holding no packets.</p>
         <div v-else ref="heldEl" class="scroll">
           <table class="table">
             <thead>
-              <tr><th>File</th><th>From</th><th>Type</th><th>Why</th><th>Arrived</th><th>Deleted</th>
-                <th>Pauses lost forces</th></tr>
+              <tr><th>File</th><th>From</th><th>Type</th><th>Why</th><th>Arrived</th><th>Deleted unread</th></tr>
             </thead>
             <tbody>
               <tr v-for="h in state.held" :key="h.file">
@@ -272,48 +274,20 @@ onBeforeUnmount(() => window.clearInterval(timer))
                 </td>
                 <td :title="at(h.arrived)">{{ ago(h.arrived) }}</td>
                 <td>{{ at(h.expires) }}</td>
-                <td>{{ h.pauses_lost_forces ? 'yes' : 'no' }}</td>
               </tr>
             </tbody>
           </table>
         </div>
 
-        <!-- In flight -->
-        <div class="section-head">
-          <h4>Waiting for an answer <span class="text-muted small">({{ state.in_flight.length }})</span></h4>
-          <CopyTsvButton v-if="state.in_flight.length" :table="flightEl" />
-        </div>
-        <p v-if="!state.in_flight.length" class="text-muted small">
-          None of the hub game's own strikes or trades is out.
-        </p>
-        <div v-else ref="flightEl" class="scroll">
-          <table class="table">
-            <thead>
-              <tr><th>ID</th><th>Kind</th><th>To</th><th>Launched</th><th>Waits</th><th>Days left</th></tr>
-            </thead>
-            <tbody>
-              <tr v-for="f in state.in_flight" :key="f.id">
-                <td class="font-mono">{{ f.id }}</td>
-                <td>{{ f.kind }}</td>
-                <td>{{ f.target_empire || '-' }} on {{ f.target_board }}</td>
-                <td :title="at(f.launched)">{{ ago(f.launched) }}</td>
-                <td>{{ f.wait_days ? `${f.wait_days} days` : 'for ever' }}</td>
-                <td>
-                  <span v-if="f.held" class="badge badge-info"
-                        :title="`Paused: the target's packets are held here. ${f.held_days} days held so far.`">
-                    paused</span>
-                  <template v-else>{{ f.days_left ?? '-' }}</template>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
       </template>
     </div>
   </div>
 </template>
 
 <style scoped>
+.intro {
+  margin: 0 0 0.75rem;
+}
 .facts {
   display: flex;
   flex-wrap: wrap;

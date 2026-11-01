@@ -380,7 +380,8 @@ def ib_api(api, tmp_path, monkeypatch):
     folder = tmp_path / "ib902"
     (folder / "held").mkdir(parents=True)
     (folder / "world.json").write_text(json.dumps({
-        "GameDay": 4, "LeagueRuleset": "9d74df21", "BoardVersion": {"Alpha #1": "0.2.6"},
+        "LeagueRuleset": "9d74df21", "BoardVersion": {"Alpha #1": "0.2.6"},
+        "QuietBoards": {"Nova Hub": "11/01/2026  05:00:00 UTC"},
         "TravelTimes": {"Alpha #1": 0.25}}))
     (folder / "config.json").write_text(json.dumps(ib_packet.config_json(defaults("I"))))
     (folder / "coord.key").write_text("secret")
@@ -404,12 +405,14 @@ def test_the_hub_game_endpoint_reads_the_coordinators_world(ib_api):
     r = ib_api.client.get(f"{BASE}/{ib_api.lid}/ib-game")
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["available"] and body["game_day"] == 4 and body["frozen"] is False
+    assert body["available"] and body["frozen"] is False
+    # The hub's own board plays no part, so it is not listed.
+    assert [b["name"] for b in body["boards"]] == ["Alpha #1"]
     alpha = next(b for b in body["boards"] if b["name"] == "Alpha #1")
     assert (alpha["bbs_index"], alpha["version"], alpha["round_trip_days"],
             alpha["protocol_held"]) == (2, "0.2.6", 0.25, True)
-    assert [(h["file"], h["reason"], h["pauses_lost_forces"]) for h in body["held"]] == [
-        ("L902-2-1-0.brp", "protocol", True)]
+    assert [(h["file"], h["reason"]) for h in body["held"]] == [("L902-2-1-0.brp", "protocol")]
+    assert "in_flight" not in body
 
 
 def test_freeze_and_thaw_through_the_api(ib_api):

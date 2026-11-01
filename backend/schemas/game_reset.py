@@ -130,11 +130,11 @@ class LeagueOrder(BaseModel):
 
 
 class IbBoard(BaseModel):
-    """One board as the hub's Immortal Barons game knows it."""
+    """One board as the hub, the league's Coordinator, knows it."""
     name: str = Field(description="The board's name in the game's roster")
     bbs_index: Optional[int] = None
     bbs_name: Optional[str] = Field(None, description="The hub's name for its client")
-    last_packet: Optional[str] = Field(None, description="The hub game last accepted a "
+    last_packet: Optional[str] = Field(None, description="When the hub last accepted a "
                                                          "packet from it (a bounce included)")
     version: Optional[str] = None
     ruleset: Optional[str] = Field(None, description="The rules it last said it plays by")
@@ -161,36 +161,19 @@ class IbHeldPacket(BaseModel):
     protocol: Optional[int] = None
     ruleset: Optional[str] = None
     version: Optional[str] = None
-    pauses_lost_forces: bool = Field(False, description="Its sender's strikes from here "
-                                                        "wait without their timer running")
-
-
-class IbFlight(BaseModel):
-    """One of the hub game's own strikes, trades or deals awaiting an answer."""
-    id: int
-    kind: str
-    target_board: str
-    bbs_index: Optional[int] = None
-    target_empire: Optional[str] = None
-    launched: Optional[str] = None
-    wait_days: int
-    held: bool
-    held_days: int
-    days_left: Optional[int] = Field(None, description="Game days before it is given "
-                                                       "back; null: never")
 
 
 class IbGameState(BaseModel):
-    """The hub's own Immortal Barons game: the Coordinator's view of the league."""
+    """An Immortal Barons league as the hub, its Coordinator, sees it. The hub
+    plays no part in the game; this is what it knows of the boards."""
     league_id: int
     full_id: str
-    available: bool = Field(description="False when the hub's game has no world yet")
+    available: bool = Field(description="False when the hub's Coordinator game has no "
+                                        "world yet")
     saved: Optional[str] = None
-    game_day: int = 0
     started: Optional[str] = None
     ruleset: Optional[str] = None
     min_board_version: Optional[str] = None
-    lost_forces_days: int = 0
     frozen: bool = False
     freeze_serial: int = 0
     freeze_message: Optional[str] = None
@@ -199,7 +182,6 @@ class IbGameState(BaseModel):
     quiet: int = Field(0, description="Frozen: boards whose quiet report is in")
     boards: List[IbBoard] = []
     held: List[IbHeldPacket] = []
-    in_flight: List[IbFlight] = []
     under_way: Optional[ResetDetail] = None
 
 

@@ -25,6 +25,7 @@ def _test_config() -> str:
     config = toml.load(Path(__file__).parent.parent / "config.toml.example")
     config["server"]["data_dir"] = str(root / "data")
     config["database"]["path"] = str(root / "data" / "nova-hub.db")
+    config["games"] = {"root": str(root / "drive_c" / "leagues"), "drive_c": str(root / "drive_c")}
     (root / "data").mkdir()
     path = root / "config.toml"
     path.write_text(toml.dumps(config))
@@ -35,6 +36,42 @@ def _test_config() -> str:
 os.environ.setdefault("NOVA_HUB_CONFIG", _test_config())
 
 from backend.models.database import Base, Client, FtnAddress, League, LeagueMembership, SysopUser
+
+
+def install_game(db, config: dict, league, drive_c: Path, *, state: str = "ready",
+                 binary: Path = None, hub_board_key: str = None) -> Path:
+    """Give `league` a hub game the way the hub keeps one: a league_games row,
+    and its folder (B555, I902) in drive_c/leagues, which `config` [games]
+    is pointed at. For IB, `binary` becomes the image the game runs.
+    Returns the folder."""
+    from backend.models.database import GameImage, LeagueGame
+    from backend.services.league_games import IB_BINARY, folder_name, games_config
+    from backend.services.game_images import write_manifest
+
+    root = Path(drive_c) / "leagues"
+    config.setdefault("games", {}).update({"root": str(root), "drive_c": str(drive_c)})
+    folder = root / folder_name(league)
+    image = None
+    if binary is not None:
+        images = games_config(config).images
+        dirname = f"ib-test-{league.full_id}"
+        (images / dirname).mkdir(parents=True, exist_ok=True)
+        target = images / dirname / IB_BINARY
+        if not target.exists():
+            target.symlink_to(Path(binary).resolve())
+        image = GameImage(game_type=league.game_type, version="test", dirname=dirname,
+                          manifest_sha256=write_manifest(images / dirname), source="test")
+        db.add(image)
+        db.flush()
+    db.add(LeagueGame(league_id=league.id, folder=folder.name, state=state,
+                      image_id=image.id if image else None, hub_board_key=hub_board_key))
+    db.commit()
+    db.refresh(league)
+    subdirs = ("INBOUND", "OUTBOUND", "BULLETIN") if league.game_type != "I" else (
+        "inbound", "outbound")
+    for sub in subdirs:
+        (folder / sub).mkdir(parents=True, exist_ok=True)
+    return folder
 
 
 @pytest.fixture(scope="function")

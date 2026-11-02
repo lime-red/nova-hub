@@ -236,15 +236,23 @@ def test_no_temporary_file_is_left_behind(db_session, tmp_path, league):
 # self-service never reached anyone (prod, Oct 2026: Tentacle BBS in 015).
 
 def _game(tmp_path, league, name=None, content=None):
-    folder = tmp_path / "doors" / f"bre_{league.league_id}"
-    folder.mkdir(parents=True)
+    """The league's hub game, and the config that finds it."""
+    from sqlalchemy.orm import object_session
+    from tests.conftest import install_game
+
+    config = {"server": {"data_dir": str(tmp_path / "data")}}
+    folder = install_game(object_session(league), config, league, tmp_path / "drive_c")
     if name:
         (folder / name).write_bytes(content if content is not None else b"1 HOST 2\r\nold\r\n")
-    return folder, {league.league_id: {"bre": {"game_folder": str(folder)}}}
+    return folder, config
 
 
-def _generator(db, tmp_path, dosemu):
-    return NodelistGenerator(db, str(tmp_path / "data"), HUB, dosemu)
+def _files(folder):
+    return sorted(p.name for p in folder.iterdir() if p.is_file())
+
+
+def _generator(db, tmp_path, config):
+    return NodelistGenerator(db, str(tmp_path / "data"), HUB, config)
 
 
 @pytest.mark.parametrize("name", ["BRNODES.DAT", "brnodes.dat", "BrNodes.Dat"])
@@ -255,7 +263,7 @@ def test_the_game_file_is_rewritten_under_its_own_name(db_session, tmp_path, lea
     generator = _generator(db_session, tmp_path, dosemu)
     dest = generator.generate(league.id)
 
-    assert [p.name for p in folder.iterdir()] == [name]
+    assert _files(folder) == [name]
     assert (folder / name).read_bytes() == dest.read_bytes()
     assert generator.problems == []
 
@@ -324,7 +332,7 @@ def test_no_game_folder_is_reported_not_fatal(db_session, tmp_path, league):
 
     assert dest.exists()
     assert len(generator.problems) == 1
-    assert "[dosemu.900.bre] has no game_folder" in generator.problems[0]
+    assert "the hub has no game for this league" in generator.problems[0]
 
 
 def test_two_nodes_files_differing_by_case_are_left_alone(db_session, tmp_path, league):
@@ -340,7 +348,7 @@ def test_two_nodes_files_differing_by_case_are_left_alone(db_session, tmp_path, 
     assert "neither was changed" in generator.problems[0]
 
 
-def test_without_dosemu_config_no_game_is_touched(db_session, tmp_path, league):
+def test_without_config_no_game_is_touched(db_session, tmp_path, league):
     _member(db_session, league, 2, "Starship Junkyard", "135:135/8")
     folder, _ = _game(tmp_path, league, "BRNODES.DAT", b"untouched")
 

@@ -11,7 +11,7 @@ Validates:
 
 import os
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import List
 
 import toml
 from sqlalchemy.orm import Session
@@ -94,45 +94,6 @@ class HubValidator:
             )
             return False
         return True
-
-    def check_duplicate_directories(self, leagues_config: dict) -> None:
-        """Check for duplicate directories across all league entries"""
-        # Track all directories used
-        dir_usage: Dict[str, List[Tuple[str, str]]] = {}  # dir_path -> [(league_key, dir_type)]
-
-        # leagues_config is {league_id: {game_type: settings}}
-        for league_id, game_types in leagues_config.items():
-            for game_type, league_settings in game_types.items():
-                league_key = f"{game_type}.{league_id}"
-
-                # Check game_folder
-                game_folder = league_settings.get("game_folder")
-                if game_folder:
-                    abs_path = str(Path(game_folder).resolve())
-                    dir_usage.setdefault(abs_path, []).append((league_key, "game_folder"))
-
-                # Check outbound_folder
-                outbound_folder = league_settings.get("outbound_folder")
-                if outbound_folder:
-                    abs_path = str(Path(outbound_folder).resolve())
-                    dir_usage.setdefault(abs_path, []).append((league_key, "outbound_folder"))
-
-                # Check inbound_folder
-                inbound_folder = league_settings.get("inbound_folder")
-                if inbound_folder:
-                    abs_path = str(Path(inbound_folder).resolve())
-                    dir_usage.setdefault(abs_path, []).append((league_key, "inbound_folder"))
-
-        # Report duplicates
-        for dir_path, usages in dir_usage.items():
-            if len(usages) > 1:
-                usage_str = ", ".join([f"{key} ({dtype})" for key, dtype in usages])
-                self.errors.append(
-                    ValidationError(
-                        "Directory",
-                        f"Directory used multiple times: {dir_path} - {usage_str}"
-                    )
-                )
 
     def validate_nodes_file_against_db(
         self, game_type: str, league_id: str, league_settings: dict
@@ -305,135 +266,55 @@ class HubValidator:
         except (TypeError, ValueError):
             return None
 
-    def validate_immortal_barons(self) -> int:
-        """Check each [ib.<league>]: the hub's own copy of Immortal Barons.
-
-        The roster in its data_dir is the hub's to write, so it is not compared
-        against the database here; the hub regenerates it every run. Returns the
-        number of IB leagues configured.
-        """
-        sections = (self.config or {}).get("ib") or {}
-        count = 0
-        for league_id, settings in sections.items():
-            if not isinstance(settings, dict):
-                continue
-            count += 1
-            league_key = f"ib.{league_id}"
-            binary = settings.get("binary")
-            if not binary:
-                self.errors.append(ValidationError("Config", f"{league_key}: binary not configured"))
-            elif not (Path(binary).is_file() and os.access(binary, os.X_OK)):
-                self.errors.append(ValidationError(
-                    "Config", f"{league_key}: binary {binary} is not an executable file"))
-            data_dir = settings.get("data_dir")
-            if not data_dir:
-                self.errors.append(ValidationError("Config", f"{league_key}: data_dir not configured"))
-            else:
-                self.validate_directory(data_dir, "data_dir", league_key)
-            if self._hub_index() != 1:
-                self.errors.append(ValidationError(
-                    "Config", f"{league_key}: Immortal Barons needs the hub at node 1, the "
-                              f"League Coordinator, and [hub] bbs_index is "
-                              f"{(self.config or {}).get('hub', {}).get('bbs_index')!r}"))
-        return count
-
     def validate(self) -> bool:
         """
         Run all validations.
         Returns True if all validations passed, False otherwise.
         """
-        # Load config
+        from backend.services import preflight
+        from backend.services.league_games import games_config, legacy_sections
+
         if not self.load_config():
             return False
 
-        # Check required sections
+        legacy = legacy_sections(self.config)
+        for section in legacy:
+            self.errors.append(ValidationError(
+                "Config", f"{section}: leagues' games are in the database now; run "
+                          f"migrate_league_games.py, or delete the section"))
         if "dosemu" not in self.config:
             self.errors.append(ValidationError("Config", "Missing [dosemu] section"))
-            return False
 
-        dosemu_config = self.config["dosemu"]
+        cfg = games_config(self.config)
+        if cfg.root is None:
+            self.errors.append(ValidationError("Config", "[games] root is not set"))
+        else:
+            self.validate_directory(str(cfg.root), "root", "games")
+            if cfg.drive_c is not None and not (cfg.root == cfg.drive_c
+                                                or cfg.drive_c in cfg.root.parents):
+                self.errors.append(ValidationError(
+                    "Config", f"[games] root {cfg.root} is not inside drive_c {cfg.drive_c}, so "
+                              f"dosemu cannot see the DOS games"))
 
-        # Parse league configurations from dosemu section
-        # Format is [dosemu.{league_id}.{game_type}]
-        # We need to extract all league_id.game_type combinations
-        leagues_config = {}  # {league_id: {game_type: settings}}
+        if not self.db:
+            self.warnings.append(ValidationError(
+                "Database", "Database not available, skipping the leagues' games",
+                severity="WARNING"))
+            return len(self.errors) == 0
 
-        for key, value in dosemu_config.items():
-            # Skip non-dict entries (like dosemu_path, config_dir, etc.)
-            if not isinstance(value, dict):
-                continue
-
-            # This is a league_id
-            league_id = key
-            if league_id not in leagues_config:
-                leagues_config[league_id] = {}
-
-            # Now iterate over game types for this league
-            for game_type, league_settings in value.items():
-                if not isinstance(league_settings, dict):
-                    continue
-
-                leagues_config[league_id][game_type] = league_settings
-
-        # Validate each league
-        league_count = 0
-        for league_id, game_types in leagues_config.items():
-            for game_type, league_settings in game_types.items():
-                league_count += 1
-                league_key = f"{game_type}.{league_id}"
-
-                # Validate directories
-                # Note: Hub uses game_folder not game_dos_path for Linux path
-                game_folder = league_settings.get("game_folder")
-                if game_folder:
-                    self.validate_directory(game_folder, "game_folder", league_key)
-                else:
-                    self.warnings.append(
-                        ValidationError(
-                            "Config",
-                            f"{league_key}: game_folder not configured",
-                            severity="WARNING"
-                        )
-                    )
-
-                outbound_folder = league_settings.get("outbound_folder")
-                if outbound_folder:
-                    self.validate_directory(outbound_folder, "outbound_folder", league_key)
-                else:
-                    self.errors.append(
-                        ValidationError(
-                            "Config",
-                            f"{league_key}: outbound_folder not configured"
-                        )
-                    )
-
-                inbound_folder = league_settings.get("inbound_folder")
-                if inbound_folder:
-                    self.validate_directory(inbound_folder, "inbound_folder", league_key)
-                else:
-                    self.errors.append(
-                        ValidationError(
-                            "Config",
-                            f"{league_key}: inbound_folder not configured"
-                        )
-                    )
-
-                # Validate nodes file against database
-                self.validate_nodes_file_against_db(game_type, league_id, league_settings)
-
-        league_count += self.validate_immortal_barons()
-
-        if league_count == 0:
-            self.warnings.append(
-                ValidationError(
-                    "Config",
-                    "No leagues found in configuration",
-                    severity="WARNING"
-                )
-            )
-
-        # Check for duplicate directories
-        self.check_duplicate_directories(leagues_config)
+        leagues = [l for l in self.db.query(League).all() if l.install is not None]
+        if not leagues:
+            self.warnings.append(ValidationError("Config", "No league has a game at the hub",
+                                                 severity="WARNING"))
+        if any(l.game_type == "I" for l in leagues) and self._hub_index() != 1:
+            self.errors.append(ValidationError(
+                "Config", f"Immortal Barons needs the hub at node 1, the League Coordinator, "
+                          f"and [hub] bbs_index is "
+                          f"{(self.config or {}).get('hub', {}).get('bbs_index')!r}"))
+        if cfg.root is not None and not legacy:
+            for full_id, problems in preflight.run(self.db, self.config, leagues).items():
+                for problem in problems:
+                    self.errors.append(ValidationError("Preflight", f"{full_id}: {problem}"))
 
         return len(self.errors) == 0
 

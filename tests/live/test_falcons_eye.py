@@ -7,9 +7,8 @@ suggests:
     not a BRE league.
   - FE runs on a roughly four-day cadence in production, so a regression in it
     can sit unnoticed for days. BRE runs hourly and announces itself.
-  - The hub carries a separate `[dosemu.<n>.fe]` config block, including the
-    `completion_marker` that the R-1 work now depends on. Nothing proved FE
-    actually prints that line.
+  - The hub requires the completion marker that the R-1 work depends on of FE
+    as of BRE (games.py). Nothing proved FE actually prints that line.
 
 The two games turn out to be close relatives -- same 7-line CRLF BBS.CFG, same
 "1 HOST 2 3 4" nodes format, same PLANETARY /DETAILED, same completion marker --
@@ -77,8 +76,8 @@ async def test_packet_makes_a_full_round_trip(pristine, hub):
 async def test_fe_prints_the_completion_marker(pristine, hub):
     """The marker the hub's R-1 check is configured to require, from FE itself.
 
-    Production's `[dosemu.015.fe]` declares
-    `completion_marker = "Planetary Maintenance Complete"`. If FE did not print
+    The hub requires "Planetary Maintenance Complete" of every BRE and FE run
+    (games.DOS_COMPLETION_MARKER). If FE did not print
     exactly that, every FE run would be recorded `failed` -- the check would fire
     on healthy runs and the hub would stop archiving good packets. Worth one
     explicit test rather than an inference from BRE's behaviour.

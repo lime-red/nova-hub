@@ -52,7 +52,8 @@ def hub(db, tmp_path):
 
     def emit(fixture):
         (game_out / NAME).write_bytes((FIXTURES / fixture).read_bytes())
-        asyncio.run(service.collect_outbound_packets("BRE", run_id=None, outbound_dir=game_out))
+        league = db.query(League).filter(League.league_id == "901").one()
+        asyncio.run(service.collect_outbound_packets(league, run_id=None, outbound_dir=game_out))
         return db.query(Packet).filter(Packet.filename == NAME).order_by(Packet.id).all()
 
     return emit

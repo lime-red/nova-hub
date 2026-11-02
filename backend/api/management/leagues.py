@@ -36,6 +36,7 @@ from backend.schemas.leagues import (
     LeagueCreate,
     LeagueDeleteRequest,
     LeagueDetailResponse,
+    LeagueGameInfo,
     LeagueResponse,
     LeagueStats,
     LeagueUpdate,
@@ -215,7 +216,60 @@ async def get_league(
         nodelist=_nodelist_info(league),
         coordinator_key=coordinator_key,
         coordinator_key_problem=coordinator_key_problem if scope.is_admin else None,
+        game=_game_info(league) if scope.is_admin else None,
     )
+
+
+def _game_info(league: League) -> Optional[LeagueGameInfo]:
+    from backend.services.league_games import league_game
+
+    row = league.install
+    if row is None:
+        return None
+    install = league_game(get_config()._raw, league)
+    image = row.image
+    return LeagueGameInfo(
+        folder=row.folder,
+        path=str(install.folder) if install else None,
+        state=row.state,
+        runs=bool(install and install.runnable),
+        image=f"{image.version} ({image.dirname})" if image else None,
+        preflight_ok=row.preflight_ok,
+        preflight_at=row.preflight_at.replace(tzinfo=timezone.utc) if row.preflight_at else None,
+        preflight_problems=row.preflight_problems or [],
+    )
+
+
+@router.post("/{league_id}/preflight", response_model=LeagueGameInfo, summary="Run Preflight")
+async def run_preflight(
+    league_id: int,
+    current_user: SysopUser = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    Check the hub's game for this league (admin only): that its folders are its
+    own and no other league's, that its bbs.cfg names this league, its hub
+    address and (BRE, FE) its own INBOUND in DOS 8.3 names, that its nodes file
+    matches the memberships, and that its image matches its manifest. The hub
+    runs the same checks at startup.
+
+    The result is kept, and shown on the league page until the next check.
+
+    **Returns:** the league's game, with `preflight_ok` and `preflight_problems`;
+    404 if the hub has no game for the league
+    """
+    from backend.services import preflight
+
+    league = db.query(League).filter(League.id == league_id).first()
+    if not league:
+        raise HTTPException(status_code=404, detail="League not found")
+    if league.install is None:
+        raise HTTPException(status_code=404, detail=f"The hub has no game for {league.full_id}")
+    problems = preflight.run(db, get_config()._raw, [league])[league.full_id]
+    logger.info(f"Preflight of {league.full_id} by {current_user.username}: "
+                + ("; ".join(problems) or "ok"))
+    db.refresh(league)
+    return _game_info(league)
 
 
 def _coordinator_key(league: League) -> tuple[Optional[str], Optional[str]]:
@@ -789,7 +843,7 @@ async def generate_nodelist(
 
     **Returns:** `{"filename": ..., "members": <count>, "changed": <bool>,
     "warnings": [...]}`; `changed` is false when the membership gave the same
-    nodelist as before, so nothing was written. A warning means the hub's game was not given the nodelist (no `game_folder`,
+    nodelist as before, so nothing was written. A warning means the hub's game was not given the nodelist (the hub has no game for the league,
     say), so the members will not receive it.
     """
     from backend.core.config import get_config

@@ -28,6 +28,18 @@ class Game:
     packet_pattern: str
     node_base: int = 16  # how src and dst are written in the filename
     seq_base: int = 10  # how seq is written in the filename
+    # The DOS game's EXE; None for a native game (IB), which runs a binary.
+    exe: Optional[str] = None
+
+    @property
+    def dos(self) -> bool:
+        return self.exe is not None
+
+    def command(self, what: str) -> str:
+        """The DOS command line for one of the hub's runs of the game:
+        processing, scores, routeinfo, bbsinfo or reset. The same for every
+        league, so it is not configured."""
+        return f"{self.exe} {DOS_COMMANDS[what]}"
 
     @property
     def key(self) -> str:
@@ -67,6 +79,22 @@ class Game:
         }
 
 
+# What the hub runs in a DOS game, after its EXE. /DETAILED on PLANETARY is
+# what puts the per-item "Type: <x> <src>-> <dst>" lines in the transcript.
+DOS_COMMANDS = {
+    "processing": "PLANETARY /DETAILED",
+    "scores": "SCORES",
+    "routeinfo": "ROUTEINFO",
+    "bbsinfo": "BBSINFO",
+    "reset": "RESET",
+}
+# The game's own "I finished" line. dosemu can exit 0 having run nothing at
+# all, so a processing run whose transcript lacks it is recorded as failed.
+DOS_COMPLETION_MARKER = "Planetary Maintenance Complete"
+# A native game's maintenance run; "-data <folder>" is always added.
+IB_ARGS = ("-maint",)
+
+
 def _dos_packet_pattern(letter: str) -> str:
     """BRE and FE: 555B0201.001, league + game + source + dest (hex) . seq"""
     return (rf"(?P<league>\d{{3}}){letter}(?P<src>[0-9A-F]{{2}})"
@@ -85,9 +113,9 @@ _IB_PACKET_PATTERN = (r"L(?P<league>\d{3})-"
 
 GAMES = (
     Game("B", "BRE", "Barren Realms Elite", "BRNODES", "brnodes.dat",
-         _dos_packet_pattern("B")),
+         _dos_packet_pattern("B"), exe="BRE.EXE"),
     Game("F", "FE", "Falcon's Eye", "FENODES", "fenodes.dat",
-         _dos_packet_pattern("F")),
+         _dos_packet_pattern("F"), exe="FE.EXE"),
     Game("I", "IB", "Immortal Barons", "IBNODES", "ibnodes.dat",
          _IB_PACKET_PATTERN, node_base=36, seq_base=36),
 )

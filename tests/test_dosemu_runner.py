@@ -12,24 +12,24 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from backend.services.dosemu_runner import DosemuRunner
+from backend.services.games import game_for_letter
+from backend.services.league_games import GameInstall
 
 
-def _config(tmp_path, **league_overrides):
-    league = {
-        "game_folder": str(tmp_path / "game"),
-        "game_dos_path": "C:\\bbs\\doors\\bre_900",
-        "processing_command": "BRE.EXE PLANETARY /DETAILED",
-    }
-    league.update(league_overrides)
+def _config(tmp_path):
     return {
         "server": {"data_dir": str(tmp_path)},
-        "dosemu": {
-            "dosemu_path": "/usr/bin/dosemu",
-            "timeout": 30,
-            "term": "linux",
-            "900": {"bre": league},
-        },
+        "dosemu": {"dosemu_path": "/usr/bin/dosemu", "timeout": 30, "term": "linux"},
     }
+
+
+def _bre(tmp_path) -> GameInstall:
+    """900B's game, as league_games.league_game() resolves it."""
+    folder = tmp_path / "drive_c" / "leagues" / "B900"
+    return GameInstall(league_db_id=1, full_id="900B", game=game_for_letter("B"),
+                       folder=folder, state="ready", enabled=True,
+                       inbound=folder / "INBOUND", outbound=folder / "OUTBOUND", timeout=30,
+                       dos_path="C:\\LEAGUES\\B900", scores=folder / "BULLETIN")
 
 
 class _FakeResult:
@@ -136,7 +136,7 @@ class TestRunStatus:
             runner, "_run_command",
             lambda *a, **k: _async(_FakeResult(1)),
         )
-        result = await runner.run_game_process("BRE", "900")
+        result = await runner.run_game_process(_bre(tmp_path))
         assert result["status"] == "error"
         assert result["returncode"] == 1
         # Never let a caller fall back to "Unknown error" (#83).
@@ -144,26 +144,27 @@ class TestRunStatus:
         assert result["log_file"] in result["error"]
 
     @pytest.mark.asyncio
-    async def test_zero_exit_without_marker_configured_is_success(
-        self, tmp_path, monkeypatch
-    ):
-        """No completion_marker set: keep the old exit-code-only behaviour."""
+    async def test_the_command_is_the_games_own(self, tmp_path, monkeypatch):
+        """Not configured per league: every BRE game runs the same PLANETARY,
+        in its own folder's DOS path."""
         runner = DosemuRunner(_config(tmp_path))
+        seen = {}
+        monkeypatch.setattr(runner, "_create_batch_file",
+                            lambda f, command, dos: seen.update(command=command, dos=dos))
         monkeypatch.setattr(
             runner, "_run_command", lambda *a, **k: _async(_FakeResult(0))
         )
         monkeypatch.setattr(
-            runner, "_parse_dosemu_output", lambda _log: "anything at all"
+            runner, "_parse_dosemu_output", lambda _log: "Planetary Maintenance Complete"
         )
-        result = await runner.run_game_process("BRE", "900")
+        result = await runner.run_game_process(_bre(tmp_path))
         assert result["status"] == "success"
+        assert seen == {"command": "BRE.EXE PLANETARY /DETAILED", "dos": "C:\\LEAGUES\\B900"}
 
     @pytest.mark.asyncio
     async def test_zero_exit_missing_marker_is_an_error(self, tmp_path, monkeypatch):
         """dosemu can come back 0 while the game underneath it died part-way."""
-        runner = DosemuRunner(
-            _config(tmp_path, completion_marker="Planetary Maintenance Complete")
-        )
+        runner = DosemuRunner(_config(tmp_path))
         monkeypatch.setattr(
             runner, "_run_command", lambda *a, **k: _async(_FakeResult(0))
         )
@@ -171,15 +172,13 @@ class TestRunStatus:
             runner, "_parse_dosemu_output",
             lambda _log: "Checking Daily Maintenance\nProcessing Incoming Data",
         )
-        result = await runner.run_game_process("BRE", "900")
+        result = await runner.run_game_process(_bre(tmp_path))
         assert result["status"] == "error"
         assert "never reached" in result["error"]
 
     @pytest.mark.asyncio
     async def test_zero_exit_with_marker_is_success(self, tmp_path, monkeypatch):
-        runner = DosemuRunner(
-            _config(tmp_path, completion_marker="Planetary Maintenance Complete")
-        )
+        runner = DosemuRunner(_config(tmp_path))
         monkeypatch.setattr(
             runner, "_run_command", lambda *a, **k: _async(_FakeResult(0))
         )
@@ -187,7 +186,7 @@ class TestRunStatus:
             runner, "_parse_dosemu_output",
             lambda _log: "...\nPlanetary Maintenance Complete\n",
         )
-        result = await runner.run_game_process("BRE", "900")
+        result = await runner.run_game_process(_bre(tmp_path))
         assert result["status"] == "success"
 
     @pytest.mark.asyncio
@@ -195,20 +194,14 @@ class TestRunStatus:
         self, tmp_path, monkeypatch
     ):
         """BRE SCORES never prints the maintenance marker; don't fail it for that."""
-        runner = DosemuRunner(
-            _config(
-                tmp_path,
-                scores_command="BRE.EXE SCORES",
-                completion_marker="Planetary Maintenance Complete",
-            )
-        )
+        runner = DosemuRunner(_config(tmp_path))
         monkeypatch.setattr(
             runner, "_run_command", lambda *a, **k: _async(_FakeResult(0))
         )
         monkeypatch.setattr(
             runner, "_parse_dosemu_output", lambda _log: "Creating Top Planets by Score"
         )
-        result = await runner.run_scores_command("BRE", "900")
+        result = await runner.run_scores_command(_bre(tmp_path))
         assert result["status"] == "success"
 
 
@@ -240,7 +233,7 @@ class TestDosemuInvocation:
 
         monkeypatch.setattr(runner, "_run_command", capture)
         monkeypatch.setattr(runner, "_parse_dosemu_output", lambda _log: "done")
-        await runner.run_game_process("BRE", "900")
+        await runner.run_game_process(_bre(tmp_path))
 
         cmd = seen["cmd"]
         assert "-K" in cmd and "-E" in cmd, cmd

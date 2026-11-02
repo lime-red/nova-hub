@@ -66,6 +66,9 @@ def ib_name(src: int, seq: int, dst: int, league: str = "555") -> str:
     return f"L{league}-{b36(src)}-{b36(seq).rjust(13, '0')}-{b36(dst)}.brp"
 
 
+from tests.conftest import install_game
+
+
 @pytest.fixture
 def hub(tmp_path, monkeypatch):
     """A hub with league 555I: node 1 is the hub, members 2 (A), 3 (B) and 4 (C)."""
@@ -91,11 +94,6 @@ def hub(tmp_path, monkeypatch):
         boards[label] = client
     db.commit()
 
-    game = tmp_path / "ib555"
-    for sub in ("inbound", "outbound", "to_send"):
-        (game / sub).mkdir(parents=True)
-    # What -gen-coord-key leaves beside coord.key: the public half, and a newline
-    (game / "coord.pub").write_text(KEY_COORD + "\n")
     script = tmp_path / "immortal-barons"
     script.write_text(FAKE_GAME)
     script.chmod(script.stat().st_mode | stat.S_IEXEC)
@@ -105,8 +103,12 @@ def hub(tmp_path, monkeypatch):
         "hub": {"bbs_index": "01", "bbs_name": "Nova Hub", "city": "Austin"},
         "server": {"data_dir": str(data)},
         "dosemu": {"dosemu_path": "/usr/bin/dosemu", "timeout": 60},
-        "ib": {"555": {"binary": str(script), "data_dir": str(game), "hub_board_key": KEY_HUB}},
     }
+    game = install_game(db, config, league, tmp_path / "drive_c", binary=script,
+                        hub_board_key=KEY_HUB)
+    (game / "to_send").mkdir()
+    # What -gen-coord-key leaves beside coord.key: the public half, and a newline
+    (game / "coord.pub").write_text(KEY_COORD + "\n")
 
     def override_get_db():
         s = Session()
@@ -122,10 +124,10 @@ def hub(tmp_path, monkeypatch):
         a.dependency_overrides[require_admin] = lambda: Session().get(SysopUser, admin.id)
 
     real = get_config()
-    saved_raw = {k: real._raw.get(k) for k in ("server", "hub", "ib")}
+    saved_raw = {k: real._raw.get(k) for k in ("server", "hub", "games")}
     real._raw["server"] = dict(real._raw.get("server") or {}, data_dir=str(data))
     real._raw["hub"] = dict(real._raw.get("hub") or {}, bbs_index="01")
-    real._raw["ib"] = config["ib"]
+    real._raw["games"] = config["games"]
     monkeypatch.setattr(processing_service, "trigger_processing", lambda: None)
 
     yield {
@@ -316,12 +318,18 @@ def test_temp_files_and_renamed_duplicates_are_not_packets(hub):
     assert hub["db"].query(Packet).count() == 0
 
 
-def test_a_league_with_no_ib_section_fails_the_run_and_says_why(hub):
-    hub["config"]["ib"] = {}
+def test_a_league_with_no_hub_game_leaves_its_packets_waiting(hub):
+    from backend.models.database import LeagueGame
+    hub["db"].query(LeagueGame).delete()
+    hub["db"].commit()
     upload(hub, "A", ib_name(2, 1, 0), b'{"Seq": 1}')
-    status, error = run_batch(hub)
-    assert status == "failed"
-    assert "[ib.555] needs binary and data_dir" in error
+    db = hub["Session"]()
+    try:
+        assert asyncio.run(ProcessingService(db, hub["config"]).process_batch()) is None
+        # A broadcast: a row for the hub and each member but the sender, all waiting.
+        assert db.query(Packet).filter(Packet.processed_at.is_(None)).count() == 3
+    finally:
+        db.close()
 
 
 # -- sequence numbers ------------------------------------------------------------

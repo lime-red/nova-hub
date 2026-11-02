@@ -270,13 +270,16 @@ def test_a_stray_file_in_the_games_outbound_is_passed_over(tmp_path, monkeypatch
     game_out = tmp_path / "out"
     game_out.mkdir()
     (game_out / "README.TXT").write_text("not a packet")
+    league = League(league_id="900", game_type="B", name="BRE 900")
+    db.add(league)
+    db.commit()
     service = ProcessingService(db, {"hub": {"bbs_index": "01"},
                                      "server": {"data_dir": str(tmp_path / "data")},
                                      "dosemu": {"dosemu_path": "/usr/bin/dosemu", "timeout": 60}})
     log = _Log()
     monkeypatch.setattr(sr_games, "logger", log)
 
-    asyncio.run(service.collect_outbound_packets("BRE", run_id=None, outbound_dir=game_out))
+    asyncio.run(service.collect_outbound_packets(league, run_id=None, outbound_dir=game_out))
     assert [lvl for lvl, _ in log.lines if lvl in ("error", "exception")] == []
     assert any("README.TXT" in msg for lvl, msg in log.lines if lvl == "warning")
     assert (game_out / "README.TXT").exists()

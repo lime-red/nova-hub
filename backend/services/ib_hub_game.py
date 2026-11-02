@@ -304,7 +304,7 @@ def _read_held(game: HubGame, names: Dict[str, int], now: dt.datetime) -> None:
 
 def for_league(config: dict, league: League, hub_ruleset: Optional[str] = None,
                hub_protocol: Optional[int] = None) -> Optional[HubGame]:
-    """The hub's Coordinator game for an IB league, from [ib.<league>] data_dir."""
+    """The hub's Coordinator game for an IB league, from its folder (league_games)."""
     if league.game_type != "I":
         return None
     from backend.services.providers import provider_for

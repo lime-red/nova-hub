@@ -15,6 +15,7 @@ from backend.core.database import get_session
 from backend.logging_config import get_logger
 from backend.services.dosemu_runner import DosemuRunner
 from backend.services.games import game_for_code, game_for_letter
+from backend.services.league_games import league_game
 from backend.services.providers import provider_for
 from backend.services.providers.sr_games import SRGamesProvider
 from backend.services.sequence_validator import (
@@ -155,6 +156,9 @@ class ProcessingService:
         # league groups of one batch. See step 6 of process_game_batch().
         self._unconsumed_count = 0
 
+        # Files moved aside by providers.base.quarantine(), not yet alerted.
+        self.quarantined: list[dict] = []
+
     @property
     def dosemu_runner(self) -> DosemuRunner:
         """Built when a dosemu game first needs it, so a hub that runs only
@@ -192,6 +196,7 @@ class ProcessingService:
         # processed independently with its own DOSEMU config and file ingestion.
         from collections import defaultdict
         groups: dict = defaultdict(list)
+        waiting: dict = defaultdict(int)
         for p in packets:
             league = self.db.query(League).filter(League.id == p.league_id).first()
             if not league:
@@ -202,12 +207,31 @@ class ProcessingService:
             except KeyError:
                 logger.warning(f"Skipping packet {p.filename}: unknown game type '{league.game_type}'")
                 continue
+            # Only a ready game in an enabled league runs. The rest of its packets
+            # wait, unprocessed, until it is: an installed game has no settings
+            # yet, and a disabled league is meant to be still.
+            install = league_game(self.config, league)
+            if install is None or not install.runnable:
+                waiting[league.full_id] += 1
+                continue
             groups[(game_type_str, league.league_id)].append(p)
+        for full_id, n in waiting.items():
+            logger.info(f"{n} packet(s) for {full_id} wait: its game is not ready, or the "
+                        f"league is not enabled")
+        packets = [p for group in groups.values() for p in group]
         for key in also:
+            # A reset's first PLANETARY: the admin asked for it, so a ready game
+            # runs it even in a league not yet enabled.
+            league = self._league(*key)
+            install = league_game(self.config, league) if league else None
+            if install is None or install.state != "ready":
+                logger.warning(f"Not running {key[1]} {key[0]}: its game is not ready")
+                continue
             groups.setdefault(tuple(key), [])
 
         if not groups:
-            logger.warning("No packets with valid league associations found")
+            if not waiting:
+                logger.warning("No packets with valid league associations found")
             await self.scan_outbound_folders()
             return
 
@@ -264,6 +288,16 @@ class ProcessingService:
                 1 for p in packets if p.processed_at is not None
             )
             run.packets_unconsumed = self._unconsumed_count
+
+            # A game that wrote another league's packets believes it is that
+            # league. Its own were routed; the rest were moved aside unrouted.
+            in_run = [q for q in self.quarantined if q["run"] == run.id]
+            run.packets_quarantined = len(in_run)
+            if in_run:
+                run.status = "failed"
+                note = (f"quarantined {len(in_run)} file(s) that were not their league's: "
+                        + ", ".join(f"{q['file']} from {q['league']}" for q in in_run))
+                run.error_message = "; ".join(filter(None, [run.error_message, note]))
 
             # Combine dosemu output from all groups
             outputs = [r.get("output", "") for r in results.values() if r]
@@ -333,6 +367,9 @@ class ProcessingService:
         leagues = self.db.query(League).filter(League.is_active == True).all()
 
         for league in leagues:
+            install = league_game(self.config, league)
+            if install is None or not install.runnable:
+                continue
             try:
                 provider = provider_for(league.game_type)
             except KeyError:
@@ -345,6 +382,25 @@ class ProcessingService:
             if game_outbound_dir and game_outbound_dir.exists() and any(game_outbound_dir.iterdir()):
                 logger.info(f"Checking outbound folder for league {league.full_id}: {game_outbound_dir}")
                 await provider.collect_outbound(self, league, 0, game_outbound_dir)
+
+        await self.alert_quarantined()
+
+    async def alert_quarantined(self):
+        """One alert for whatever was quarantined since the last: unlike a
+        sequence gap, it never has an innocent explanation."""
+        if not self.quarantined:
+            return
+        items, self.quarantined = self.quarantined, []
+        from backend.services.alert_service import dispatch_event
+        leagues = sorted({q["league"] for q in items})
+        await dispatch_event(
+            "quarantined",
+            f"Quarantined {len(items)} file(s) another league's game wrote: {', '.join(leagues)}",
+            {"leagues": ", ".join(leagues),
+             "files": ", ".join(f"{q['file']} ({q['why']})" for q in items),
+             "moved_to": ", ".join(sorted({str(Path(q["moved_to"]).parent) for q in items})),
+             "check": "the bbs.cfg league number of each league's game"},
+            self.config)
 
     def _record_movements(self, run, results, league_of_group):
         """Store what the games said moved between nodes in this run.
@@ -430,14 +486,11 @@ class ProcessingService:
     # The SR games' steps, kept here by name: the SR provider calls them through
     # the service, so a caller (or test) can drive or replace one step at a time.
 
-    async def ingest_processing_files(
-        self, game_type: str, league_id: str, league_db_id: int, run_id: int, league_config: dict
-    ):
+    async def ingest_processing_files(self, install, run_id: int):
         """Run scores, routes, and bbsinfo commands, then ingest their output files"""
-        await _SR.ingest_processing_files(
-            self, game_type, league_id, league_db_id, run_id, league_config)
+        await _SR.ingest_processing_files(self, install, run_id)
 
-    async def collect_outbound_packets(self, game_type: str, run_id: int, outbound_dir: Path):
-        """Collect the packets an SR game wrote into outbound_dir, for whichever
-        of its leagues each one names."""
-        await _SR.collect_game_outbound(self, game_for_code(game_type), run_id, outbound_dir)
+    async def collect_outbound_packets(self, league: League, run_id: int, outbound_dir: Path):
+        """Collect the packets the league's SR game wrote into outbound_dir; any
+        other league's are quarantined."""
+        await _SR.collect_outbound(self, league, run_id, outbound_dir)

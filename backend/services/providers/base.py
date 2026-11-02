@@ -48,6 +48,28 @@ def hub_hex(config: dict) -> str:
     return index_hex((config.get("hub") or {}).get("bbs_index", "01"))
 
 
+def quarantine(service, league: League, run_id: int, path: Path, why: str) -> Path:
+    """Move a file the league's game should not have written out of its
+    OUTBOUND, unrouted, into <data_dir>/quarantine/<run id>/ (or scan/ outside
+    a run), and note it on the service for the run and the alert.
+
+    Never an innocent file: with one folder per league, a packet or nodelist
+    for another league here means the game believes it is that league.
+    """
+    data_dir = Path(service.config.get("server", {}).get("data_dir", "./data"))
+    folder = data_dir / "quarantine" / (str(run_id) if run_id else "scan")
+    folder.mkdir(parents=True, exist_ok=True)
+    dest, n = folder / path.name, 1
+    while dest.exists():
+        dest, n = folder / f"{path.name}.{n}", n + 1
+    shutil.move(str(path), str(dest))
+    logger.error(f"Quarantined {path.name} from {league.full_id}'s outbound: {why}. Moved to "
+                 f"{dest} and not routed; check the game's bbs.cfg league number")
+    service.quarantined.append({"league": league.full_id, "file": path.name, "why": why,
+                                "moved_to": str(dest), "run": run_id or None})
+    return dest
+
+
 class GameProvider:
     """The behaviour of one family of games. One instance serves every league
     of its games; nothing here keeps per-league state."""

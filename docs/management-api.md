@@ -2390,6 +2390,45 @@ Validation Error
 
 ---
 
+### POST `/management/api/v1/leagues/{league_id}/preflight`
+
+**Run Preflight**
+
+Check the hub's game for this league (admin only): that its folders are its
+own and no other league's, that its bbs.cfg names this league, its hub
+address and (BRE, FE) its own INBOUND in DOS 8.3 names, that its nodes file
+matches the memberships, and that its image matches its manifest. The hub
+runs the same checks at startup.
+
+The result is kept, and shown on the league page until the next check.
+
+**Returns:** the league's game, with `preflight_ok` and `preflight_problems`;
+404 if the hub has no game for the league
+
+#### Parameters
+
+**league_id**
+  - Type: `integer`
+  - Location: path *(required)*
+
+#### Responses
+
+#### 200
+
+Successful Response
+
+
+**Content-Type:** `application/json`
+
+#### 422
+
+Validation Error
+
+
+**Content-Type:** `application/json`
+
+---
+
 ### GET `/management/api/v1/leagues/{league_id}/member-status`
 
 **League Member Status**
@@ -2544,7 +2583,7 @@ same nodelist to every member again. `changed` says which happened.
 
 **Returns:** `{"filename": ..., "members": <count>, "changed": <bool>,
 "warnings": [...]}`; `changed` is false when the membership gave the same
-nodelist as before, so nothing was written. A warning means the hub's game was not given the nodelist (no `game_folder`,
+nodelist as before, so nothing was written. A warning means the hub's game was not given the nodelist (the hub has no game for the league,
 say), so the members will not receive it.
 
 #### Parameters

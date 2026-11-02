@@ -59,6 +59,12 @@ def _unpack(league: League, node: Node, target: Path):
 
 def _write_config(league: League, node: Node, target: Path):
     dos = league.dos_path(node)
+    # FE's media carries the donor's BBS.CFG (prod's fe_015, league 015). Beside
+    # a new bbs.cfg it is a second file on Linux but the same name to DOS, so
+    # which one the game reads is anyone's guess. Preflight refuses the pair.
+    for p in target.iterdir():
+        if p.name.lower() == "bbs.cfg":
+            p.unlink()
 
     # bbs.cfg is 7 CRLF lines. Line 4 must point at this install's own INBOUND;
     # a stale or untraversable path there is silently fatal -- the game "succeeds"

@@ -61,6 +61,7 @@ from backend.services import ib_packet
 from backend.services.game_reset import drafts, history
 from backend.services.game_reset.editor import EditorDriver, EditorError
 from backend.services.games import game_for_letter
+from backend.services.league_games import league_game
 
 logger = get_logger(context="game_reset")
 
@@ -87,7 +88,7 @@ class ResetRefused(Exception):
 
 @dataclass
 class GameSetup:
-    """Where a league's game is, from [dosemu.<league>.<game>] in config.toml."""
+    """Where a league's DOS game is (league_games.league_game())."""
     folder: Path
     dos_path: str
     exe: str
@@ -96,43 +97,28 @@ class GameSetup:
 
 @dataclass
 class IbSetup:
-    """Where a league's Immortal Barons game is, from [ib.<league>]: the hub's
-    own game, the Coordinator's. `folder` is its data dir."""
+    """Where a league's Immortal Barons game is: the hub's own game, the
+    Coordinator's. `folder` is its data folder."""
     folder: Path
     binary: str
     outbound: Path
     timeout: int
 
 
-def ib_setup(config: dict, league: League) -> IbSetup:
-    from backend.services.providers import provider_for
-    provider = provider_for(league.game_type)
-    settings = provider.settings(config, league)
-    paths = provider._paths(config, league)
-    if paths is None or not settings.get("binary"):
-        raise ResetRefused(f"config.toml's [ib.{league.league_id}] needs binary and "
-                           f"data_dir", 422)
-    timeout = int(settings.get("timeout") or config.get("dosemu", {}).get("timeout", 300))
-    return IbSetup(paths[0], settings["binary"], paths[2], timeout)
-
-
 def game_setup(config: dict, league: League):
-    if league.game_type == "I":
-        return ib_setup(config, league)
-    game = game_for_letter(league.game_type)
-    dosemu = config.get("dosemu", {})
-    section = dosemu.get(league.league_id, {}).get(game.key)
-    if not section:
-        raise ResetRefused(f"config.toml has no [dosemu.{league.league_id}."
-                           f"{game.key}] section for this league", 422)
-    folder, dos_path = section.get("game_folder"), section.get("game_dos_path")
-    # The game's EXE is the first word of the commands the hub already runs.
-    command = section.get("reset_command") or section.get("processing_command") or ""
-    exe = command.split()[0] if command.split() else ""
-    if not (folder and dos_path and exe):
-        raise ResetRefused(f"[dosemu.{league.league_id}.{game.key}] needs "
-                           f"game_folder, game_dos_path and processing_command", 422)
-    return GameSetup(Path(folder), dos_path, exe, dosemu.get("dosemu_path", "/usr/bin/dosemu"))
+    install = league_game(config, league)
+    if install is None:
+        raise ResetRefused(f"The hub has no game for {league.full_id}", 422)
+    if install.state != "ready":
+        raise ResetRefused(f"{league.full_id}'s game is {install.state}, not ready", 409)
+    if not install.game.dos:
+        if install.binary is None:
+            raise ResetRefused(f"{league.full_id}'s game has no image to run", 422)
+        return IbSetup(install.folder, str(install.binary), install.outbound, install.timeout)
+    if not install.dos_path:
+        raise ResetRefused(f"{install.folder} has no DOS path: it must be inside [games] "
+                           f"drive_c, with every name 8.3", 422)
+    return GameSetup(install.folder, install.dos_path, install.game.exe, install.dosemu_path)
 
 
 def _find(folder: Path, name: str) -> Optional[Path]:

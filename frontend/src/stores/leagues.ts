@@ -68,6 +68,19 @@ export interface LeagueDetail {
   // Immortal Barons: what members record with -coord-key; the problem is admin-only
   coordinator_key?: string | null
   coordinator_key_problem?: string | null
+  game?: LeagueGame | null  // admins only; null if the hub has no game for the league
+}
+
+// The hub's own copy of the league's game
+export interface LeagueGame {
+  folder: string
+  path: string | null
+  state: 'provisioning' | 'installed' | 'ready' | 'failed'
+  runs: boolean  // ready and the league enabled: the schedule runs it
+  image: string | null
+  preflight_ok: boolean | null  // null until preflight has run
+  preflight_at: string | null
+  preflight_problems: string[]
 }
 
 export interface NodelistInfo {
@@ -193,6 +206,20 @@ export const useLeaguesStore = defineStore('leagues', () => {
     }
   }
 
+  // Check the hub's game for the league now. Returns its game with the
+  // result, or null (with `error` set) if the check could not be asked for.
+  async function runPreflight(leagueId: number): Promise<LeagueGame | null> {
+    error.value = null
+    try {
+      const response = await leaguesApi.runPreflight(leagueId)
+      if (currentLeague.value?.id === leagueId) currentLeague.value.game = response.data
+      return response.data
+    } catch (err: unknown) {
+      error.value = apiError(err, 'Failed to run preflight')
+      return null
+    }
+  }
+
   async function addMember(leagueId: number, data: {
     client_id: number
     bbs_index: number
@@ -270,6 +297,7 @@ export const useLeaguesStore = defineStore('leagues', () => {
     updateLeague,
     deleteLeague,
     generateNodelist,
+    runPreflight,
     addMember,
     removeMember,
     updateMember,

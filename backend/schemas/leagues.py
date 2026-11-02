@@ -116,6 +116,18 @@ class LeagueStats(BaseModel):
     processing_runs: int = 0
 
 
+class LeagueGameInfo(BaseModel):
+    """The hub's own copy of the league's game (league_games), for an admin"""
+    folder: str  # inside [games] root, as B015
+    path: Optional[str] = None  # on the hub; None if [games] root is unset
+    state: str  # provisioning, installed, ready or failed
+    runs: bool  # ready and the league enabled: the schedule runs it
+    image: Optional[str] = None  # the image it was made from, as "<version> (<dirname>)"
+    preflight_ok: Optional[bool] = None  # None until preflight has run
+    preflight_at: Optional[datetime] = None
+    preflight_problems: List[str] = []
+
+
 class LeagueDetailResponse(BaseModel):
     """Detailed league info with members and stats"""
     id: int
@@ -137,6 +149,7 @@ class LeagueDetailResponse(BaseModel):
     # an admin, and names hub paths.
     coordinator_key: Optional[str] = None
     coordinator_key_problem: Optional[str] = None
+    game: Optional[LeagueGameInfo] = None  # admins only; None if the hub has no game for it
 
     model_config = ConfigDict(from_attributes=True)
 

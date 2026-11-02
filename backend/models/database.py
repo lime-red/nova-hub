@@ -339,6 +339,9 @@ class League(Base):
     packets = relationship("Packet", back_populates="league")
     processing_runs = relationship("ProcessingRun", back_populates="league")
     memberships = relationship("LeagueMembership", back_populates="league")
+    # The hub's own copy of the league's game; None until there is one.
+    # backend.services.league_games.league_game() resolves it into paths.
+    install = relationship("LeagueGame", uselist=False, back_populates="league")
 
     @property
     def full_id(self) -> str:
@@ -467,6 +470,9 @@ class ProcessingRun(Base):
     # are left in place and retried on the next run, so this returning to zero is
     # the all-clear.
     packets_unconsumed = Column(Integer, default=0)
+    # Files a game left in its OUTBOUND that are not its own league's: moved
+    # aside to <data_dir>/quarantine/<run id>/ and never routed.
+    packets_quarantined = Column(Integer, default=0)
     exit_code = Column(Integer, nullable=True)
 
     # Logs
@@ -636,6 +642,56 @@ class RealmName(Base):
     name = Column(String(64), nullable=False)
     packet_id = Column(Integer, ForeignKey("packets.id"), nullable=True)
     seen_at = Column(DateTime, nullable=True)
+
+
+class GameImage(Base):
+    """A finished install of one game version that the hub's games are made
+    from: for BRE and FE a clean game tree, for IB the binary.
+
+    Its files are in `[games] images`/<dirname>, with a manifest.json listing
+    every file and folder and its sha256. Never changed in place: a fixed image
+    is a new row.
+    """
+
+    __tablename__ = "game_images"
+
+    id = Column(Integer, primary_key=True, index=True)
+    game_type = Column(String(1), nullable=False)  # 'B', 'F', 'I'
+    version = Column(String(50), nullable=False)
+    dirname = Column(String(100), nullable=False, unique=True)
+    manifest_sha256 = Column(String(64), nullable=False)
+    # Where it came from: the path it was imported from, "make_golden" or "upload"
+    source = Column(String(255), nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+
+    games = relationship("LeagueGame", back_populates="image")
+
+
+class LeagueGame(Base):
+    """The hub's own game for one league: which folder, made from which image,
+    and whether it may run.
+
+    The folder is a name, B015, F015 or I015, inside `[games] root`; every path
+    in it (INBOUND, OUTBOUND, the DOS path) follows from that, so nothing about
+    where a league's game is lives in config.toml.
+    """
+
+    __tablename__ = "league_games"
+
+    league_id = Column(Integer, ForeignKey("leagues.id"), primary_key=True)
+    folder = Column(String(8), nullable=False, unique=True)
+    # Null for a game installed before images existed.
+    image_id = Column(Integer, ForeignKey("game_images.id"), nullable=True)
+    # IB: the public half of the hub's signing key (64 hex), node 1's roster line.
+    hub_board_key = Column(String(64), nullable=True)
+    # provisioning -> installed -> ready, or failed. Only a ready game runs.
+    state = Column(String(20), nullable=False, default="ready")
+    preflight_ok = Column(Boolean, nullable=True)
+    preflight_at = Column(DateTime, nullable=True)
+    preflight_problems = Column(JSON, nullable=True)  # list of strings
+
+    league = relationship("League", back_populates="install")
+    image = relationship("GameImage", back_populates="games")
 
 
 class LeagueGameSettings(Base):

@@ -44,6 +44,10 @@ NOVA_CLIENT_REPO = "http://gitea-hl:3000/lime/nova-client.git"
 
 HUB_INDEX = 1
 HUB_PORT = 8900
+# The hub keeps its game for each league in drive_c/leagues/<B900>: the layout
+# the hub itself requires ([games] root, league_games). Member nodes keep the
+# doors layout a BBS has.
+HUB_GAMES = "leagues"
 
 # BRE prints this when Planetary Maintenance really finished. Asserting on it is
 # what replaces the log-size floor, which is not portable across league sizes.
@@ -162,10 +166,20 @@ class League:
         assert len(name) <= 8, f"install dir {name!r} breaks DOS 8.3"
         return name
 
+    @property
+    def hub_folder(self) -> str:
+        """The hub's game folder, as the hub names it: B900."""
+        return f"{self.game}{self.number}"
+
     def install_path(self, node: "Node") -> Path:
-        return node.home / ".dosemu/drive_c/bbs/doors" / self.dirname(node.index)
+        drive_c = node.home / ".dosemu/drive_c"
+        if node.index == HUB_INDEX:
+            return drive_c / HUB_GAMES / self.hub_folder
+        return drive_c / "bbs/doors" / self.dirname(node.index)
 
     def dos_path(self, node: "Node") -> str:
+        if node.index == HUB_INDEX:
+            return f"C:\\{HUB_GAMES.upper()}\\{self.hub_folder}"
         return "C:\\BBS\\DOORS\\" + self.dirname(node.index).upper()
 
 
@@ -200,4 +214,6 @@ def installs():
 
 
 def fixture_name(league: League, node: Node) -> str:
-    return league.dirname(node.index)
+    """Named for the install folder, so a hub fixture made for another layout
+    is never restored into this one."""
+    return league.install_path(node).name.lower()

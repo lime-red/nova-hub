@@ -6,9 +6,9 @@ exit code is zero -- and not one packet is ingested. Before this, the hub then
 deleted the untouched packets from the game inbound, so the evidence and the
 retry both went in the same bin.
 
-Two halves here: the cheap structural check that can be run against any config
-including production, and the live proof that a broken path is now detected and
-that repairing it recovers on its own.
+Two halves here: preflight, the hub's own check of its games that runs at
+startup and from the league page, and the live proof that a broken path is
+detected and that repairing it recovers on its own.
 """
 import os
 
@@ -20,7 +20,7 @@ if os.getenv("NOVATEST_RIG") != "1":
     pytest.importorskip("sr_harness", reason="sr-harness is a rig-only dependency")
 
 from rig import node as node_rig  # noqa: E402
-from rig.dospath import bbs_cfg_inbound, config_problems, dos_path_problems  # noqa: E402
+from rig.dospath import bbs_cfg_inbound, dos_path_problems  # noqa: E402
 from rig.layout import LEAGUES, NODES  # noqa: E402
 
 LEAGUE = LEAGUES["900B"]
@@ -39,22 +39,21 @@ def test_the_8_3_check_catches_a_long_component():
     assert dos_path_problems("C:\\BBS\\DOORS\\B900N01\\INBOUND.DATA")
 
 
-def test_every_configured_game_path_is_usable(hub):
-    """Every league the hub is configured for can actually be read and written.
+def test_every_hub_game_passes_preflight(pristine, hub):
+    """Every league's game on the hub is its own and can be read: preflight, the
+    check that would have caught fe_015 at deploy time, finds nothing."""
+    from backend.services import preflight
 
-    Runnable against a production config.toml unchanged -- which is the point:
-    this is the check that would have caught fe_015 at deploy time.
-    """
-    problems = config_problems(hub.config)
-    assert problems == [], "\n".join(problems)
+    for league_id in ("900B", "901B", "900F"):
+        pristine(league_id, nodes=[1])
+    hub.seed(["900B", "901B", "900F"])
+    results = preflight.run(hub.db, hub.config)
+    assert results == {"900B": [], "901B": [], "900F": []}, results
 
 
 def test_the_installs_agree_with_the_config(rig_available):
-    """bbs.cfg line 4 and the hub inbound_folder must name the same directory.
-
-    They are configured in two different places by two different people, and
-    nothing at runtime notices when they drift apart.
-    """
+    """bbs.cfg line 4 must name the hub game's own INBOUND, the folder the hub
+    puts packets in. Nothing at runtime notices when they drift apart."""
     for league_id in ("900B", "901B"):
         league = LEAGUES[league_id]
         install = league.install_path(HUB)
@@ -81,6 +80,11 @@ async def test_a_broken_inbound_path_is_detected_and_self_heals(pristine, hub):
 
     # Break line 4 the way fe_015 is broken: a path the game cannot traverse.
     node_rig.set_inbound_path(LEAGUE, HUB, "C:\\BBS\\DOORS\\BRE_900_HUB\\INBOUND")
+    # Preflight says so before anything runs; it alerts, it does not stop the
+    # run, so what follows is what a hub whose admin missed it would do.
+    from backend.services import preflight
+    problems = preflight.run(hub.db, hub.config)["900B"]
+    assert any("line 4" in p for p in problems), problems
     hub.deliver("900b0201.001", payload)
     await hub.process()
 

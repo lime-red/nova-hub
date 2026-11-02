@@ -11,26 +11,24 @@ import sys
 from contextlib import contextmanager
 from pathlib import Path
 
-from rig.layout import (
-    COMPLETION_MARKER, DOSEMU_CONF, HUB_INDEX, LEAGUES, NODES, League, Node,
-)
+from rig.layout import HUB_GAMES, HUB_INDEX, LEAGUES, NODES
 
 REPO = Path(__file__).resolve().parents[3]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
 
-def hub_config(data_dir: Path, term: str = "linux", leagues=None,
-               inbound_override=None) -> dict:
+def hub_config(data_dir: Path, term: str = "linux") -> dict:
     """Config in the shape backend/ expects, pointed at the rig's installs.
 
     `term="dumb"` is the forced-failure lever: dosemu refuses to start and the
-    run must be recorded as failed. `inbound_override` breaks one league's inbound
-    path the way production's fe_015 is broken, for the R-3 scenario.
+    run must be recorded as failed. Where each league's game is comes from the
+    league_games rows seed() writes, in [games] root: the hub's installs
+    (rig.layout, drive_c/leagues/B900). The commands, folders and completion
+    marker are the games' own.
     """
-    from backend.services.games import game_for_letter
-
     hub = NODES[HUB_INDEX]
+    drive_c = hub.home / ".dosemu" / "drive_c"
     dosemu = {
         "dosemu_path": "/usr/bin/dosemu",
         "config_dir": str(data_dir / "dosemu_configs"),
@@ -39,33 +37,13 @@ def hub_config(data_dir: Path, term: str = "linux", leagues=None,
         "term": term,
     }
 
-    for league_id in (leagues or LEAGUES):
-        league = LEAGUES[league_id]
-        install = league.install_path(hub)
-        inbound = install / "INBOUND"
-        if inbound_override and league_id in inbound_override:
-            inbound = Path(inbound_override[league_id])
-        dosemu.setdefault(league.number, {})[game_for_letter(league.game).key] = {
-            "game_folder": str(install),
-            "game_dos_path": league.dos_path(hub),
-            "inbound_folder": str(inbound),
-            "outbound_folder": str(install / "OUTBOUND"),
-            # SCORES writes its .ANS bulletins into BULLETIN/, not the game
-            # folder. Point somewhere else and the hub runs the command happily
-            # and then ingests nothing at all.
-            "scores_folder": str(install / "BULLETIN"),
-            "processing_command": league.g.maintenance,
-            "scores_command": f"{league.g.exe} SCORES",
-            # Both games print the same line, which is why one constant covers
-            # them. Verified on FE 1.06 on this rig and on prod's fe_015.
-            "completion_marker": COMPLETION_MARKER,
-        }
-
     return {
         "server": {"host": "127.0.0.1", "port": 8900, "data_dir": str(data_dir)},
         "hub": {"bbs_name": hub.name, "bbs_index": f"{HUB_INDEX:02d}"},
         "processing": {"retention_days": 30},
         "dosemu": dosemu,
+        "games": {"root": str(drive_c / HUB_GAMES), "drive_c": str(drive_c),
+                  "images": str(data_dir / "images")},
         "database": {"path": str(data_dir / "nova-hub.db")},
         "security": {
             "jwt_secret": "rig-only-secret-not-used-anywhere-real-0123456789",
@@ -132,7 +110,9 @@ class TestHub:
         Returns {bbs_index: (client_id, client_secret)} for the non-hub nodes, so
         a scenario can authenticate as a real BBS.
         """
-        from backend.models.database import Client, FtnAddress, League as LeagueRow, LeagueMembership
+        from backend.models.database import (
+            Client, FtnAddress, League as LeagueRow, LeagueGame, LeagueMembership,
+        )
 
         creds = {}
         for league_id in (league_ids or LEAGUES):
@@ -146,6 +126,9 @@ class TestHub:
             self.db.add(row)
             self.db.commit()
             self.db.refresh(row)
+            # The hub's own game: its install, by the folder name the hub uses.
+            self.db.add(LeagueGame(league_id=row.id, folder=league.hub_folder, state="ready"))
+            self.db.commit()
 
             for index in league.members:
                 if index == HUB_INDEX:

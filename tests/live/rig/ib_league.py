@@ -219,7 +219,8 @@ class IbLeague:
         self.port = _free_port()
         self.url = f"http://127.0.0.1:{self.port}"
         self.data_dir = make_data_dir(self.root)
-        self.game = self.root / "hub-game"
+        # The hub's game, where the hub keeps it: I900 in [games] root.
+        self.game = self.root / "games" / f"I{LEAGUE}"
         self.hub_name = NODES[HUB_INDEX].name
         self._server = None
         self._hub = None
@@ -237,24 +238,29 @@ class IbLeague:
         (self.game / "config.json").write_text(json.dumps(rules, indent=2))
 
         self.config = hub_config(self.data_dir)
-        # The rig's dosemu leagues have no business here; only the defaults stay.
-        self.config["dosemu"] = {k: v for k, v in self.config["dosemu"].items()
-                                 if not isinstance(v, dict)}
+        # IB needs no C:, but [games] root sits inside a drive_c all the same.
+        self.config["games"] = {"root": str(self.game.parent), "drive_c": str(self.root),
+                                "images": str(self.data_dir / "images")}
         self.config["server"].update(port=self.port, public_url=self.url)
         # Long enough that one client's several uploads make one run.
         self.config["processing"]["settle_seconds"] = 1
-        self.config["ib"] = {LEAGUE: {"binary": str(binary), "data_dir": str(self.game),
-                                      "hub_board_key": hub_key}}
         self.config_path = self.root / "config.toml"
         self.config_path.write_text(toml.dumps(self.config))
 
         self._hub = TestHub(self.data_dir, self.config).start()
-        from backend.models.database import League
+        from backend.models.database import League, LeagueGame
+        from backend.services.game_images import import_ib_image
+        db = self._hub.db
         row = League(league_id=LEAGUE, game_type="I", name="Rig 900I", is_active=True,
                      hub_fidonet_address=f"{LEAGUE}:{LEAGUE}/{HUB_INDEX}", hub_routes_mail=False)
-        self._hub.db.add(row)
-        self._hub.db.commit()
+        db.add(row)
+        db.commit()
         self.league_row_id = row.id
+        # The hub runs its game's image: the build, copied in as one.
+        image, _ = import_ib_image(db, self.config, binary, self.build.id)
+        db.add(LeagueGame(league_id=row.id, folder=self.game.name, image_id=image.id,
+                          hub_board_key=hub_key, state="ready"))
+        db.commit()
 
         for index in members:
             self._join(index)
@@ -321,13 +327,17 @@ class IbLeague:
         raise RuntimeError(f"the hub did not answer on {self.url}:\n{self.hub_log()}")
 
     def upgrade_hub(self, build: Build) -> None:
-        """Take a new build for the hub's game: [ib.900] binary, and a restart of
-        the server, which reads its config once, as production's does."""
+        """Take a new build for the hub's game, as game_image.py does: import it as
+        an image and point the league's game at it. No restart: the hub reads the
+        league's game, image and all, at each run."""
+        from backend.models.database import LeagueGame
+        from backend.services.game_images import import_ib_image
+
         self.wait_idle()
-        self.config["ib"][LEAGUE]["binary"] = str(build.binary)
-        self.config_path.write_text(toml.dumps(self.config))
-        self._stop_server()
-        self._serve()
+        db = self._hub.db
+        image, _ = import_ib_image(db, self.config, build.binary, build.id)
+        db.get(LeagueGame, self.league_row_id).image_id = image.id
+        db.commit()
 
     def _stop_server(self) -> None:
         if self._server and self._server.poll() is None:

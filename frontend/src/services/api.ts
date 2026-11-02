@@ -1,4 +1,5 @@
 import axios from 'axios'
+import type { LeagueGame } from '@/stores/leagues'
 
 // Create axios instance for Management API
 const api = axios.create({
@@ -406,6 +407,9 @@ export const leaguesApi = {
   generateNodelist: (leagueId: number) =>
     api.post<{ filename: string, members: number, changed: boolean, warnings: string[] }>(
       `/leagues/${leagueId}/generate-nodelist`),
+
+  runPreflight: (leagueId: number) =>
+    api.post<LeagueGame>(`/leagues/${leagueId}/preflight`),
 
   updateMember: (leagueId: number, membershipId: number, data: {
     bbs_index?: number

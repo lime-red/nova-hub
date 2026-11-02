@@ -245,24 +245,24 @@ def test_approval_gives_the_new_board_to_the_hubs_game(hub, tmp_path, monkeypatc
     copy, so a board added this way never reached anyone."""
     import backend.api.management.applications as applications_api
 
-    game = tmp_path / "bre_015"
-    game.mkdir()
-    (game / "BrNodes.Dat").write_bytes(b"1 HOST\r\nNova Hub\r\n")
+    from tests.conftest import install_game
+
     config = applications_api.get_config()
-    patched = {"hub": config.get("hub", {}), "server": {"data_dir": str(tmp_path / "data")},
-               "dosemu": {"015": {"bre": {"game_folder": str(game)}}}}
+    patched = {"hub": config.get("hub", {}), "server": {"data_dir": str(tmp_path / "data")}}
+    game = install_game(hub.db, patched, hub.bre, tmp_path / "drive_c")
+    (game / "BrNodes.Dat").write_bytes(b"1 HOST\r\nNova Hub\r\n")
     monkeypatch.setattr(applications_api, "get_config", lambda: patched)
 
     application = apply(hub).json()
     response = approve_join(hub, application["id"])
     assert response.status_code == 200, response.text
 
-    assert [p.name for p in game.iterdir()] == ["BrNodes.Dat"]
+    assert sorted(p.name for p in game.iterdir() if p.is_file()) == ["BrNodes.Dat"]
     nodes = (game / "BrNodes.Dat").read_bytes()
     assert nodes.startswith(b"1 HOST 5\r\n")  # Eclipse is at the hub's index here
     assert (tmp_path / "data" / "nodelists" / "bre" / "015" / "BRNODES.015").read_bytes() == nodes
     # 013F has no hub address, so nothing was generated for it to install.
-    assert not any("game_folder" in p for p in response.json()["nodelist_problems"])
+    assert not any("no game" in p for p in response.json()["nodelist_problems"])
 
 
 def test_approving_a_join_creates_the_bbs_owned_by_the_applicant(hub, tmp_path, monkeypatch):

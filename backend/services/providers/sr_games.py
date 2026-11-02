@@ -18,8 +18,9 @@ from backend.core.clock import utcnow
 from backend.models.database import League, Packet, ProcessingRunFile
 from backend.services.attack_trace import record_safely
 from backend.services.games import game_for_letter, nodelist_game
+from backend.services.league_games import league_game
 from backend.services.packet_service import parse_packet_filename
-from backend.services.providers.base import GameProvider, logger, publish_nodelist
+from backend.services.providers.base import GameProvider, logger, publish_nodelist, quarantine
 
 # Written by the scores command into scores_folder; ingested after each run.
 SCORE_FILES = (
@@ -50,38 +51,9 @@ class SRGamesProvider(GameProvider):
 
     # -- where the game is ----------------------------------------------------
 
-    @staticmethod
-    def _settings(service, league: League) -> dict:
-        """[dosemu.<league>.<bre|fe>]"""
-        code = game_for_letter(league.game_type).key
-        return service.config.get("dosemu", {}).get(league.league_id, {}).get(code, {})
-
-    @staticmethod
-    def _default_drive(service, league: League) -> Path:
-        data_dir = service.config.get("server", {}).get("data_dir", "./data")
-        return Path(data_dir) / "dosemu" / league.league_id / game_for_letter(league.game_type).key
-
-    def _game_dirs(self, service, league: League) -> tuple[Path, Path]:
-        """The game's own INBOUND and OUTBOUND, from config or the default drive."""
-        try:
-            settings = self._settings(service, league)
-            inbound, outbound = settings.get("inbound_folder"), settings.get("outbound_folder")
-            if inbound and outbound:
-                logger.debug(f"Using game folders from config: {inbound}, {outbound}")
-                return Path(inbound), Path(outbound)
-        except Exception as e:
-            logger.warning(f"Error getting game folders from config: {e}, using defaults")
-        drive = self._default_drive(service, league)
-        logger.debug(f"Using default game folders: {drive / 'inbound'}, {drive / 'outbound'}")
-        return drive / "inbound", drive / "outbound"
-
     def outbound_dir(self, service, league: League) -> Optional[Path]:
-        try:
-            outbound = self._settings(service, league).get("outbound_folder")
-        except Exception as e:
-            logger.warning(f"Error getting outbound folder for league {league.league_id}: {e}")
-            outbound = None
-        return Path(outbound) if outbound else self._default_drive(service, league) / "outbound"
+        install = league_game(service.config, league)
+        return install.outbound if install else None
 
     # -- one league's batch ---------------------------------------------------
 
@@ -95,8 +67,10 @@ class SRGamesProvider(GameProvider):
         hub_outbound_dir = Path(data_dir) / "packets" / "outbound"
 
         # Game processing directories (where BRE/FE looks for packets)
-        league_config = self._settings(service, league)
-        game_inbound_dir, game_outbound_dir = self._game_dirs(service, league)
+        install = league_game(service.config, league)
+        if install is None:
+            return {"status": "error", "error": f"League {league.full_id} has no game at the hub"}
+        game_inbound_dir, game_outbound_dir = install.inbound, install.outbound
         game_inbound_dir.mkdir(parents=True, exist_ok=True)
         game_outbound_dir.mkdir(parents=True, exist_ok=True)
 
@@ -117,7 +91,7 @@ class SRGamesProvider(GameProvider):
 
             # Step 2: Run dosemu
             logger.info(f"Running {game_type} for league {league_id} via Dosemu...")
-            dosemu_result = await service.dosemu_runner.run_game_process(game_type, league_id)
+            dosemu_result = await service.dosemu_runner.run_game_process(install)
 
             if dosemu_result["status"] != "success":
                 logger.error(
@@ -155,10 +129,10 @@ class SRGamesProvider(GameProvider):
             service.db.commit()
 
             # Step 4: Collect outbound packets from game outbound directory
-            await service.collect_outbound_packets(game_type, run_id, game_outbound_dir)
+            await service.collect_outbound_packets(league, run_id, game_outbound_dir)
 
             # Step 5: Run additional commands and ingest files
-            await service.ingest_processing_files(game_type, league_id, league.id, run_id, league_config)
+            await service.ingest_processing_files(install, run_id)
 
             # Step 6: Check what the game actually took.
             #
@@ -225,18 +199,17 @@ class SRGamesProvider(GameProvider):
                 f"the previous copy will be ingested: {cause}"
             )
 
-    async def ingest_processing_files(
-        self, service, game_type: str, league_id: str, league_db_id: int, run_id: int,
-        league_config: dict
-    ):
+    async def ingest_processing_files(self, service, install, run_id: int):
         """
         Run scores, routes, and bbsinfo commands, then ingest their output files
         """
+        game_type, league_id = install.game.code, install.full_id[:-1]
+        league_db_id = install.league_db_id
         logger.info(f"Running additional commands for {game_type} league {league_id}...")
 
         # Run scores command
         logger.info("Running scores command...")
-        scores_result = await service.dosemu_runner.run_scores_command(game_type, league_id)
+        scores_result = await service.dosemu_runner.run_scores_command(install)
         if scores_result["status"] != "success":
             logger.warning(f"Scores command failed: {scores_result.get('error', 'Unknown error')}")
 
@@ -246,17 +219,16 @@ class SRGamesProvider(GameProvider):
         # end ROUTEINFO and BBSINFO with DOS errorlevel 1 even when they succeed
         # (every production transcript does), so since `script -e` began passing
         # the real exit code through, a working run logged two "failed" warnings.
-        game_folder = league_config.get("game_folder")
-        game_dir = Path(game_folder) if game_folder else None
+        game_dir = install.folder
 
         logger.info("Running routes command...")
         started = time.time()
-        routes_result = await service.dosemu_runner.run_routes_command(game_type, league_id)
+        routes_result = await service.dosemu_runner.run_routes_command(install)
         self._report_listing_command("Routes", routes_result, game_dir, "routes.lst", started)
 
         logger.info("Running bbsinfo command...")
         started = time.time()
-        bbsinfo_result = await service.dosemu_runner.run_bbsinfo_command(game_type, league_id)
+        bbsinfo_result = await service.dosemu_runner.run_bbsinfo_command(install)
         self._report_listing_command("BBS info", bbsinfo_result, game_dir, "bbsinfo.lst", started)
 
         # Now ingest the files
@@ -277,9 +249,8 @@ class SRGamesProvider(GameProvider):
             except Exception as e:
                 logger.error(f"Error ingesting {label} file {path.name}: {e}")
 
-        scores_folder = league_config.get("scores_folder")
-        if scores_folder:
-            scores_dir = Path(scores_folder)
+        scores_dir = install.scores
+        if scores_dir is not None and scores_dir.is_dir():
             for filename in SCORE_FILES:
                 file_path = _find(scores_dir, filename)
                 if file_path:
@@ -302,22 +273,27 @@ class SRGamesProvider(GameProvider):
     # -- what the game wrote --------------------------------------------------
 
     async def collect_outbound(self, service, league: League, run_id: int, outbound_dir: Path):
-        await self.collect_game_outbound(service, game_for_letter(league.game_type), run_id,
-                                         outbound_dir)
+        """Collect the packets the league's game wrote, and its nodelist.
 
-    async def collect_game_outbound(self, service, game, run_id: int, outbound_dir: Path):
-        """Collect packets generated by the game.
-
-        Any league of the game: each packet's name says which, and one the
-        database does not have yet is created.
+        Only this league's: a packet or nodelist named for any other league is
+        moved aside by quarantine() and never routed. With one folder per league
+        nothing else belongs here, so a foreign file means a game that believes
+        it is another league (a wrong number in its bbs.cfg), which is exactly
+        when routing it would put packets into the wrong league.
         """
+        game = game_for_letter(league.game_type)
         hub_index = service.config["hub"]["bbs_index"]
 
-        for packet_file in outbound_dir.glob("*"):
+        for packet_file in sorted(outbound_dir.glob("*")):
             if not packet_file.is_file():
                 continue
 
-            if nodelist_game(packet_file.name):
+            owner = nodelist_game(packet_file.name)
+            if owner:
+                if (owner.letter, owner.nodelist_league(packet_file.name)) != (game.letter, league.league_id):
+                    quarantine(service, league, run_id, packet_file,
+                               "a nodelist for another league")
+                    continue
                 await self.handle_nodelist_file(service, packet_file, game.code)
                 continue
 
@@ -326,31 +302,16 @@ class SRGamesProvider(GameProvider):
                 if not packet_info:
                     logger.warning(f"Not collecting {packet_file.name}: not a packet's name")
                     continue
+                if (packet_info["game_type"], packet_info["league_id"]) != (game.letter, league.league_id):
+                    quarantine(service, league, run_id, packet_file,
+                               f"a packet for league {packet_info['league_id']}{packet_info['game_type']}")
+                    continue
 
                 # The game's own (it is the hub): nothing to route
                 if packet_info["dest_bbs_index"] == hub_index:
                     continue
 
-                # Get or create league (game_type stored as single letter in DB)
-                target = (
-                    service.db.query(League)
-                    .filter(
-                        League.league_id == packet_info["league_id"],
-                        League.game_type == game.letter,
-                    )
-                    .first()
-                )
-
-                if not target:
-                    target = League(
-                        league_id=packet_info["league_id"],
-                        game_type=game.letter,
-                        name=f"{game.code} League {packet_info['league_id']}",
-                        is_active=True,
-                    )
-                    service.db.add(target)
-                    service.db.commit()
-                    service.db.refresh(target)
+                target = league
 
                 # Read file
                 content = packet_file.read_bytes()
@@ -485,7 +446,7 @@ class SRGamesProvider(GameProvider):
         sends it to the members on its next run (see nodelist_generator)."""
         from backend.services.nodelist_generator import NodelistGenerator
         data_dir = config.get("server", {}).get("data_dir", "./data")
-        generator = NodelistGenerator(db, data_dir, config.get("hub", {}), config.get("dosemu", {}))
+        generator = NodelistGenerator(db, data_dir, config.get("hub", {}), config)
         dest = generator.generate(league.id)
         if dest is not None:
             return dest, generator.problems

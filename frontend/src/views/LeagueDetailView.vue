@@ -227,6 +227,24 @@ async function handleGenerateNodelist() {
   generatingNodelist.value = false
 }
 
+// Run Preflight on the hub's game; its result replaces the game on the page.
+const preflightRunning = ref(false)
+const preflightError = ref<string | null>(null)
+
+async function handleRunPreflight() {
+  preflightRunning.value = true
+  preflightError.value = null
+  if (!await leaguesStore.runPreflight(leagueId.value)) preflightError.value = leaguesStore.error
+  preflightRunning.value = false
+}
+
+const GAME_STATES: Record<string, string> = {
+  provisioning: 'Being made',
+  installed: 'Waiting for its first reset',
+  ready: 'Ready',
+  failed: 'Failed to be made',
+}
+
 async function handleRemoveMember(clientId: number) {
   if (confirm('Remove this member from the league?')) {
     await leaguesStore.removeMember(leagueId.value, clientId)
@@ -400,6 +418,64 @@ async function handleDelete() {
                 Nodelist generation is blocked for this league until the hub's
                 FidoNet address is set. The previous nodelist is left untouched.
               </p>
+            </div>
+          </div>
+
+          <!-- The hub's own game -->
+          <div v-if="authStore.isAdmin" class="card">
+            <div class="card-header">
+              <h3>Hub's Game</h3>
+              <button
+                v-if="leaguesStore.currentLeague.game"
+                class="btn btn-secondary btn-sm"
+                :disabled="preflightRunning"
+                @click="handleRunPreflight"
+              >{{ preflightRunning ? 'Checking…' : 'Run Preflight' }}</button>
+            </div>
+            <div class="card-body">
+              <p v-if="!leaguesStore.currentLeague.game" class="form-hint">
+                The hub has no game for this league, so its packets wait unprocessed.
+              </p>
+              <dl v-else class="info-list">
+                <div class="info-item">
+                  <dt>Folder</dt>
+                  <dd class="font-mono">{{ leaguesStore.currentLeague.game.path ?? leaguesStore.currentLeague.game.folder }}</dd>
+                </div>
+                <div class="info-item">
+                  <dt>State</dt>
+                  <dd>
+                    <span
+                      class="badge"
+                      :class="leaguesStore.currentLeague.game.state === 'ready' ? 'badge-success'
+                        : leaguesStore.currentLeague.game.state === 'failed' ? 'badge-danger' : 'badge-warning'"
+                    >{{ GAME_STATES[leaguesStore.currentLeague.game.state] ?? leaguesStore.currentLeague.game.state }}</span>
+                    <span class="text-muted game-runs">
+                      {{ leaguesStore.currentLeague.game.runs ? 'runs with each processing run'
+                        : 'not run until it is ready and the league is active' }}
+                    </span>
+                  </dd>
+                </div>
+                <div v-if="leaguesStore.currentLeague.game.image" class="info-item">
+                  <dt>Made From</dt>
+                  <dd class="font-mono">{{ leaguesStore.currentLeague.game.image }}</dd>
+                </div>
+                <div class="info-item">
+                  <dt>Preflight</dt>
+                  <dd>
+                    <span v-if="leaguesStore.currentLeague.game.preflight_ok === null" class="badge badge-warning">Not run</span>
+                    <span v-else-if="leaguesStore.currentLeague.game.preflight_ok" class="badge badge-success">Passed</span>
+                    <span v-else class="badge badge-danger">Failed</span>
+                    <span v-if="leaguesStore.currentLeague.game.preflight_at" class="text-muted game-runs">
+                      {{ new Date(leaguesStore.currentLeague.game.preflight_at).toLocaleString() }}
+                    </span>
+                  </dd>
+                </div>
+              </dl>
+              <div v-if="preflightError" class="alert alert-error mt-2">{{ preflightError }}</div>
+              <div v-if="leaguesStore.currentLeague.game?.preflight_problems.length" class="alert alert-error mt-2">
+                <div>The game could touch the wrong packets, or not run:</div>
+                <div v-for="p in leaguesStore.currentLeague.game.preflight_problems" :key="p">{{ p }}</div>
+              </div>
             </div>
           </div>
 
@@ -848,6 +924,7 @@ async function handleDelete() {
 </template>
 
 <style scoped>
+.game-runs,
 .nodelist-age {
   margin-left: 0.5rem;
   font-size: 0.85em;

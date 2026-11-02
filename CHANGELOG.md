@@ -4,6 +4,8 @@ All notable changes to Nova Hub will be documented in this file.
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-11-03
+
 ### Added
 - **Immortal Barons leagues have a reset form**, like BRE's and FE's: every
   league rule in the Coordinator's config.json, with IB's own limits and the

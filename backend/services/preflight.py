@@ -76,6 +76,20 @@ def _overlaps(install: GameInstall, others: list[GameInstall]) -> list[str]:
     return problems
 
 
+def _case_twins(folder: Path) -> list[str]:
+    """Names in the folder that differ only in case: two files on the host, one
+    to DOS, which shows the game only one of them (BBS.CFG left from a donor
+    install beside the bbs.cfg written for this league, say)."""
+    names: dict[str, list[str]] = {}
+    try:
+        for p in folder.iterdir():
+            names.setdefault(p.name.lower(), []).append(p.name)
+    except OSError:
+        return []
+    return [f"{' and '.join(sorted(n))} in {folder} are one name to DOS; remove the one "
+            f"that is not this league's" for n in names.values() if len(n) > 1]
+
+
 def _dos_bbs_cfg(config: dict, league: League, install: GameInstall) -> list[str]:
     path = child(install.folder, "bbs.cfg")
     try:
@@ -177,6 +191,7 @@ def check(db: Session, config: dict, league: League,
         if install.dos_path is None:
             problems.append(f"{install.folder} has no DOS path: it must be inside [games] "
                             f"drive_c, with every name 8.3")
+        problems += _case_twins(install.folder)
         problems += _dos_bbs_cfg(config, league, install)
         problems += _nodes_file(db, config, league, install)
     else:

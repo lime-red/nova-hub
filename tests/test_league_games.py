@@ -291,6 +291,16 @@ def test_an_inbound_path_that_breaks_8_3_fails(hub, db_session):
     assert any("not a DOS 8.3 name" in p for p in _problems(db_session, config, leagues["901B"]))
 
 
+def test_two_files_dos_sees_as_one_fail(hub, db_session):
+    config, leagues, drive_c = hub
+    folder = drive_c / "leagues" / "B901"
+    _bbs_cfg(folder, "015", "C:\\BBS\\DOORS\\FE_015\\INBOUND")
+    (folder / "bbs.cfg").rename(folder / "BBS.CFG")
+    _bbs_cfg(folder, "901", "C:\\LEAGUES\\B901\\INBOUND")
+    problems = _problems(db_session, config, leagues["901B"])
+    assert any("BBS.CFG and bbs.cfg" in p and "one name to DOS" in p for p in problems), problems
+
+
 def test_a_hub_address_that_is_not_the_leagues_fails(hub, db_session):
     config, leagues, drive_c = hub
     _bbs_cfg(drive_c / "leagues" / "B901", "901", "C:\\LEAGUES\\B901\\INBOUND", "13:10/9")

@@ -64,83 +64,46 @@ where the game executable and its data files live.
 > live inside `~/.dosemu/drive_c/` (or whichever path dosemu2 maps to C:).
 
 A temporary `PROCESS.BAT` batch file is written to the drive root for each
-run.  It switches to `game_dos_path`, runs the configured command, then exits.
+run.  It switches to the game's DOS path, runs the game's command, then exits.
 
 ---
 
 ## config.toml Configuration
 
-Global dosemu2 settings:
+Global dosemu2 settings, and where the leagues' games are:
 
 ```toml
 [dosemu]
 dosemu_path = "/usr/bin/dosemu2"   # Full path to the dosemu2 binary
 config_dir  = "./dosemu_configs"   # Where generated .conf files are stored
-timeout     = 300                  # Seconds before dosemu2 is killed
+timeout     = 300                  # Seconds before a game run is killed
+
+[games]
+root    = "/home/novahub/.dosemu/drive_c/leagues"   # one folder per league
+drive_c = "/home/novahub/.dosemu/drive_c"           # what dosemu calls C:
 ```
 
-Per-league settings — one section per league × game type:
+That is all config.toml says about the games. Each league's game is a folder in
+`root` named by its game letter and number -- `B555`, `F013`, `I015` -- recorded
+in the database (`league_games`), and everything else follows from it:
 
-```toml
-[dosemu.<league_number>.<game_type>]
-# Filesystem path to the game installation directory (Linux path)
-game_folder = "/home/novahub/.dosemu/drive_c/bbs/doors/bre_555"
+| | BRE / FE |
+|---|---|
+| DOS path (the batch file's `CD`) | `C:\LEAGUES\B555`, from the folder's place in `drive_c` |
+| Inbound / outbound | the game's own `INBOUND` and `OUTBOUND` |
+| Score files | `BULLETIN` |
+| Commands | the game's own: `BRE.EXE PLANETARY /DETAILED`, `SCORES`, `ROUTEINFO`, `BBSINFO`, `RESET` |
 
-# Equivalent DOS path (used in the batch file's CD command)
-game_dos_path = "C:\\bbs\\doors\\bre_555"
+Every directory name between `drive_c` and a game must be DOS 8.3: the games
+read their inbound through 16-bit path handling that silently reads nothing
+behind a longer name. The game's own `bbs.cfg` line 4 must name its `INBOUND`
+(`C:\LEAGUES\B555\INBOUND`); preflight checks that, and that no two leagues
+share a folder, at startup and from the league page.
 
-# Where the game reads inbound packets from (Linux path)
-inbound_folder = "/home/novahub/.dosemu/drive_c/bbs/doors/bre_555/INBOUND"
-
-# Where the game writes outbound packets to (Linux path)
-outbound_folder = "/home/novahub/.dosemu/drive_c/bbs/doors/bre_555/OUTBOUND"
-
-# DOS command to run game processing (relative to game_dos_path)
-processing_command = "BRE.EXE PLANETARY /DETAILED"
-
-# DOS command to generate scores files
-scores_command = "BRE.EXE SCORES"
-
-# DOS command to generate route-info (optional)
-routeinfo_command = "BRE.EXE ROUTEINFO"
-
-# DOS command to generate BBS info (optional)
-bbsinfo_command = "BRE.EXE BBSINFO"
-
-# Where score files (BBSLAND.ANS, etc.) are written
-scores_folder = "/home/novahub/.dosemu/drive_c/bbs/doors/bre_555"
-```
-
-Replace `555` / `bre` with the appropriate league number and game type.
-
----
-
-## Example: Two-League Setup
-
-```toml
-[dosemu]
-dosemu_path = "/usr/bin/dosemu2"
-config_dir  = "./dosemu_configs"
-timeout     = 300
-
-[dosemu.555.bre]
-game_folder      = "/home/novahub/.dosemu/drive_c/bbs/doors/bre_555"
-game_dos_path    = "C:\\bbs\\doors\\bre_555"
-inbound_folder   = "/home/novahub/.dosemu/drive_c/bbs/doors/bre_555/INBOUND"
-outbound_folder  = "/home/novahub/.dosemu/drive_c/bbs/doors/bre_555/OUTBOUND"
-processing_command = "BRE.EXE PLANETARY /DETAILED"
-scores_command   = "BRE.EXE SCORES"
-scores_folder    = "/home/novahub/.dosemu/drive_c/bbs/doors/bre_555"
-
-[dosemu.013.fe]
-game_folder      = "/home/novahub/.dosemu/drive_c/bbs/doors/fe_013"
-game_dos_path    = "C:\\bbs\\doors\\fe_013"
-inbound_folder   = "/home/novahub/.dosemu/drive_c/bbs/doors/fe_013/INBOUND"
-outbound_folder  = "/home/novahub/.dosemu/drive_c/bbs/doors/fe_013/OUTBOUND"
-processing_command = "FE.EXE PLANETARY /DETAILED"
-scores_command   = "FE.EXE SCORES"
-scores_folder    = "/home/novahub/.dosemu/drive_c/bbs/doors/fe_013"
-```
+A game runs only when its `league_games` row is `ready` and its league is
+active; until then its packets wait. The `[dosemu.<league>.<game>]` sections
+earlier versions used are refused at startup: `migrate_league_games.py` moves a
+hub's games into `root` and the database.
 
 ---
 
@@ -153,10 +116,10 @@ upload arrives
 packets/inbound/<filename>   ← written by service API
      │
      ▼  (trigger_processing)
-dosemu/<league>/<game>/inbound/<filename>   ← copied by ProcessingService
+<root>/B555/INBOUND/<filename>   ← copied by ProcessingService
      │
      ▼  dosemu2 runs game
-dosemu/<league>/<game>/outbound/<outfile>   ← game writes results
+<root>/B555/OUTBOUND/<outfile>   ← game writes results
      │
      ▼  collect_outbound_packets
 packets/outbound/<outfile>   ← moved here, DB record created
@@ -236,8 +199,8 @@ name, it says so and leaves both alone — that is a decision, not a migration.
 
 | Symptom | Likely cause |
 |---------|-------------|
-| `No DOSEMU configuration found for league X` | Missing `[dosemu.X.bre]` or `[dosemu.X.fe]` section in config.toml |
+| Packets for a league wait and never run | The hub has no game for it, or its game is not `ready`, or the league is inactive (league page, Hub's Game) |
 | `Processing timed out` | Increase `[dosemu] timeout`; check dosemu2 logs in `<data_dir>/logs/dosemu/` |
-| Game doesn't find inbound packets | Verify `inbound_folder` matches the path the game executable reads from |
-| No outbound packets collected | Verify `outbound_folder` matches where the game writes output |
+| Game doesn't find inbound packets | `bbs.cfg` line 4 is not the game's own `INBOUND`, or breaks 8.3: Run Preflight on the league page |
+| A run failed with files quarantined | The game wrote another league's packets or nodelist; they are in `<data_dir>/quarantine/<run id>/`, and its `bbs.cfg` names the wrong league |
 | dosemu2 exits with code 1 immediately | Check that the game executable path is correct and the DOS C: drive is set up |

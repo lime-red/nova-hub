@@ -9,11 +9,11 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from rig.layout import FIXTURES, League, Node
+from rig.layout import FIXTURES, League, Node, fixture_name
 
 
 def archive_for(league: League, node: Node, tag: str = "pristine") -> Path:
-    return FIXTURES / f"{league.dirname(node.index)}_{tag}.tar.zst"
+    return FIXTURES / f"{fixture_name(league, node)}_{tag}.tar.zst"
 
 
 def capture(league: League, node: Node, tag: str = "pristine") -> Path:

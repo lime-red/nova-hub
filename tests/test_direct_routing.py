@@ -36,20 +36,11 @@ def mock_config(tmp_path):
     return {
         "hub": {"bbs_index": HUB_INDEX},
         "server": {"data_dir": str(data_dir)},
-        "dosemu": {
-            "dosemu_path": "/usr/bin/dosemu",
-            "timeout": 60,
-            LEAGUE_ID: {
-                "bre": {
-                    "inbound_folder": str(data_dir / "dosemu" / LEAGUE_ID / "bre" / "inbound"),
-                    "outbound_folder": str(data_dir / "dosemu" / LEAGUE_ID / "bre" / "outbound"),
-                }
-            }
-        }
+        "dosemu": {"dosemu_path": "/usr/bin/dosemu", "timeout": 60},
     }
 
 @pytest.mark.asyncio
-async def test_process_direct_routing(mock_db, mock_config, tmp_path):
+async def test_process_direct_routing(mock_db, mock_config, tmp_path, monkeypatch):
     # Setup
     data_dir = Path(mock_config["server"]["data_dir"])
     inbound_dir = data_dir / "packets" / "inbound"
@@ -83,6 +74,15 @@ async def test_process_direct_routing(mock_db, mock_config, tmp_path):
     
     # Initialize service
     service = ProcessingService(mock_db, mock_config)
+    from backend.services.games import game_for_letter
+    from backend.services.league_games import GameInstall
+    game_dir = data_dir / "dosemu" / LEAGUE_ID / "bre"
+    install = GameInstall(league_db_id=1, full_id=f"{LEAGUE_ID}B", game=game_for_letter("B"),
+                          folder=game_dir, state="ready", enabled=True,
+                          inbound=game_dir / "inbound", outbound=game_dir / "outbound",
+                          timeout=60, dos_path="C:\\B555")
+    import backend.services.providers.sr_games as sr_games
+    monkeypatch.setattr(sr_games, "league_game", lambda config, league: install)
     
     # Mock DosemuRunner
     service.dosemu_runner = MagicMock()

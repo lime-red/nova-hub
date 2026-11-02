@@ -61,67 +61,44 @@ class DosemuRunner:
             self.server_data_dir = config.server.data_dir
             self.dosemu_term = getattr(config.dosemu, "term", "linux")
 
-    async def run_game_process(self, game_type: str, league_id: str) -> dict:
-        """
-        Run BRE or FE processing command in Dosemu for specific league
+    async def run_game_process(self, install) -> dict:
+        """Run the league's processing (PLANETARY) in Dosemu.
+        `install` is the league's game (league_games.league_game()).
         Returns: dict with status, output, errors
         """
-        return await self._run_dosemu_command(game_type, league_id, "processing_command")
+        return await self._run_dosemu_command(install, "processing")
 
-    async def run_scores_command(self, game_type: str, league_id: str) -> dict:
-        """
-        Run BRE or FE scores command in Dosemu for specific league
-        Returns: dict with status, output, errors
-        """
-        return await self._run_dosemu_command(game_type, league_id, "scores_command")
+    async def run_scores_command(self, install) -> dict:
+        """Run the league's SCORES command in Dosemu."""
+        return await self._run_dosemu_command(install, "scores")
 
-    async def run_routes_command(self, game_type: str, league_id: str) -> dict:
-        """
-        Run BRE or FE routeinfo command in Dosemu for specific league
-        Returns: dict with status, output, errors
-        """
-        return await self._run_dosemu_command(game_type, league_id, "routeinfo_command")
+    async def run_routes_command(self, install) -> dict:
+        """Run the league's ROUTEINFO command in Dosemu."""
+        return await self._run_dosemu_command(install, "routeinfo")
 
-    async def run_bbsinfo_command(self, game_type: str, league_id: str) -> dict:
-        """
-        Run BRE or FE bbsinfo command in Dosemu for specific league
-        Returns: dict with status, output, errors
-        """
-        return await self._run_dosemu_command(game_type, league_id, "bbsinfo_command")
+    async def run_bbsinfo_command(self, install) -> dict:
+        """Run the league's BBSINFO command in Dosemu."""
+        return await self._run_dosemu_command(install, "bbsinfo")
 
-    async def _run_dosemu_command(self, game_type: str, league_id: str, command_key: str) -> dict:
+    async def _run_dosemu_command(self, install, what: str) -> dict:
         """
-        Internal method to run any DOS command in Dosemu
+        Internal method to run one of the game's DOS commands in Dosemu
         """
-        # Get league-specific config: config["dosemu"][league_id][game_type]
-        try:
-            if isinstance(self.config, dict):
-                league_config = self.config["dosemu"][league_id][game_type.lower()]
-            else:
-                league_config = getattr(getattr(self.config.dosemu, league_id), game_type.lower())
-        except (KeyError, AttributeError):
+        if install is None or not install.game.dos:
+            return {"status": "error", "error": "No DOS game to run", "returncode": -1}
+        if not install.dos_path:
             return {
                 "status": "error",
-                "error": f"No DOSEMU configuration found for league {league_id}, game {game_type}",
-                "returncode": -1
+                "error": (f"{install.full_id}: {install.folder} has no DOS path; it must be "
+                          f"inside [games] drive_c, with every name 8.3"),
+                "returncode": -1,
             }
-
-        # Get the command to run
-        if isinstance(league_config, dict):
-            command = league_config.get(command_key)
-            game_dos_path = league_config.get("game_dos_path", "C:\\")
-            completion_marker = league_config.get("completion_marker")
-        else:
-            command = getattr(league_config, command_key, None)
-            game_dos_path = getattr(league_config, "game_dos_path", "C:\\")
-            completion_marker = getattr(league_config, "completion_marker", None)
-
-        if not command:
-            return {
-                "status": "error",
-                "error": f"Missing {command_key} for league {league_id}, game {game_type}",
-                "returncode": -1
-            }
+        command = install.command(what)
+        game_dos_path = install.dos_path
+        completion_marker = install.completion_marker
+        game_type = install.game.code
+        league_id = install.full_id[:-1]
+        command_key = f"{what}_command"
 
         # Build per-league directory path
         drive_path = Path(self.server_data_dir) / "dosemu" / league_id / game_type.lower()

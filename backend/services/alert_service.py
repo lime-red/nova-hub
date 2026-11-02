@@ -115,6 +115,27 @@ async def dispatch_alert(alert: "SequenceAlert", league_name: str,
         )
 
 
+async def dispatch_event(event: str, subject: str, details: dict,
+                         config: dict | None = None) -> None:
+    """Dispatch an alert that is not a sequence gap, to the same channels.
+
+    `details` is what the webhook carries as its "alert" object, and what the
+    email lists, one "key: value" a line. Fire-and-forget, as dispatch_alert.
+    """
+    cfg = _alerting_config(config)
+    if cfg is None or not cfg.enabled:
+        return
+    if cfg.email.enabled and cfg.email.to_addresses:
+        body = "".join(f"  {k}: {v}\n" for k, v in details.items())
+        _spawn_alert_task(asyncio.to_thread(_send_message_sync, f"[Nova Hub] {subject}",
+                                            f"{subject}\n\n{body}", cfg.email),
+                          channel="email")
+    if cfg.webhook.enabled and cfg.webhook.url:
+        _spawn_alert_task(_deliver_payload({"event": event, "alert": details}, subject,
+                                           cfg.webhook),
+                          channel="webhook")
+
+
 # ---------------------------------------------------------------------------
 # Email delivery
 # ---------------------------------------------------------------------------
@@ -149,6 +170,10 @@ def _send_email_sync(alert, league_name: str, cfg) -> None:
         f"Resolve this alert in the Nova Hub dashboard once investigated.\n"
     )
 
+    _send_message_sync(subject, body, cfg)
+
+
+def _send_message_sync(subject: str, body: str, cfg) -> None:
     msg = MIMEText(body)
     msg["Subject"] = subject
     msg["From"] = cfg.from_address
@@ -184,6 +209,11 @@ async def _deliver_webhook(alert, league_name: str, cfg) -> None:
             "detected_at": _fmt_dt(alert.detected_at),
         },
     }
+    await _deliver_payload(payload, f"{league_name} {alert.source_bbs_index}->"
+                                    f"{alert.dest_bbs_index}", cfg)
+
+
+async def _deliver_payload(payload: dict, label: str, cfg) -> None:
     body = json.dumps(payload).encode()
 
     headers = {"Content-Type": "application/json"}
@@ -194,10 +224,7 @@ async def _deliver_webhook(alert, league_name: str, cfg) -> None:
     for attempt in range(1, cfg.retry_attempts + 1):
         try:
             await _post_webhook(cfg.url, body, headers, cfg.timeout_seconds)
-            logger.info(
-                f"Alert webhook delivered for {league_name} "
-                f"{alert.source_bbs_index}->{alert.dest_bbs_index}"
-            )
+            logger.info(f"Alert webhook delivered for {label}")
             return
         except Exception as e:
             if attempt < cfg.retry_attempts:

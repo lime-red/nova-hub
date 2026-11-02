@@ -3,7 +3,7 @@
 A native Go binary, not a DOS door. What differs from the SR games, and why:
 
 - **The hub is node 1, the League Coordinator.** Its own copy of the game runs
-  in [ib.<league>] data_dir with `-maint` and holds the Coordinator's key, so
+  in its league folder (league_games) with `-maint` and holds the Coordinator's key, so
   the league's rules, roster and resets are signed by the hub's game.
 - **The hub routes; the game never does.** The roster has no HOST lines, so to
   every board the league is a mesh and each packet is written once, for its
@@ -37,7 +37,6 @@ andy5995/immortal-barons.
 import hashlib
 import os
 import re
-import shlex
 from collections import defaultdict
 from pathlib import Path
 from typing import Optional
@@ -46,6 +45,7 @@ from backend.core.clock import utcnow
 from backend.models.database import Client, League, LeagueMembership, Packet
 from backend.services.attack_trace import record_safely
 from backend.services.games import game_for_letter
+from backend.services.league_games import league_game
 from backend.services.native_runner import NativeRunner
 from backend.services.providers.base import (
     GameProvider,
@@ -53,12 +53,12 @@ from backend.services.providers.base import (
     logger,
     place_without_overwrite,
     publish_nodelist,
+    quarantine,
 )
 
 BOARD_KEY = re.compile(r"[0-9a-f]{64}")
 # Written by -gen-coord-key beside coord.key (store.CoordPubFile in the game).
 COORD_PUB = "coord.pub"
-DEFAULT_ARGS = ("-maint",)
 PACKET_EXT = ".brp"
 
 
@@ -102,29 +102,14 @@ class ImmortalBaronsProvider(GameProvider):
     # -- configuration --------------------------------------------------------
 
     @staticmethod
-    def settings(config: dict, league: League) -> dict:
-        """[ib.<league>]"""
-        section = (config.get("ib") or {}).get(league.league_id)
-        return section if isinstance(section, dict) else {}
-
-    def _paths(self, config: dict, league: League) -> Optional[tuple[Path, Path, Path]]:
-        """The hub's game: (data_dir, inbound, outbound), or None if unconfigured.
-
-        inbound_dir and outbound_dir default to the game's own defaults, inbound
-        and outbound inside data_dir; set them to whatever the hub's bbs.cfg
-        says for GameInbound and GameOutbound.
-        """
-        settings = self.settings(config, league)
-        if not settings.get("data_dir"):
+    def _paths(config: dict, league: League) -> Optional[tuple[Path, Path, Path]]:
+        """The hub's game: (data folder, inbound, outbound), or None if the hub
+        has none for this league. Inbound and outbound are what the game's
+        bbs.cfg names (GameInbound, GameOutbound); see league_games."""
+        install = league_game(config, league)
+        if install is None:
             return None
-        data = Path(settings["data_dir"])
-        inbound = Path(settings.get("inbound_dir") or data / "inbound")
-        outbound = Path(settings.get("outbound_dir") or data / "outbound")
-        if not inbound.is_absolute():
-            inbound = data / inbound
-        if not outbound.is_absolute():
-            outbound = data / outbound
-        return data, inbound, outbound
+        return install.folder, install.inbound, install.outbound
 
     def coordinator_key(self, config: dict, league: League) -> tuple[Optional[str], Optional[str]]:
         """coord.pub from the hub's game, as 64 lower-case hex, or None and why not.
@@ -134,7 +119,7 @@ class ImmortalBaronsProvider(GameProvider):
         """
         paths = self._paths(config, league)
         if paths is None:
-            return None, f"{league.full_id}: [ib.{league.league_id}] data_dir is not set"
+            return None, f"{league.full_id}: the hub has no game for this league"
         data = paths[0]
         path = data / COORD_PUB
         try:
@@ -171,13 +156,12 @@ class ImmortalBaronsProvider(GameProvider):
 
     async def process_league(self, service, league: League, packets: list, run_id: int) -> dict:
         config, db = service.config, service.db
-        paths = self._paths(config, league)
-        settings = self.settings(config, league)
-        if paths is None or not settings.get("binary"):
+        install = league_game(config, league)
+        if install is None or install.binary is None:
             return {"status": "error",
-                    "error": f"[ib.{league.league_id}] needs binary and data_dir to run league "
-                             f"{league.full_id}"}
-        data, game_inbound, game_outbound = paths
+                    "error": f"League {league.full_id} has no game at the hub, or its game "
+                             f"has no image to run"}
+        data, game_inbound, game_outbound = install.folder, install.inbound, install.outbound
         game_inbound.mkdir(parents=True, exist_ok=True)
         game_outbound.mkdir(parents=True, exist_ok=True)
 
@@ -214,12 +198,8 @@ class ImmortalBaronsProvider(GameProvider):
                     logger.error(f"{hub_outbound / name} already holds a different packet "
                                  f"under this name; the members are not sent this one")
 
-        binary = settings["binary"]
-        args = settings.get("args", list(DEFAULT_ARGS))
-        if isinstance(args, str):
-            args = shlex.split(args)
-        argv = [binary, *args, "-data", str(data)]
-        timeout = int(settings.get("timeout") or config.get("dosemu", {}).get("timeout", 300))
+        argv = [str(install.binary), *install.ib_args]
+        timeout = install.timeout
         logger.info(f"Running Immortal Barons for league {league.league_id}: {' '.join(argv)}")
         result = await NativeRunner(str(data_dir), timeout).run(
             f"{league.league_id}_ib", argv, cwd=data)
@@ -279,8 +259,8 @@ class ImmortalBaronsProvider(GameProvider):
                 continue
             info = game.parse_packet_name(path.name)
             if info is None or info["league_id"] != league.league_id:
-                logger.warning(f"Not collecting {path.name} from {outbound_dir}: not a packet "
-                               f"of league {league.full_id}")
+                quarantine(service, league, run_id, path,
+                           f"not a packet of league {league.full_id}")
                 continue
             if info["dest_bbs_index"] == hub:
                 logger.warning(f"Not collecting {path.name}: the hub's game wrote it to itself")
@@ -338,13 +318,13 @@ class ImmortalBaronsProvider(GameProvider):
             return None, [f"{league.full_id}: no active members with a BBS index"]
 
         hub_config = config.get("hub", {})
-        settings = self.settings(config, league)
+        install = league_game(config, league)
         try:
-            hub_key = valid_board_key(settings.get("hub_board_key"))
+            hub_key = valid_board_key(install.hub_board_key if install else None)
         except ValueError:
             hub_key = None
-            problems.append(f"{league.full_id}: [ib.{league.league_id}] hub_board_key is not "
-                            f"a 64-character hex key; the hub's entry is written without one")
+            problems.append(f"{league.full_id}: the hub's game has no board key (a 64-character "
+                            f"hex key); the hub's entry is written without one")
 
         def entry(number, name, address, city, state, country, key):
             lines = [str(number), _field(name), _field(address),
@@ -380,9 +360,8 @@ class ImmortalBaronsProvider(GameProvider):
                 logger.info(f"Installed {target} for league {league.full_id}; the hub's game "
                             f"broadcasts it on its next run")
         else:
-            problems.append(f"{league.full_id}: [ib.{league.league_id}] data_dir is not set or "
-                            f"does not exist, so the hub's game was not given the roster and "
-                            f"will not broadcast it")
+            problems.append(f"{league.full_id}: the hub has no game folder for this league, so "
+                            f"its game was not given the roster and will not broadcast it")
         key, why_not = self.coordinator_key(config, league)
         if key is None:
             problems.append(f"{why_not}. Until there is one, members cannot check the roster and rules the hub's game broadcasts, and refuse them")

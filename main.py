@@ -41,6 +41,16 @@ async def lifespan(app: FastAPI):
         logger.error(f"STARTUP ABORTED: {e}")
         sys.exit(1)
 
+    # Where each league's game is lives in the database now. A league section
+    # left in config.toml would be a second answer that could disagree.
+    from backend.services.league_games import legacy_sections
+    legacy = legacy_sections(config._raw)
+    if legacy:
+        logger.error(f"STARTUP ABORTED: config.toml still has {', '.join(legacy)}. Leagues' "
+                     f"games are in the database now: run migrate_league_games.py, or delete "
+                     f"the section(s)")
+        sys.exit(1)
+
     # Initialize database
     db_path = config.database.path
     database_url = f"sqlite:///{db_path}"
@@ -61,6 +71,24 @@ async def lifespan(app: FastAPI):
         logger.exception(f"Could not settle interrupted game resets: {e}")
     finally:
         recovery_db.close()
+
+    # Check every league's game against every other's before anything runs. A
+    # failure is logged, kept on the league's row for its page, and alerted; it
+    # does not stop the hub or the other leagues.
+    from backend.services import preflight
+    preflight_db = get_session()
+    try:
+        failed = {k: v for k, v in preflight.run(preflight_db, config._raw).items() if v}
+    except Exception as e:
+        logger.exception(f"Preflight could not run: {e}")
+        failed = {}
+    finally:
+        preflight_db.close()
+    if failed:
+        from backend.services.alert_service import dispatch_event
+        await dispatch_event(
+            "preflight_failed", f"Preflight failed at startup: {', '.join(sorted(failed))}",
+            {k: "; ".join(v) for k, v in sorted(failed.items())}, config._raw)
 
     import asyncio
 

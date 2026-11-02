@@ -17,24 +17,14 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from backend.models.database import League, Packet, ProcessingRun
 from backend.services.processing_service import ProcessingService
+from tests.conftest import install_game
 
 
-def _config(tmp_path, game_dir):
+def _config(tmp_path):
     return {
         "server": {"data_dir": str(tmp_path)},
         "hub": {"bbs_index": "01"},
-        "dosemu": {
-            "dosemu_path": "/usr/bin/dosemu",
-            "timeout": 30,
-            "900": {
-                "bre": {
-                    "game_folder": str(game_dir),
-                    "inbound_folder": str(game_dir / "INBOUND"),
-                    "outbound_folder": str(game_dir / "OUTBOUND"),
-                    "processing_command": "BRE.EXE PLANETARY /DETAILED",
-                }
-            },
-        },
+        "dosemu": {"dosemu_path": "/usr/bin/dosemu", "timeout": 30},
     }
 
 
@@ -50,9 +40,8 @@ def league(db_session):
 @pytest.fixture
 def rig(tmp_path, db_session, league):
     """A hub data dir with one packet queued in hub inbound, ready to process."""
-    game_dir = tmp_path / "b900n01"
-    (game_dir / "INBOUND").mkdir(parents=True)
-    (game_dir / "OUTBOUND").mkdir(parents=True)
+    config = _config(tmp_path)
+    game_dir = install_game(db_session, config, league, tmp_path / "drive_c")
 
     hub_inbound = tmp_path / "packets" / "inbound"
     hub_inbound.mkdir(parents=True)
@@ -71,14 +60,14 @@ def rig(tmp_path, db_session, league):
     db_session.commit()
     db_session.refresh(packet)
 
-    service = ProcessingService(db_session, _config(tmp_path, game_dir))
+    service = ProcessingService(db_session, config)
     return service, packet, game_dir, hub_inbound
 
 
 def _dosemu(service, monkeypatch, *, status="success", consume=None):
     """Stub the dosemu run, optionally deleting inbound files like a real game."""
 
-    async def fake_run(game_type, league_id):
+    async def fake_run(install):
         if consume:
             for f in consume():
                 f.unlink()
@@ -215,6 +204,7 @@ class TestRunStatus:
         )
         db_session.add(other)
         db_session.commit()
+        install_game(db_session, service.config, other, Path(service.config["games"]["drive_c"]))
         db_session.add(
             Packet(
                 filename="901B0201.001",

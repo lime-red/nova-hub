@@ -3290,6 +3290,16 @@
             "title": "Full Id",
             "type": "string"
           },
+          "game": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LeagueGameInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "game_executable": {
             "anyOf": [
               {
@@ -3375,6 +3385,83 @@
           "stats"
         ],
         "title": "LeagueDetailResponse",
+        "type": "object"
+      },
+      "LeagueGameInfo": {
+        "description": "The hub's own copy of the league's game (league_games), for an admin",
+        "properties": {
+          "folder": {
+            "title": "Folder",
+            "type": "string"
+          },
+          "image": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
+          },
+          "preflight_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preflight At"
+          },
+          "preflight_ok": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preflight Ok"
+          },
+          "preflight_problems": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Preflight Problems",
+            "type": "array"
+          },
+          "runs": {
+            "title": "Runs",
+            "type": "boolean"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "folder",
+          "state",
+          "runs"
+        ],
+        "title": "LeagueGameInfo",
         "type": "object"
       },
       "LeagueMembershipInfo": {
@@ -8817,7 +8904,7 @@
     },
     "/api/v1/leagues/{league_id}/generate-nodelist": {
       "post": {
-        "description": "Generate the league's nodelist from the current membership (admin only):\nBRNODES/FENODES for the SR games, IBNODES (ibnodes.dat) for Immortal Barons.\n\nThe file is written to the nodelists directory, where the console and the\nservice API's bootstrap download serve it, and into the hub's own game as\nits nodes file (only if that changes it). The game sends it to every member\non its next run, as it does when the file is edited by hand.\n\nA nodelist the same as the current one is not rewritten: the game sends one\nwhen its file changes, so rewriting it would change nothing, or send the\nsame nodelist to every member again. `changed` says which happened.\n\n**Path Parameters:**\n- `league_id`: Database ID of the league\n\n**Returns:** `{\"filename\": ..., \"members\": <count>, \"changed\": <bool>,\n\"warnings\": [...]}`; `changed` is false when the membership gave the same\nnodelist as before, so nothing was written. A warning means the hub's game was not given the nodelist (no `game_folder`,\nsay), so the members will not receive it.",
+        "description": "Generate the league's nodelist from the current membership (admin only):\nBRNODES/FENODES for the SR games, IBNODES (ibnodes.dat) for Immortal Barons.\n\nThe file is written to the nodelists directory, where the console and the\nservice API's bootstrap download serve it, and into the hub's own game as\nits nodes file (only if that changes it). The game sends it to every member\non its next run, as it does when the file is edited by hand.\n\nA nodelist the same as the current one is not rewritten: the game sends one\nwhen its file changes, so rewriting it would change nothing, or send the\nsame nodelist to every member again. `changed` says which happened.\n\n**Path Parameters:**\n- `league_id`: Database ID of the league\n\n**Returns:** `{\"filename\": ..., \"members\": <count>, \"changed\": <bool>,\n\"warnings\": [...]}`; `changed` is false when the membership gave the same\nnodelist as before, so nothing was written. A warning means the hub's game was not given the nodelist (the hub has no game for the league,\nsay), so the members will not receive it.",
         "operationId": "generate_nodelist_api_v1_leagues__league_id__generate_nodelist_post",
         "parameters": [
           {
@@ -9143,6 +9230,49 @@
           }
         },
         "summary": "Download Nodelist",
+        "tags": [
+          "Management API - Leagues"
+        ]
+      }
+    },
+    "/api/v1/leagues/{league_id}/preflight": {
+      "post": {
+        "description": "Check the hub's game for this league (admin only): that its folders are its\nown and no other league's, that its bbs.cfg names this league, its hub\naddress and (BRE, FE) its own INBOUND in DOS 8.3 names, that its nodes file\nmatches the memberships, and that its image matches its manifest. The hub\nruns the same checks at startup.\n\nThe result is kept, and shown on the league page until the next check.\n\n**Returns:** the league's game, with `preflight_ok` and `preflight_problems`;\n404 if the hub has no game for the league",
+        "operationId": "run_preflight_api_v1_leagues__league_id__preflight_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "league_id",
+            "required": true,
+            "schema": {
+              "title": "League Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeagueGameInfo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run Preflight",
         "tags": [
           "Management API - Leagues"
         ]

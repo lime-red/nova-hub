@@ -300,27 +300,26 @@ def test_shown_matches_the_editor_wording():
     assert editor.matches(f["join_date"], s, "01/01/2999  00:00:00")
 
 
+from tests.conftest import install_game  # noqa: E402
+
+
 # ── the job ───────────────────────────────────────────────────────────────
 @pytest.fixture
 def game(tmp_path, db_session, db_engine, monkeypatch):
     """A league whose 'game' is a folder of files, and a config pointing at it."""
-    folder = tmp_path / "drive_c" / "bre_900"
-    (folder / "DATA").mkdir(parents=True)
-    (folder / "BRE.EXE").write_bytes(b"MZ" + bytes(range(256)))
-    (folder / "DATA" / "GAME.DAT").write_bytes(b"old game" * 100)
-    (folder / "DATA" / "PLAYER.DAT").write_bytes(b"players")
-    (folder / "INBOUND").mkdir()
     config = {
         "server": {"data_dir": str(tmp_path / "data")},
         "hub": {"bbs_index": "01"},
-        "dosemu": {"dosemu_path": "/usr/bin/dosemu", "timeout": 300,
-                   "900": {"bre": {"game_folder": str(folder),
-                                   "game_dos_path": "C:\\BRE_900",
-                                   "processing_command": "BRE.EXE PLANETARY /DETAILED"}}},
+        "dosemu": {"dosemu_path": "/usr/bin/dosemu", "timeout": 300},
     }
     league = League(league_id="900", game_type="B", name="900B", is_active=True)
     db_session.add(league)
     db_session.commit()
+    folder = install_game(db_session, config, league, tmp_path / "drive_c")
+    (folder / "DATA").mkdir(parents=True)
+    (folder / "BRE.EXE").write_bytes(b"MZ" + bytes(range(256)))
+    (folder / "DATA" / "GAME.DAT").write_bytes(b"old game" * 100)
+    (folder / "DATA" / "PLAYER.DAT").write_bytes(b"players")
     Session = sessionmaker(bind=db_engine)
     monkeypatch.setattr(perform, "get_session", lambda: Session())
     return SimpleNamespace(folder=folder, config=config, league=league, db=db_session)
@@ -380,9 +379,9 @@ def test_start_refuses_what_it_should(game, tmp_path):
     with pytest.raises(perform.ResetRefused, match="inuse.flg"):
         perform.start(g.db, g.league, 3, "900b", "mantis", g.config, TODAY)
     (g.folder / "INUSE.FLG").unlink()
-    no_section = {**g.config, "dosemu": {}}
-    with pytest.raises(perform.ResetRefused, match=r"\[dosemu.900.bre\]"):
-        perform.start(g.db, g.league, 3, "900b", "mantis", no_section, TODAY)
+    no_games = {**g.config, "games": {}}
+    with pytest.raises(perform.ResetRefused, match="no game for 900B"):
+        perform.start(g.db, g.league, 3, "900b", "mantis", no_games, TODAY)
     reset = perform.start(g.db, g.league, 3, " 900b ", "mantis", g.config, TODAY)
     assert reset.status == "applying" and reset.applied_by == "mantis"
     assert [p["stage"] for p in reset.progress] == ["queued"]
@@ -414,7 +413,7 @@ async def test_a_good_reset_saves_and_runs_planetary(game, processing):
     assert r.status == "applied" and r.error is None and r.applied_at
     assert [p["stage"] for p in r.progress] == [
         "queued", "lock", "backup", "editor", "saved", "processing", "sent"]
-    assert seen["setup"].exe == "BRE.EXE" and seen["setup"].dos_path == "C:\\BRE_900"
+    assert seen["setup"].exe == "BRE.EXE" and seen["setup"].dos_path == "C:\\LEAGUES\\B900"
     assert seen["settings"]["turns_per_day"] == 12
     assert processing.calls == [(("BRE", "900"),)]
     assert r.processing_run_id is not None
@@ -583,23 +582,22 @@ def ib(tmp_path, db_session, db_engine, monkeypatch):
     a world, and the stand-in binary. Its outbound is outside the data dir, so
     a restore can't be what clears it."""
     from backend.services.ib_packet import config_json
-    folder, outbound = tmp_path / "ib" / "900", tmp_path / "ib_outbound"
-    folder.mkdir(parents=True)
+    outbound = tmp_path / "ib_outbound"
     outbound.mkdir()
+    binary = tmp_path / "immortal-barons"
+    binary.write_text(FAKE_IB.format(python=sys.executable, outbound=str(outbound)))
+    binary.chmod(0o755)
+    config = {"server": {"data_dir": str(tmp_path / "data")}, "hub": {"bbs_index": "01"}}
+    league = League(league_id="900", game_type="I", name="900I", is_active=True)
+    db_session.add(league)
+    db_session.commit()
+    folder = install_game(db_session, config, league, tmp_path / "drive_c", binary=binary)
+    (folder / "bbs.cfg").write_text(f"LeagueNumber 900\nGameOutbound {outbound}\n")
     (folder / "config.json").write_text(json.dumps(
         {"DataDir": str(folder), "IBBS": True, "IdleTimeoutSecs": 300,
          "MaxIdleWarnings": 3, **config_json(defaults("I")), "MoneyCapBillions": 2}, indent=2))
     (folder / "coord.key").write_text("secret")
     (folder / "world.json").write_text('{"StartedDate": "2026-09-01"}')
-    binary = tmp_path / "immortal-barons"
-    binary.write_text(FAKE_IB.format(python=sys.executable, outbound=str(outbound)))
-    binary.chmod(0o755)
-    config = {"server": {"data_dir": str(tmp_path / "data")}, "hub": {"bbs_index": "01"},
-              "ib": {"900": {"binary": str(binary), "data_dir": str(folder),
-                             "outbound_dir": str(outbound)}}}
-    league = League(league_id="900", game_type="I", name="900I", is_active=True)
-    db_session.add(league)
-    db_session.commit()
     Session = sessionmaker(bind=db_engine)
     monkeypatch.setattr(perform, "get_session", lambda: Session())
     return SimpleNamespace(folder=folder, outbound=outbound, binary=binary, config=config,
@@ -674,8 +672,8 @@ def test_an_ib_reset_needs_the_game_and_the_coordinators_key(ib):
     ib.binary.unlink()
     with pytest.raises(perform.ResetRefused, match="isn't there"):
         perform.start(ib.db, ib.league, 1, "900I", "lime", ib.config, TODAY)
-    with pytest.raises(perform.ResetRefused, match=r"\[ib.900\]"):
-        perform.start(ib.db, ib.league, 1, "900I", "lime", {"ib": {}}, TODAY)
+    with pytest.raises(perform.ResetRefused, match="no game for 900I"):
+        perform.start(ib.db, ib.league, 1, "900I", "lime", {}, TODAY)
 
 
 def test_backups_round_trip_and_prune(tmp_path):
@@ -845,12 +843,9 @@ from tests.test_game_reset import BASE, api  # noqa: E402,F401  the fixture
 
 def test_perform_over_the_api(api, monkeypatch, tmp_path):
     client, db, lid = api
-    folder = tmp_path / "bre_015"
-    folder.mkdir()
+    config = {"server": {"data_dir": str(tmp_path)}}
+    folder = install_game(db, config, db.get(League, lid), tmp_path / "drive_c")
     (folder / "BRE.EXE").write_bytes(b"MZ")
-    config = {"server": {"data_dir": str(tmp_path)}, "dosemu": {"015": {"bre": {
-        "game_folder": str(folder), "game_dos_path": "C:\\BRE_015",
-        "processing_command": "BRE.EXE PLANETARY"}}}}
     import backend.api.management.game_reset as module
     monkeypatch.setattr(module, "get_config", lambda: SimpleNamespace(_raw=config))
     scheduled = []

@@ -53,66 +53,35 @@ config_dir = "./dosemu_configs"
 capture_output = true
 timeout = 300
 
-# Per-league DOSEMU configuration
-# Format: [dosemu.<league_number>.<game_type>]
-# Directories will be: ./data/dosemu/<league_number>/<game_type>/inbound/
-#                      ./data/dosemu/<league_number>/<game_type>/outbound/
+# term = "linux"   # TERM for dosemu; it refuses to start under TERM=dumb
 
-# NOTE: every directory component of these paths must be valid DOS 8.3 (max 8
-# characters, no spaces). The games resolve inbound_folder as an absolute path
-# through 16-bit path handling that cannot traverse a longer name -- and they fail
-# *silently*: the run completes, exits 0, prints every progress marker, and simply
-# ingests nothing. "bre_555" is 7 characters and fine; "bre_555_node02" would not be.
+# Where the hub's own copy of each league's game lives. Each league has one
+# folder in root, named by game letter and league number: B555, F555, I555.
+# Everything else follows from it -- INBOUND, OUTBOUND and BULLETIN inside a
+# BRE or FE game, inbound and outbound (as its bbs.cfg names them) inside an
+# Immortal Barons one -- and is kept in the database (league_games), not here.
+# The commands each game is run with are the game's own (backend/services/
+# games.py). An existing hub moves its leagues here with migrate_league_games.py.
 #
-# /DETAILED on processing_command is what puts the per-item
-# "Type: <x> <src>-> <dst>" lines in the transcript. Without it the run is
-# identical but what moved between nodes is invisible.
+# drive_c is what dosemu calls C:, and root must be inside it so the DOS games
+# can reach their folders. Every directory name between drive_c and a game
+# must be DOS 8.3 (at most 8 characters, no spaces): the games resolve their
+# inbound folder through 16-bit path handling that cannot traverse a longer
+# name, and fail *silently* -- the run completes, exits 0 and ingests nothing.
 #
-# completion_marker is optional. When set, a run whose transcript never reaches
-# this string is recorded as failed even if dosemu exited 0 -- which catches the
-# game dying part-way through. Leave it unset to key on the exit code alone.
-[dosemu.555.bre]
-game_folder = "/home/novahub/.dosemu/drive_c/bbs/doors/bre_555"
-game_dos_path = "C:\\bbs\\doors\\bre_555"
-inbound_folder = "/home/novahub/.dosemu/drive_c/bbs/doors/bre_555/INBOUND"
-outbound_folder = "/home/novahub/.dosemu/drive_c/bbs/doors/bre_555/OUTBOUND"
-processing_command = "BRE.EXE PLANETARY /DETAILED"
-scores_command = "BRE.EXE SCORES"
-completion_marker = "Planetary Maintenance Complete"
-
-[dosemu.555.fe]
-game_folder = "/home/novahub/.dosemu/drive_c/bbs/doors/fe_555"
-game_dos_path = "C:\\bbs\\doors\\fe_555"
-inbound_folder = "/home/novahub/.dosemu/drive_c/bbs/doors/fe_555/INBOUND"
-outbound_folder = "/home/novahub/.dosemu/drive_c/bbs/doors/fe_555/OUTBOUND"
-processing_command = "FE.EXE PLANETARY /DETAILED"
-scores_command = "FE.EXE SCORES"
-
-# Immortal Barons leagues (game letter I) run a native binary, not dosemu, so
-# they have their own section, keyed by league number. The hub is the league's
-# Coordinator, node 1: [hub] bbs_index must be 01.
+# images holds the golden images leagues' games are made from, and IB's
+# binaries. Defaults to <data_dir>/images.
 #
-# binary and data_dir are required. inbound_dir and outbound_dir default to the
-# game's own, inbound/ and outbound/ inside data_dir; set them to what the hub's
-# bbs.cfg gives for GameInbound and GameOutbound. args defaults to ["-maint"];
-# "-data <data_dir>" is always added. timeout defaults to [dosemu] timeout.
-#
-# hub_board_key is the public half of the hub's signing key (64 hex characters),
-# written into the roster as node 1's seventh line. Members' keys are set per
-# member in the league's page. The roster is written to data_dir/ibnodes.dat,
-# and published to members as IBNODES.<league>.
-#
-# The hub is the League Coordinator, so its game holds the Coordinator key.
-# Create it once, as the hub's user, before members join:
-#   immortal-barons -gen-coord-key -data <data_dir>
-# Members' clients fetch the public half (data_dir/coord.pub) from the hub.
-#
-# IB never reuses a packet name, so the hub deletes its IB packet files after
-# [processing] retention_days, as it does logs; sequence gaps are not checked.
-#[ib.555]
-#binary = "/opt/immortal-barons/immortal-barons"
-#data_dir = "/home/novahub/ib_555"
-#hub_board_key = "<64 hex characters>"
+# Immortal Barons leagues need the hub at node 1, the League Coordinator:
+# [hub] bbs_index must be 01. The hub's game holds the Coordinator key
+# (coord.key; members fetch coord.pub from the hub), and the public half of its
+# board key is kept on the league's game. IB never reuses a packet name, so the
+# hub deletes its IB packet files after [processing] retention_days, as it does
+# logs; sequence gaps are not checked.
+[games]
+root = "/home/novahub/.dosemu/drive_c/leagues"
+drive_c = "/home/novahub/.dosemu/drive_c"
+# images = "/home/novahub/nova-data/images"
 
 [database]
 path = "./data/nova-hub.db"

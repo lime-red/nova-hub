@@ -377,7 +377,12 @@ def ib_api(api, tmp_path, monkeypatch):
     league = League(league_id="902", game_type="I", name="902I", is_active=True)
     db.add(league)
     db.commit()
-    folder = tmp_path / "ib902"
+    from tests.conftest import install_game
+    binary = tmp_path / "immortal-barons"
+    binary.write_text("#!/bin/sh\nexit 9\n")
+    binary.chmod(0o755)
+    raw = {"server": {"data_dir": str(tmp_path / "data")}, "hub": {"bbs_index": "01"}}
+    folder = install_game(db, raw, league, tmp_path / "drive_c", binary=binary)
     (folder / "held").mkdir(parents=True)
     (folder / "world.json").write_text(json.dumps({
         "LeagueRuleset": "9d74df21", "BoardVersion": {"Alpha #1": "0.2.6"},
@@ -388,11 +393,6 @@ def ib_api(api, tmp_path, monkeypatch):
     (folder / "ibnodes.dat").write_text("1\nNova Hub\n-\n-\n-\n-\n\n2\nAlpha #1\n-\n-\n-\n-\n")
     (folder / "held" / "L902-2-1-0.brp").write_text(json.dumps(
         {"FromBoard": "Alpha #1", "FromNode": 2, "Protocol": 6}))
-    binary = tmp_path / "immortal-barons"
-    binary.write_text("#!/bin/sh\nexit 9\n")
-    binary.chmod(0o755)
-    raw = {"server": {"data_dir": str(tmp_path / "data")}, "hub": {"bbs_index": "01"},
-           "ib": {"902": {"binary": str(binary), "data_dir": str(folder)}}}
     monkeypatch.setattr(game_reset_api, "get_config",
                         lambda: SimpleNamespace(_raw=raw, get=raw.get))
     scheduled = []

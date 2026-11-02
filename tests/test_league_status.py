@@ -374,15 +374,21 @@ def test_ib_with_no_answer_is_silent(world):
 
 def _hub_game(w, world, rules=None, held=()):
     """The hub's own IB game for 902I, and a config naming it."""
-    folder = w.data_dir / "ib902"
+    from tests.conftest import install_game
+    config = {"server": {"data_dir": str(w.data_dir)}, "hub": {"bbs_index": "01"}}
+    if w.ib.install is None:
+        install_game(w.db, config, w.ib, w.data_dir / "drive_c")
+    else:
+        config["games"] = {"root": str(w.data_dir / "drive_c" / "leagues"),
+                           "drive_c": str(w.data_dir / "drive_c")}
+    folder = w.data_dir / "drive_c" / "leagues" / "I902"
     (folder / "held").mkdir(parents=True, exist_ok=True)
     (folder / "world.json").write_text(json.dumps(world))
     (folder / "config.json").write_text(json.dumps(rules or {"LostForcesDays": 3}))
     (folder / "ibnodes.dat").write_text("1\nNova Hub\n-\n-\n-\n-\n\n2\nAlpha #1\n-\n-\n-\n-\n")
     for name, body in held:
         (folder / "held" / name).write_text(json.dumps(body))
-    return {"server": {"data_dir": str(w.data_dir)}, "hub": {"bbs_index": "01"},
-            "ib": {"902": {"data_dir": str(folder)}}}
+    return config
 
 
 def _ib_status(w, config):

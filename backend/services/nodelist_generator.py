@@ -48,6 +48,7 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from backend.logging_config import get_logger
+from backend.services.league_games import league_game
 from backend.models.database import League, LeagueMembership, Client
 from backend.services.games import game_for_letter
 
@@ -100,13 +101,14 @@ class NodelistGenerator:
     """Generate hub-side nodelist files from league membership data."""
 
     def __init__(self, db: Session, data_dir: str, hub_config: dict | None = None,
-                 dosemu_config: dict | None = None):
-        """dosemu_config is [dosemu], for each league's game_folder. Without it
-        nothing is written into the hub's games -- tests, and nothing else."""
+                 config: dict | None = None):
+        """config is the whole config, for where each league's game is
+        (league_games). Without it nothing is written into the hub's games --
+        tests, and nothing else."""
         self.db = db
         self.data_dir = Path(data_dir)
         self.hub_config = hub_config or {}
-        self.dosemu_config = dosemu_config
+        self.config = config
         # Why a generated nodelist did not reach the hub's game, for the admin.
         self.problems: list[str] = []
 
@@ -235,19 +237,16 @@ class NodelistGenerator:
         has is the one to keep. Safe while the game runs; it reads the file at
         startup.
         """
-        if self.dosemu_config is None:
+        if self.config is None:
             return
-        section = f"[dosemu.{league.league_id}.{game.key}]"
-        settings = self.dosemu_config.get(league.league_id, {})
-        settings = settings.get(game.key, {}) if isinstance(settings, dict) else {}
-        folder = settings.get("game_folder") if isinstance(settings, dict) else None
-        if not folder:
-            self._problem(f"{league.full_id}: {section} has no game_folder, so the hub's game "
-                          "was not given this nodelist and the members will not receive it")
+        install = league_game(self.config, league)
+        if install is None:
+            self._problem(f"{league.full_id}: the hub has no game for this league, so it was "
+                          "not given this nodelist and the members will not receive it")
             return
-        folder = Path(folder)
+        folder = install.folder
         if not folder.is_dir():
-            self._problem(f"{league.full_id}: game_folder {folder} does not exist, so the hub's "
+            self._problem(f"{league.full_id}: {folder} does not exist, so the hub's "
                           "game was not given this nodelist and the members will not receive it")
             return
 

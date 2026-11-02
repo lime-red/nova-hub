@@ -37,8 +37,37 @@ All notable changes to Nova Hub will be documented in this file.
   other rules*, when the board's rules fingerprint is not the league's. The
   board's round trip is shown with the game's view.
 - **Copy as TSV** on the League Status table and the League Coordinator tables.
+- **Each league's game is in the database, not config.toml.** A league's
+  game is a folder in `[games] root`, named for the league (B015, F015,
+  I015), and a league_games row; its folders, DOS path and commands follow
+  from that and the game. An Immortal Barons league runs the binary of an
+  image in `[games] images` (`game_image.py` imports one and moves a league
+  to it, taking effect at the next run).
+- **Preflight checks every league's game** at startup, from `run.py
+  --validate`, and with Run Preflight on the league page: that its folders are
+  no other league's, its bbs.cfg names this league, the hub's address and (BRE,
+  FE) its own INBOUND in 8.3 names, its nodes file matches the members, and its
+  image matches its manifest. A failure is shown on the league page and
+  alerted; it does not stop the hub.
+- **A run quarantines files a game wrote that are not its league's**:
+  another league's packets or nodelist go to `<data_dir>/quarantine/<run>/`,
+  the run is failed and counts them, and an alert names them. They were
+  routed (and could create a league) before.
+- The league page shows the hub's game: its folder, its state, whether the
+  schedule runs it, the image it runs, and the last preflight.
 
 ### Changed
+- **Upgrading: config.toml's `[dosemu.<league>.<game>]` and `[ib.<league>]`
+  sections are refused at startup.** With the hub stopped, run `alembic
+  upgrade head`, then `migrate_league_games.py` (a dry run) and
+  `migrate_league_games.py --apply`. It moves each game to `[games] root`,
+  points its bbs.cfg (and an IB game's config.json) at the new place, writes
+  the rows and `[games]`, and runs preflight, undoing everything if any step
+  fails; `league-games-undo.sh` beside config.toml undoes it afterwards. A
+  section with a command or folder other than the game's own is refused, not
+  converted.
+- A league's game runs only when the league is active: an inactive league's
+  packets wait. Processing used to run them anyway.
 - An IB board on a version unlike the hub's is no longer "out of date": any
   version from the league's minimum up may play. BRE and FE are unchanged.
 - An IB attack whose target's packets the hub holds for their protocol

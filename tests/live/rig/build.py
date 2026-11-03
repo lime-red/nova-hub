@@ -18,8 +18,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from rig import fixtures
-from rig.layout import LEAGUES, NODES, REPO, SRV, VENV_PYTHON, installs
+from rig import fixtures, golden
+from rig.layout import GAMES, LEAGUES, NODES, REPO, SRV, VENV_PYTHON, installs
 
 
 def _sudo(user: str, *args) -> list:
@@ -36,6 +36,10 @@ def _sudo(user: str, *args) -> list:
 
 
 def provision_all(only=None):
+    # The golden images first, as the rig owner: every install is made from them.
+    for code in sorted({league.game for league, _ in installs()
+                        if not only or league.league_id in only}):
+        golden.ensure(GAMES[code])
     for league, node in installs():
         if only and league.league_id not in only:
             continue

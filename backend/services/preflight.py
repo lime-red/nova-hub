@@ -19,7 +19,6 @@ Run at hub startup for every league, by run.py --validate, and on demand from
 the league page. The result is kept on the league_games row.
 """
 
-import json
 import os
 from pathlib import Path
 from typing import Optional
@@ -29,7 +28,7 @@ from sqlalchemy.orm import Session
 from backend.core.clock import utcnow
 from backend.logging_config import get_logger
 from backend.models.database import League
-from backend.services.game_images import MANIFEST, sha256
+from backend.services.game_images import check_image as image_problems, read_manifest, sha256
 from backend.services.league_games import (
     GameInstall,
     IB_BINARY,
@@ -147,16 +146,11 @@ def check_image(config: dict, install: GameInstall, image) -> list[str]:
     """The image's own files against its manifest, and for a DOS game the
     install's copies of the files the game never writes (EXEs, GAME/)."""
     folder = games_config(config).images / image.dirname
-    try:
-        manifest = json.loads((folder / MANIFEST).read_text())
-    except (OSError, ValueError) as e:
-        return [f"image {image.dirname}: no readable {MANIFEST} ({e})"]
-    problems = []
-    for rel, want in (manifest.get("files") or {}).items():
-        f = folder / rel
-        if not f.is_file() or sha256(f) != want:
-            problems.append(f"image {image.dirname}: {rel} does not match its manifest")
-            continue
+    problems = [f"image {image.dirname}: {p}" for p in image_problems(folder)]
+    if problems:
+        return problems
+    files = read_manifest(folder)[0]["files"]
+    for rel, want in files.items():
         fixed = rel.upper().endswith(".EXE") or rel.upper().startswith("GAME/")
         if install.game.dos and fixed:
             mine = install.folder
@@ -164,7 +158,7 @@ def check_image(config: dict, install: GameInstall, image) -> list[str]:
                 mine = child(mine, part)
             if not mine.is_file() or sha256(mine) != want:
                 problems.append(f"{mine} differs from image {image.dirname}")
-    if not install.game.dos and IB_BINARY not in (manifest.get("files") or {}):
+    if not install.game.dos and IB_BINARY not in files:
         problems.append(f"image {image.dirname}: its manifest has no {IB_BINARY}")
     return problems
 

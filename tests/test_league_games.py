@@ -345,7 +345,7 @@ def test_an_image_that_does_not_match_its_manifest_fails(hub, db_session):
     folder = games_config(config).images / image.dirname
     (folder / "manifest.json").write_text(json.dumps({"files": {"immortal-barons": "0" * 64}}))
     assert _problems(db_session, config, leagues["902I"]) == [
-        f"image {image.dirname}: immortal-barons does not match its manifest"]
+        f"image {image.dirname}: immortal-barons does not match the manifest"]
 
 
 # ── the league page ───────────────────────────────────────────────────────

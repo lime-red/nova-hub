@@ -1300,6 +1300,21 @@
         "title": "AuthMethods",
         "type": "object"
       },
+      "Body_upload_image_api_v1_images_upload_post": {
+        "properties": {
+          "file": {
+            "description": "an image archive, <dirname>.tar.gz",
+            "format": "binary",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_image_api_v1_images_upload_post",
+        "type": "object"
+      },
       "ChangePasswordRequest": {
         "description": "Password change request",
         "properties": {
@@ -2976,6 +2991,193 @@
           "reason"
         ],
         "title": "IbHeldPacket",
+        "type": "object"
+      },
+      "ImageCheck": {
+        "description": "An image's files against its manifest",
+        "properties": {
+          "dirname": {
+            "title": "Dirname",
+            "type": "string"
+          },
+          "problems": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Problems",
+            "type": "array"
+          }
+        },
+        "required": [
+          "dirname",
+          "problems"
+        ],
+        "title": "ImageCheck",
+        "type": "object"
+      },
+      "ImageImported": {
+        "description": "The result of taking an image in",
+        "properties": {
+          "created": {
+            "title": "Created",
+            "type": "boolean"
+          },
+          "image": {
+            "$ref": "#/components/schemas/ImageInfo"
+          }
+        },
+        "required": [
+          "image",
+          "created"
+        ],
+        "title": "ImageImported",
+        "type": "object"
+      },
+      "ImageInfo": {
+        "description": "A golden image the hub holds",
+        "properties": {
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "dirname": {
+            "title": "Dirname",
+            "type": "string"
+          },
+          "game_type": {
+            "title": "Game Type",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "leagues": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Leagues",
+            "type": "array"
+          },
+          "made_from": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Made From"
+          },
+          "recipe": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recipe"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "dirname",
+          "game_type",
+          "version"
+        ],
+        "title": "ImageInfo",
+        "type": "object"
+      },
+      "ImageName": {
+        "description": "An image archive, by file name",
+        "properties": {
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "ImageName",
+        "type": "object"
+      },
+      "ImagesResponse": {
+        "description": "The hub's images, the archives waiting, and where it can fetch from",
+        "properties": {
+          "fetch_from": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fetch From"
+          },
+          "fetch_problems": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Fetch Problems",
+            "type": "array"
+          },
+          "folder": {
+            "title": "Folder",
+            "type": "string"
+          },
+          "images": {
+            "items": {
+              "$ref": "#/components/schemas/ImageInfo"
+            },
+            "title": "Images",
+            "type": "array"
+          },
+          "waiting": {
+            "items": {
+              "$ref": "#/components/schemas/WaitingArchive"
+            },
+            "title": "Waiting",
+            "type": "array"
+          }
+        },
+        "required": [
+          "images",
+          "waiting",
+          "folder"
+        ],
+        "title": "ImagesResponse",
         "type": "object"
       },
       "JoinApplicationRequest": {
@@ -6425,6 +6627,25 @@
         "title": "ValidationError",
         "type": "object"
       },
+      "WaitingArchive": {
+        "description": "An image archive dropped into [games] images, not yet imported",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "size"
+        ],
+        "title": "WaitingArchive",
+        "type": "object"
+      },
       "WaitingPacketInfo": {
         "properties": {
           "filename": {
@@ -8637,6 +8858,233 @@
         "summary": "Get Dashboard Stats",
         "tags": [
           "Management API - Dashboard"
+        ]
+      }
+    },
+    "/api/v1/images": {
+      "get": {
+        "description": "The golden images the hub holds, newest first, with the leagues made from\neach; the archives dropped into `[games] images` that are waiting to be\nimported; and where the hub can fetch from, if anywhere.",
+        "operationId": "list_images_api_v1_images_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImagesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Images",
+        "tags": [
+          "Management API - Images"
+        ]
+      }
+    },
+    "/api/v1/images/fetch": {
+      "post": {
+        "description": "Fetch an image archive by name from `[games] image_url`, with the login in\n`[games] image_credentials`, and import it as an upload is.\n\n**Returns:** the image, and whether it was new; 409 if the hub has no\nimage_url or its login file is refused; 502 if the fetch failed; 422 if the\nname is not an image archive's, or the archive is refused",
+        "operationId": "fetch_image_api_v1_images_fetch_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImageName"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageImported"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Fetch Image",
+        "tags": [
+          "Management API - Images"
+        ]
+      }
+    },
+    "/api/v1/images/import": {
+      "post": {
+        "description": "Import an archive dropped into `[games] images`. It is checked as an\nupload is, and removed once the image is in.\n\n**Returns:** the image, and whether it was new; 404 if no such archive is\nwaiting; 422 with the reason if it is refused (the archive is left there)",
+        "operationId": "import_waiting_api_v1_images_import_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImageName"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageImported"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Import Waiting Image",
+        "tags": [
+          "Management API - Images"
+        ]
+      }
+    },
+    "/api/v1/images/upload": {
+      "post": {
+        "description": "Take in an image archive made by make_golden.py. Every file is checked\nagainst the image's manifest before it is kept.\n\n**Returns:** the image, and whether it was new; 422 with the reason if it\nis refused (not an image archive, a file that does not match, a different\nimage under a name already taken)",
+        "operationId": "upload_image_api_v1_images_upload_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_image_api_v1_images_upload_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageImported"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upload Image",
+        "tags": [
+          "Management API - Images"
+        ]
+      }
+    },
+    "/api/v1/images/{image_id}": {
+      "delete": {
+        "description": "Delete an image no league's game was made from, files and all.\n\n**Returns:** 204; 409 if a league uses it",
+        "operationId": "delete_api_v1_images__image_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "image_id",
+            "required": true,
+            "schema": {
+              "title": "Image Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Image",
+        "tags": [
+          "Management API - Images"
+        ]
+      }
+    },
+    "/api/v1/images/{image_id}/check": {
+      "post": {
+        "description": "Check an image's files and folders against its manifest.\n\n**Returns:** the problems found; none means it is as it was made",
+        "operationId": "check_api_v1_images__image_id__check_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "image_id",
+            "required": true,
+            "schema": {
+              "title": "Image Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageCheck"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Check Image",
+        "tags": [
+          "Management API - Images"
         ]
       }
     },

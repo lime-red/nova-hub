@@ -295,6 +295,9 @@ class HubValidator:
                 self.errors.append(ValidationError(
                     "Config", f"[games] root {cfg.root} is not inside drive_c {cfg.drive_c}, so "
                               f"dosemu cannot see the DOS games"))
+        from backend.services.image_fetch import config_problems as fetch_problems
+        for problem in fetch_problems(cfg):
+            self.errors.append(ValidationError("Config", problem))
 
         if not self.db:
             self.warnings.append(ValidationError(

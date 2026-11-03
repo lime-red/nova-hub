@@ -29,6 +29,7 @@ const ACTIONS = [
   { value: 'client.', label: 'BBSes' },
   { value: 'ftn_address.', label: 'FTN addresses' },
   { value: 'user.', label: 'Users and roles' },
+  { value: 'image.', label: 'Game images' },
 ]
 
 const events = ref<AuditEvent[]>([])
@@ -60,6 +61,7 @@ function targetLink(e: AuditEvent): string | null {
   if (e.target_type === 'client' && e.target_id) return `/clients/${e.target_id}`
   if (e.target_type === 'league' && e.target_id) return `/leagues/${e.target_id}`
   if (e.target_type === 'application' && e.target_id) return `/admin/applications?id=${e.target_id}`
+  if (e.target_type === 'image') return '/admin/images'
   return null
 }
 </script>

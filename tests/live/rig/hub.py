@@ -104,6 +104,13 @@ class TestHub:
 
     # -- seeding ----------------------------------------------------------
 
+    def _image(self, league):
+        from backend.services.game_images import import_archive
+        from rig import golden
+
+        image, _ = import_archive(self.db, self.config, golden.archive(league.g), "rig")
+        return image
+
     def seed(self, league_ids=None):
         """Register the leagues and their member clients.
 
@@ -126,8 +133,11 @@ class TestHub:
             self.db.add(row)
             self.db.commit()
             self.db.refresh(row)
-            # The hub's own game: its install, by the folder name the hub uses.
-            self.db.add(LeagueGame(league_id=row.id, folder=league.hub_folder, state="ready"))
+            # The hub's own game: its install, by the folder name the hub uses,
+            # and the golden image it was made from, so preflight holds its EXEs
+            # and GAME/ to that image.
+            self.db.add(LeagueGame(league_id=row.id, folder=league.hub_folder, state="ready",
+                                   image_id=self._image(league).id))
             self.db.commit()
 
             for index in league.members:

@@ -4,6 +4,26 @@ All notable changes to Nova Hub will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **Golden images.** A golden image is a clean, finished install of one game
+  version, made by `make_golden.py` from your own copy of the game: the donor's
+  league taken out (bbs.cfg, nodes file, DATA/, BULLETIN/, NETMAIL/ and the
+  rest), GAME/ regenerated with `-Y`, and a copy RESET as a throwaway league to
+  show it makes a game. It travels as a `.tar.gz` with a manifest of every file
+  and folder. New leagues' games will be made from these (the New League job
+  is next); the rig already makes every install from them.
+- **A Game Images page** (admin) lists the hub's images and the leagues made
+  from each, and takes new ones by upload, from a file dropped into
+  `[games] images`, or fetched from `[games] image_url` with the login in
+  `[games] image_credentials` (netrc format, readable by the hub's user only).
+  Every file is checked against the manifest before the hub keeps an image;
+  Check re-runs that, and an image no league uses can be deleted.
+
+### Changed
+- An image may no longer hold a link, or a file or folder its manifest does
+  not list; preflight and the import both refuse one. Image manifests list
+  folders too, so a missing empty folder is caught.
+
 ## [0.12.0] - 2026-11-03
 
 ### Added

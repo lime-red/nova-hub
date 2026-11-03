@@ -40,6 +40,7 @@ Uses session-based JWT stored in httpOnly cookies.
 - [Management API - Clients](#management-api---clients)
 - [Management API - Dashboard](#management-api---dashboard)
 - [Management API - Game Reset](#management-api---game-reset)
+- [Management API - Images](#management-api---images)
 - [Management API - Leagues](#management-api---leagues)
 - [Management API - Movements](#management-api---movements)
 - [Management API - Processing](#management-api---processing)
@@ -2161,6 +2162,187 @@ Successful Response
 
 
 **Content-Type:** `application/json`
+
+#### 422
+
+Validation Error
+
+
+**Content-Type:** `application/json`
+
+---
+
+## Management API - Images
+
+### GET `/management/api/v1/images`
+
+**List Images**
+
+The golden images the hub holds, newest first, with the leagues made from
+each; the archives dropped into `[games] images` that are waiting to be
+imported; and where the hub can fetch from, if anywhere.
+
+#### Responses
+
+#### 200
+
+Successful Response
+
+
+**Content-Type:** `application/json`
+
+---
+
+### POST `/management/api/v1/images/upload`
+
+**Upload Image**
+
+Take in an image archive made by make_golden.py. Every file is checked
+against the image's manifest before it is kept.
+
+**Returns:** the image, and whether it was new; 422 with the reason if it
+is refused (not an image archive, a file that does not match, a different
+image under a name already taken)
+
+### Request Body
+
+**Content-Type:** `multipart/form-data`
+
+#### Responses
+
+#### 200
+
+Successful Response
+
+
+**Content-Type:** `application/json`
+
+#### 422
+
+Validation Error
+
+
+**Content-Type:** `application/json`
+
+---
+
+### POST `/management/api/v1/images/import`
+
+**Import Waiting Image**
+
+Import an archive dropped into `[games] images`. It is checked as an
+upload is, and removed once the image is in.
+
+**Returns:** the image, and whether it was new; 404 if no such archive is
+waiting; 422 with the reason if it is refused (the archive is left there)
+
+### Request Body
+
+**Content-Type:** `application/json`
+
+#### Responses
+
+#### 200
+
+Successful Response
+
+
+**Content-Type:** `application/json`
+
+#### 422
+
+Validation Error
+
+
+**Content-Type:** `application/json`
+
+---
+
+### POST `/management/api/v1/images/fetch`
+
+**Fetch Image**
+
+Fetch an image archive by name from `[games] image_url`, with the login in
+`[games] image_credentials`, and import it as an upload is.
+
+**Returns:** the image, and whether it was new; 409 if the hub has no
+image_url or its login file is refused; 502 if the fetch failed; 422 if the
+name is not an image archive's, or the archive is refused
+
+### Request Body
+
+**Content-Type:** `application/json`
+
+#### Responses
+
+#### 200
+
+Successful Response
+
+
+**Content-Type:** `application/json`
+
+#### 422
+
+Validation Error
+
+
+**Content-Type:** `application/json`
+
+---
+
+### POST `/management/api/v1/images/{image_id}/check`
+
+**Check Image**
+
+Check an image's files and folders against its manifest.
+
+**Returns:** the problems found; none means it is as it was made
+
+#### Parameters
+
+**image_id**
+  - Type: `integer`
+  - Location: path *(required)*
+
+#### Responses
+
+#### 200
+
+Successful Response
+
+
+**Content-Type:** `application/json`
+
+#### 422
+
+Validation Error
+
+
+**Content-Type:** `application/json`
+
+---
+
+### DELETE `/management/api/v1/images/{image_id}`
+
+**Delete Image**
+
+Delete an image no league's game was made from, files and all.
+
+**Returns:** 204; 409 if a league uses it
+
+#### Parameters
+
+**image_id**
+  - Type: `integer`
+  - Location: path *(required)*
+
+#### Responses
+
+#### 204
+
+Successful Response
+
 
 #### 422
 

@@ -82,6 +82,11 @@ timeout = 300
 root = "/home/novahub/.dosemu/drive_c/leagues"
 drive_c = "/home/novahub/.dosemu/drive_c"
 # images = "/home/novahub/nova-data/images"
+# Where to fetch golden images from (the Images page's Fetch), and a
+# netrc-format file with the login for that host. The file must be readable by
+# the hub's user only. Leave both out to take images by upload or drop-in.
+# image_url = "https://nexus.example/repository/sr-private/golden"
+# image_credentials = "/home/novahub/.netrc-images"
 
 [database]
 path = "./data/nova-hub.db"

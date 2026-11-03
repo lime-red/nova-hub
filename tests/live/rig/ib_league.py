@@ -433,6 +433,18 @@ class IbLeague:
             "SELECT filename, source_bbs_index, dest_bbs_index, sequence_number, checksum,"
             " processed_at, downloaded_at FROM packets ORDER BY id")]
 
+    def member_status(self) -> list:
+        """Each member's League Status, as the league page computes it."""
+        from backend.models.database import League
+        from backend.services import game_status
+
+        db = self._hub.db
+        db.expire_all()
+        league = db.get(League, self.league_row_id)
+        return [s for s in game_status.for_league(db, league, game_status.hub_index_from(self.config),
+                                                  self.data_dir, self.config)
+                if not s.is_hub]
+
     def runs(self) -> list:
         return [dict(r) for r in self._query(
             "SELECT id, status, error_message FROM processing_runs ORDER BY id")]

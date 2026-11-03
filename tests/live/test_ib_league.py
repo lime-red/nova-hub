@@ -107,6 +107,20 @@ def test_boards_join_and_settle_into_the_league_rules(ib_league):
         assert sorted(r["dest_bbs_index"] for r in rows) == ["02", "03"], (filename, rows)
         assert all(r["downloaded_at"] for r in rows), (filename, rows)
 
+    # 4. The console sees it: every member's League Status is ok, the hub game
+    #    having heard from each (prod 015I, Nov 2026, said "No TimeCheck
+    #    answered" of a board whose packets carried only echoes). And the hub's
+    #    watcher logged each board's state when the server started, before any
+    #    board had polled: the line the OpenObserve alert matches.
+    statuses = league.member_status()
+    assert sorted(s.member.bbs_index for s in statuses) == sorted(league.boards)
+    for s in statuses:
+        assert (s.state, s.state_detail) == ("ok", None), s.member.bbs_index
+        assert s.game.heard, s.member.bbs_index
+    log = league.hub_log()
+    for board in boards:
+        assert f"Member status: 900I {board.index:02X} " in log, log[-3000:]
+
 
 def test_a_packet_between_members_goes_straight_to_the_member(ib_league):
     league = ib_league

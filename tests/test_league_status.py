@@ -372,6 +372,48 @@ def test_ib_with_no_answer_is_silent(world):
     assert _status(w, "902I").state == "game_silent"
 
 
+def test_ib_is_heard_by_an_echo_alone(world):
+    # Prod 015I, Nov 2026: The Eclipse's packets carried its echoes of the hub's
+    # probes and no probe of its own, and the console said nothing was answered.
+    w = world
+    _poll(w, w.ib.id)
+    arrived = utcnow() - dt.timedelta(minutes=20)
+    _ib_packet(w, "L902-2-1-1.BRP", "02", "01", {
+        "FromBoard": "Alpha #1", "ToBoard": "Nova Hub", "Version": "0.2.6",
+        "TimeChecks": [{"From": "Nova Hub", "To": "Alpha #1", "Sent": "2026-11-01T03:55:41Z"}]})
+    w.db.query(Packet).filter(Packet.filename == "L902-2-1-1.BRP").update({"uploaded_at": arrived})
+    w.db.commit()
+    s = _status(w, "902I")
+    assert s.game.heard and s.game.last_heard == arrived    # its arrival, not the hub's clock
+    assert s.state == "ok"
+
+
+def test_ib_is_silent_after_hours_not_days(world):
+    # IB answers on every planetary run (minutes apart), so the BRE allowance of
+    # two days would hide a board whose maintenance has stopped.
+    w = world
+    _poll(w, w.ib.id)
+    answered = utcnow() - game_status.IB_SILENT_AFTER - dt.timedelta(minutes=5)
+    _ib_packet(w, "L902-2-1-1.BRP", "02", "01", {
+        "FromBoard": "Alpha #1", "Version": "0.2.6",
+        "TimeChecks": [{"From": "Alpha #1", "To": "Nova Hub",
+                        "Sent": answered.strftime("%Y-%m-%dT%H:%M:%SZ")}]})
+    s = _status(w, "902I")
+    assert s.state == "game_silent" and s.state_detail == "last heard 3 h ago"
+
+
+def test_ib_is_heard_by_the_hub_games_round_trip_when_its_packets_are_older(world):
+    w = world
+    _poll(w, w.ib.id)
+    _ib_packet(w, "L902-2-1-1.BRP", "02", "01",
+               {"FromBoard": "Alpha #1", "Version": "0.2.6", "TimeChecks": []})
+    seen = (utcnow() - dt.timedelta(minutes=10)).replace(microsecond=0)
+    config = _hub_game(w, {"TravelSeen": {"Alpha #1": seen.strftime("%Y-%m-%dT%H:%M:%SZ")}})
+    s = _ib_status(w, config)
+    assert s.game.heard and s.game.last_heard == seen
+    assert s.state == "ok"
+
+
 def _hub_game(w, world, rules=None, held=()):
     """The hub's own IB game for 902I, and a config naming it."""
     from tests.conftest import install_game

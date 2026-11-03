@@ -43,6 +43,10 @@ OFFLINE_AFTER = dt.timedelta(hours=1)        # no token at all
 STOPPED_AFTER = dt.timedelta(hours=1)        # no listing of this league
 BACKLOG_AFTER = dt.timedelta(days=1)         # oldest waiting packet
 SILENT_AFTER = dt.timedelta(days=2)          # the game's last recon from the board
+# IB runs its planetary step every few minutes (the docs say 15), and every run
+# answers the probes waiting for it, so hours without one mean its maintenance
+# is not running. Two days, BRE's figure, hid a board whose maintenance never ran.
+IB_SILENT_AFTER = dt.timedelta(hours=3)
 WAITING_LISTED = 20                          # packets named in the expandable list
 IB_PACKETS_READ = 5                          # newest board->hub packets searched
 NOTICE_KEPT = 500                            # characters of an IB bounce shown
@@ -269,8 +273,18 @@ def _ib_view(db: Session, league: League, board: str, hub: str,
             continue
         name = p.get("FromBoard")
         view.ruleset = view.ruleset or ib_packet._str(p.get("Ruleset"))
-        replies = [s for s in (_sent(i) for i in ib_packet._items(p, "TimeChecks")
-                               if i.get("From") == name) if s]
+        # Two kinds of TimeCheck show the board's game ran: a probe of its own
+        # (From is the board; Sent is its own clock, so the moment it ran), and
+        # its echo of a probe sent to it (To is the board; Sent is the prober's
+        # clock, so the packet's arrival is the nearest the hub knows, and is
+        # used only when the packet has no probe of its own). A board whose
+        # recent packets carry only echoes was answering all along (prod 015I,
+        # Nov 2026: The Eclipse sent echoes and no probes).
+        checks = ib_packet._items(p, "TimeChecks")
+        replies = [s for s in (_sent(i) for i in checks if i.get("From") == name) if s]
+        if not replies and packet.uploaded_at and any(
+                i.get("To") == name and i.get("From") != name for i in checks):
+            replies = [packet.uploaded_at]
         if view.version is None:
             view.version = ib_packet._str(p.get("Version"))
             view.as_of = packet.uploaded_at
@@ -311,6 +325,12 @@ def _ib_view(db: Session, league: League, board: str, hub: str,
             view.protocol_held = b.protocol_held
             view.round_trip_days = b.round_trip_days
             view.round_trip_seen = b.round_trip_seen
+            # The hub game's own record of the last probe the board answered:
+            # it survives the board's packets falling outside the newest few.
+            if b.round_trip_seen and (view.last_heard is None
+                                      or b.round_trip_seen > view.last_heard):
+                view.heard = True
+                view.last_heard = b.round_trip_seen
         # Bounced since: the board has been heard since and the notice is stale.
         if view.notice and view.notice_at and view.last_accepted \
                 and view.last_accepted > view.notice_at and not view.held:
@@ -390,7 +410,8 @@ def game_state(s: LeagueStatus, is_hub: bool) -> Tuple[str, Optional[str]]:
         # run is not the board's fault. A TimeCheck answer is as of the packet
         # that carried it, so measure from now.
         ref = g.as_of if g.source == "bbsinfo" else utcnow()
-        if g.last_heard and ref and ref - g.last_heard > SILENT_AFTER:
+        silent_after = SILENT_AFTER if g.source == "bbsinfo" else IB_SILENT_AFTER
+        if g.last_heard and ref and ref - g.last_heard > silent_after:
             return "game_silent", (f"last heard {_ago(g.last_heard, ref)} "
                                    + ("before the last run" if g.source == "bbsinfo" else "ago"))
         if g.routing_missing:

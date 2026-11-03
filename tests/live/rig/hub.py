@@ -117,9 +117,7 @@ class TestHub:
         Returns {bbs_index: (client_id, client_secret)} for the non-hub nodes, so
         a scenario can authenticate as a real BBS.
         """
-        from backend.models.database import (
-            Client, FtnAddress, League as LeagueRow, LeagueGame, LeagueMembership,
-        )
+        from backend.models.database import League as LeagueRow, LeagueGame
 
         creds = {}
         for league_id in (league_ids or LEAGUES):
@@ -139,36 +137,44 @@ class TestHub:
             self.db.add(LeagueGame(league_id=row.id, folder=league.hub_folder, state="ready",
                                    image_id=self._image(league).id))
             self.db.commit()
+            creds.update(self.join(row, league))
+        return creds
 
-            for index in league.members:
-                if index == HUB_INDEX:
-                    continue
-                node = NODES[index]
-                client = (
-                    self.db.query(Client)
-                    .filter(Client.client_id == node.user)
-                    .first()
-                )
-                if client is None:
-                    client = Client(
-                        client_id=node.user,
-                        client_secret=f"{node.user}-secret",
-                        bbs_name=node.name,
-                        is_active=True,
-                    )
-                    self.db.add(client)
-                    self.db.commit()
-                    self.db.refresh(client)
-                creds[index] = (client.client_id, f"{node.user}-secret")
+    def join(self, row, league):
+        """Make the league's nodes, other than the hub, its members, as the
+        member pages do: a client per node user, one membership each."""
+        from backend.models.database import Client, FtnAddress, LeagueMembership
 
-                self.db.add(LeagueMembership(
-                    client_id=client.id,
-                    league_id=row.id,
-                    bbs_index=index,
-                    ftn_address=FtnAddress.get_or_create(self.db, client.id, league.fido_for(index)),
+        creds = {}
+        for index in league.members:
+            if index == HUB_INDEX:
+                continue
+            node = NODES[index]
+            client = (
+                self.db.query(Client)
+                .filter(Client.client_id == node.user)
+                .first()
+            )
+            if client is None:
+                client = Client(
+                    client_id=node.user,
+                    client_secret=f"{node.user}-secret",
+                    bbs_name=node.name,
                     is_active=True,
-                ))
-            self.db.commit()
+                )
+                self.db.add(client)
+                self.db.commit()
+                self.db.refresh(client)
+            creds[index] = (client.client_id, f"{node.user}-secret")
+
+            self.db.add(LeagueMembership(
+                client_id=client.id,
+                league_id=row.id,
+                bbs_index=index,
+                ftn_address=FtnAddress.get_or_create(self.db, client.id, league.fido_for(index)),
+                is_active=True,
+            ))
+        self.db.commit()
         return creds
 
     # -- actions ----------------------------------------------------------

@@ -111,13 +111,18 @@ def _verify(league: League, node: Node, target: Path):
         )
 
 
-def provision(league: League, node: Node, log_dir: Path = LOGS) -> Path:
+def provision(league: League, node: Node, log_dir: Path = LOGS,
+              nodes_file: Path = None) -> Path:
+    """`nodes_file` is a nodelist to install as it is, in place of the one the
+    rig writes: a member of a league the hub set up takes the hub's."""
     target = league.install_path(node)
     log_dir.mkdir(parents=True, exist_ok=True)
     print(f"== provisioning {target} ({league.league_id} node {node.index:02d})")
 
     _unpack(league, node, target)
     _write_config(league, node, target)
+    if nodes_file:
+        (target / league.g.nodes_file).write_bytes(Path(nodes_file).read_bytes())
     reset(target, RECIPES[league.game], _dos(node, log_dir),
           log_dir / f"prov_{league.dirname(node.index)}_reset.log")
 
@@ -134,14 +139,21 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("league_id", help='e.g. "900B"')
     ap.add_argument("node_index", type=int)
+    ap.add_argument("--members", help="for a league not in rig.layout: its node "
+                                      "indices, hub first, e.g. 1,2,3")
+    ap.add_argument("--nodes-file", help="install this nodelist instead of writing one")
     a = ap.parse_args()
 
-    league = LEAGUES[a.league_id]
+    if a.members:
+        league = League(a.league_id[:3], a.league_id[3:],
+                        tuple(int(i) for i in a.members.split(",")))
+    else:
+        league = LEAGUES[a.league_id]
     node = NODES[a.node_index]
     if os.getenv("USER") not in (node.user, None):
         print(f"warning: provisioning {node.user}'s install as {os.getenv('USER')}",
               file=sys.stderr)
-    provision(league, node)
+    provision(league, node, nodes_file=a.nodes_file)
 
 
 if __name__ == "__main__":

@@ -27,7 +27,8 @@ All notable changes to Nova Hub will be documented in this file.
   Coordinator's data folder, its board key and Coordinator key. The game is
   then *installed*, and nothing runs in it: a packet for it waits, and no
   schedule touches it. A setup that fails removes the folder it made and can
-  be tried again.
+  be tried again, or the league deleted. A number need only be new for its
+  game: 016B and 016F may both exist, as 015B, 015F and 015I do.
 - **A new league's first reset** is sent from Game Reset as any other, with
   settings the admin chose, so no defaults reach the league's history. It has
   no backup (the image is its way back). Its run after the reset is a canary
@@ -47,6 +48,7 @@ All notable changes to Nova Hub will be documented in this file.
   no longer refuses a league with no members.
 - The Leagues page's Add League, which made a league with no game, is now
   New League.
+- A league can't be deleted while its game is being set up or reset.
 - An image may no longer hold a link, or a file or folder its manifest does
   not list; preflight and the import both refuse one. Image manifests list
   folders too, so a missing empty folder is caught.

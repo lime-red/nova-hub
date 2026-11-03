@@ -131,7 +131,7 @@ async def new_league_form(
         hub_index=hub_index(config),
         images=[SetupImage(id=i.id, dirname=i.dirname, game_type=i.game_type,
                            version=i.version) for i in images],
-        used_numbers=sorted({l.league_id for l in db.query(League).all()}),
+        used_ids=sorted(l.full_id for l in db.query(League).all()),
         problems=problems,
     )
 
@@ -677,6 +677,15 @@ async def delete_league(
             status_code=400,
             detail=f"Confirmation name does not match. Expected: {expected_name}",
         )
+
+    # A setup or reset under way is still writing the game's rows and folder.
+    from backend.models.database import GameReset
+    busy = (db.query(GameReset)
+            .filter(GameReset.league_id == league.id, GameReset.status == "applying").first())
+    if busy is not None:
+        what = "set up" if busy.kind == "setup" else "reset"
+        raise HTTPException(status_code=409,
+                            detail=f"{league.full_id} is being {what}; delete it when that ends")
 
     league_name = league.full_id
     league_id_str = league.league_id

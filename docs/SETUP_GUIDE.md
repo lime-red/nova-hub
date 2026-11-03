@@ -177,8 +177,8 @@ A league is set up from the console: **Leagues → New League**. It needs a
 golden image of the game on the hub first (**Game Images**; see
 [DOSEMU_SETUP.md](DOSEMU_SETUP.md#golden-images)).
 
-1. **Set Up**: the league number (unused by any league of any game), the game,
-   a name and the image. The hub makes the league, disabled, and its game
+1. **Set Up**: the league number (unused by any league of the same game:
+   015B and 015F may both exist), the game, a name and the image. The hub makes the league, disabled, and its game
    from the image in `[games] root`, writes its bbs.cfg and a nodelist with
    the hub alone, and runs preflight. The game is then *installed*: nothing
    runs in it yet.

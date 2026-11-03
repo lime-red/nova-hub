@@ -4707,18 +4707,18 @@
             "title": "Problems",
             "type": "array"
           },
-          "used_numbers": {
+          "used_ids": {
             "items": {
               "type": "string"
             },
-            "title": "Used Numbers",
+            "title": "Used Ids",
             "type": "array"
           }
         },
         "required": [
           "hub_index",
           "images",
-          "used_numbers"
+          "used_ids"
         ],
         "title": "NewLeagueForm",
         "type": "object"

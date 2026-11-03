@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, computed, watch } from 'vue'
+import { onMounted, onUnmounted, ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useLeaguesStore, type LeagueMember } from '@/stores/leagues'
 import { useAuthStore } from '@/stores/auth'
@@ -7,7 +7,7 @@ import AppLayout from '@/components/AppLayout.vue'
 import ResetHistory from '@/components/ResetHistory.vue'
 import LeagueStatusTable from '@/components/LeagueStatusTable.vue'
 import IbHubGame from '@/components/IbHubGame.vue'
-import { gameResetApi, leaguesApi, type LeagueStatusResponse, type ResetField } from '@/services/api'
+import { apiError, gameResetApi, leaguesApi, type LeagueStatusResponse, type ResetField } from '@/services/api'
 import { gameForLetter, gameTypeName } from '@/games'
 
 const route = useRoute()
@@ -251,11 +251,50 @@ async function handleRemoveMember(clientId: number) {
   }
 }
 
+// A league with a game of the hub's is enabled only once that game is ready
+// and passed preflight; the hub refuses otherwise, and says why.
+const toggleError = ref<string | null>(null)
+const enableBlocked = computed(() => {
+  const l = leaguesStore.currentLeague
+  return !!l && !l.is_active && !!l.game && !l.game.can_enable
+})
+
 async function handleToggleActive() {
   if (leaguesStore.currentLeague) {
-    await leaguesStore.updateLeague(leagueId.value, {
+    toggleError.value = null
+    const ok = await leaguesStore.updateLeague(leagueId.value, {
       is_active: !leaguesStore.currentLeague.is_active
     })
+    if (!ok) toggleError.value = leaguesStore.error
+  }
+}
+
+// New League's setup runs in the background: while the game is being made,
+// the page follows it.
+let setupPoll: ReturnType<typeof setInterval> | null = null
+watch(() => leaguesStore.currentLeague?.game?.state, (state) => {
+  if (state === 'provisioning' && !setupPoll) {
+    setupPoll = setInterval(() => leaguesStore.loadLeague(leagueId.value), 3000)
+  } else if (state !== 'provisioning' && setupPoll) {
+    clearInterval(setupPoll)
+    setupPoll = null
+  }
+}, { immediate: true })
+onUnmounted(() => { if (setupPoll) clearInterval(setupPoll) })
+
+const settingUpAgain = ref(false)
+const setupAgainError = ref<string | null>(null)
+
+async function handleSetUpAgain() {
+  settingUpAgain.value = true
+  setupAgainError.value = null
+  try {
+    await leaguesApi.setUpAgain(leagueId.value)
+    await leaguesStore.loadLeague(leagueId.value)
+  } catch (e: unknown) {
+    setupAgainError.value = apiError(e, 'Could not set the league up again.')
+  } finally {
+    settingUpAgain.value = false
   }
 }
 
@@ -305,6 +344,8 @@ async function handleDelete() {
             <button
               class="btn"
               :class="leaguesStore.currentLeague.is_active ? 'btn-secondary' : 'btn-primary'"
+              :disabled="enableBlocked"
+              :title="enableBlocked ? 'The hub’s game must be ready, and pass preflight, first' : ''"
               @click="handleToggleActive"
             >
               {{ leaguesStore.currentLeague.is_active ? 'Disable' : 'Enable' }}
@@ -312,6 +353,8 @@ async function handleDelete() {
             <button class="btn btn-danger" @click="openDeleteModal">Delete</button>
           </div>
         </header>
+
+        <div v-if="toggleError" class="alert alert-error mb-4">{{ toggleError }}</div>
 
         <div class="content-grid">
           <!-- Info Card -->
@@ -471,6 +514,34 @@ async function handleDelete() {
                   </dd>
                 </div>
               </dl>
+              <template v-if="leaguesStore.currentLeague.game">
+                <div v-if="leaguesStore.currentLeague.game.state === 'provisioning'" class="alert alert-warning mt-2">
+                  The hub is making this league's game from its image. This page follows it.
+                </div>
+                <div v-else-if="leaguesStore.currentLeague.game.state === 'installed'" class="alert alert-warning mt-2">
+                  Set up. Nothing runs in the game until its first reset: choose its settings on
+                  <router-link :to="`/leagues/${leagueId}/reset`">Game reset</router-link> and perform it.
+                  That run is checked against every other league's files; once it passes, the
+                  game is ready and the league can be enabled.
+                </div>
+                <div v-else-if="leaguesStore.currentLeague.game.state === 'failed'" class="alert alert-error mt-2">
+                  <div>The game could not be set up, and the folder it was making was removed.</div>
+                  <div v-if="leaguesStore.currentLeague.game.setup_error">{{ leaguesStore.currentLeague.game.setup_error }}</div>
+                  <button class="btn btn-secondary btn-sm mt-2" :disabled="settingUpAgain" @click="handleSetUpAgain">
+                    {{ settingUpAgain ? 'Starting…' : 'Set up again' }}
+                  </button>
+                </div>
+                <div v-else-if="!leaguesStore.currentLeague.is_active && leaguesStore.currentLeague.game.can_enable"
+                     class="alert alert-success mt-2">
+                  The game is ready. Enable the league to have it run, then add its members and
+                  generate its nodelist.
+                </div>
+                <p v-if="leaguesStore.currentLeague.game.setup_id" class="form-hint mt-2">
+                  <a href="#" @click.prevent="openReset(leaguesStore.currentLeague.game.setup_id)">The setup's transcript</a>
+                  is in the league's reset history.
+                </p>
+              </template>
+              <div v-if="setupAgainError" class="alert alert-error mt-2">{{ setupAgainError }}</div>
               <div v-if="preflightError" class="alert alert-error mt-2">{{ preflightError }}</div>
               <div v-if="leaguesStore.currentLeague.game?.preflight_problems.length" class="alert alert-error mt-2">
                 <div>The game could touch the wrong packets, or not run:</div>

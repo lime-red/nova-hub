@@ -34,10 +34,12 @@ const Signal = computed(() => signal.value[0].toUpperCase() + signal.value.slice
 const emit = defineEmits<{ open: [resetId: number]; finished: [] }>()
 
 const SHOWN = 2
-// An IB league's other orders, listed among its resets.
+// An IB league's other orders, and a new league's setup, listed among its resets.
 const ORDER_NAMES: Record<string, string> = {
-  rules: 'Rules changed', freeze: 'Frozen', thaw: 'Thawed'
+  rules: 'Rules changed', freeze: 'Frozen', thaw: 'Thawed', setup: 'Set up'
 }
+// Orders that set no settings.
+const NO_SETTINGS = ['freeze', 'thaw', 'setup']
 
 const rows = ref<ResetSummary[]>([])
 const loading = ref(true)
@@ -82,7 +84,7 @@ function display(f: ResetField, v: ResetValue | undefined): string {
 function diff(row: ResetSummary) {
   const i = rows.value.indexOf(row)
   const before = rows.value.slice(i + 1)
-    .find((r) => r.status === 'applied' && r.kind !== 'freeze' && r.kind !== 'thaw')
+    .find((r) => r.status === 'applied' && !NO_SETTINGS.includes(r.kind))
   return props.fields
     .filter((f) => f.id in row.settings)
     .filter((f) => !before || !(f.id in before.settings) || before.settings[f.id] !== row.settings[f.id])
@@ -155,6 +157,7 @@ onMounted(load)
                 <td>
                   <span v-if="r.status === 'applying'" class="badge badge-info">under way</span>
                   <span v-else-if="r.status === 'failed'" class="badge badge-danger">failed</span>
+                  <span v-else-if="r.kind === 'setup'" class="badge badge-success">installed</span>
                   <span v-else-if="r.confirmed === false" class="badge badge-danger">{{ Signal }} disagrees</span>
                   <span v-else-if="r.confirmed" class="badge badge-success">confirmed</span>
                   <span v-else-if="r.source === 'console'" class="badge badge-warning">awaiting {{ signal }}</span>
@@ -176,7 +179,7 @@ onMounted(load)
                   <p v-if="r.notes" class="notes">
                     <strong>{{ r.kind === 'freeze' ? 'Callers were told:' : 'Notes:' }}</strong> {{ r.notes }}
                   </p>
-                  <template v-if="r.kind !== 'freeze' && r.kind !== 'thaw'">
+                  <template v-if="!NO_SETTINGS.includes(r.kind)">
                   <h4>What it set</h4>
                   <table class="table diff">
                     <thead>

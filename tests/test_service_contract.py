@@ -113,6 +113,7 @@ def far_from_utc():
 LOCAL_TIME_OK = {
     "backend/services/dosemu_runner.py",
     "backend/services/game_reset/perform.py",
+    "backend/services/league_setup.py",  # transcript times, as perform.py's
     "backend/api/management/game_reset.py",
 }
 

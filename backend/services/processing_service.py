@@ -171,18 +171,25 @@ class ProcessingService:
     def dosemu_runner(self, runner: DosemuRunner):
         self._dosemu_runner = runner
 
-    async def process_batch(self, also: tuple = ()) -> Optional[ProcessingRun]:
+    async def process_batch(self, also: tuple = (), first_reset: bool = False
+                            ) -> Optional[ProcessingRun]:
         """Process all unprocessed packets, and return the run (None if there
         was nothing to run).
 
         `also` names leagues, as (game code, league number) like ("BRE", "015"),
         whose game runs even with no packets waiting: a game reset's first
         PLANETARY, which is what sends the league its Game Start.
+
+        `first_reset`: the run is a new league's first, its canary run
+        (league_setup). Only the `also` leagues run, installed as they still
+        are, and every packet waiting for any league waits on: the other
+        leagues' folders must not change while the new game runs.
         """
         logger.info("Starting batch...")
 
         # Get unprocessed packets
-        packets = self.db.query(Packet).filter(Packet.processed_at == None).all()
+        packets = ([] if first_reset else
+                   self.db.query(Packet).filter(Packet.processed_at == None).all())
 
         if not packets and not also:
             logger.info("No packets to process")
@@ -224,7 +231,8 @@ class ProcessingService:
             # runs it even in a league not yet enabled.
             league = self._league(*key)
             install = league_game(self.config, league) if league else None
-            if install is None or install.state != "ready":
+            allowed = ("ready", "installed") if first_reset else ("ready",)
+            if install is None or install.state not in allowed:
                 logger.warning(f"Not running {key[1]} {key[0]}: its game is not ready")
                 continue
             groups.setdefault(tuple(key), [])
@@ -349,8 +357,10 @@ class ProcessingService:
             if league_obj:
                 provider_for(league_obj.game_type).generate_nodelist(self.db, self.config, league_obj)
 
-        # Always scan outbound folders for nodelists
-        await self.scan_outbound_folders()
+        # Always scan outbound folders for nodelists, but for a canary run,
+        # which must leave the other leagues' folders as they are.
+        if not first_reset:
+            await self.scan_outbound_folders()
         return run
 
 

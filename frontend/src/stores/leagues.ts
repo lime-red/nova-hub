@@ -81,6 +81,11 @@ export interface LeagueGame {
   preflight_ok: boolean | null  // null until preflight has run
   preflight_at: string | null
   preflight_problems: string[]
+  // The latest setup (New League), an order in the league's reset history
+  setup_id: number | null
+  setup_status: 'applying' | 'applied' | 'failed' | null
+  setup_error: string | null
+  can_enable: boolean  // ready, and the latest preflight passed
 }
 
 export interface NodelistInfo {

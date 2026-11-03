@@ -62,10 +62,13 @@ async def lifespan(app: FastAPI):
     # Automatic migrations disabled to prevent startup hangs
 
     # A game reset can't survive a restart: settle any left half-done, putting
-    # the game back if the hub stopped with its editor open.
+    # the game back if the hub stopped with its editor open. Nor can a new
+    # league's setup: the folder it was making goes.
+    from backend.services import league_setup
     from backend.services.game_reset.perform import recover
     recovery_db = get_session()
     try:
+        league_setup.recover(recovery_db, config._raw)
         recover(recovery_db, config._raw)
     except Exception as e:
         logger.exception(f"Could not settle interrupted game resets: {e}")

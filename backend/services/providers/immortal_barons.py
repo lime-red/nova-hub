@@ -307,6 +307,9 @@ class ImmortalBaronsProvider(GameProvider):
         """ibnodes.dat for the league, or None and why not.
 
         No HOST lines: the hub does the routing, so the game must see a mesh.
+        With no members yet it is the hub alone, which a new league's game
+        starts with; the Coordinator resets and runs on it (tried on the rig,
+        2026-11-03).
         """
         problems = []
         hub = hub_hex(config)
@@ -314,8 +317,6 @@ class ImmortalBaronsProvider(GameProvider):
             return None, [f"{league.full_id}: the League Coordinator is node 1, and the hub "
                           f"is [hub] bbs_index {hub}; Immortal Barons needs the hub at 1"]
         members = self._members(db, league, hub)
-        if not members:
-            return None, [f"{league.full_id}: no active members with a BBS index"]
 
         hub_config = config.get("hub", {})
         install = league_game(config, league)

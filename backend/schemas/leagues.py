@@ -126,6 +126,47 @@ class LeagueGameInfo(BaseModel):
     preflight_ok: Optional[bool] = None  # None until preflight has run
     preflight_at: Optional[datetime] = None
     preflight_problems: List[str] = []
+    # The league's latest setup (New League), if it had one: a reset-history
+    # order of kind "setup", with its status and, failed, why.
+    setup_id: Optional[int] = None
+    setup_status: Optional[str] = None  # applying, applied or failed
+    setup_error: Optional[str] = None
+    can_enable: bool = False  # ready, and the latest preflight passed
+
+
+class NewLeague(BaseModel):
+    """New League's form: what Set Up makes the league and its game from"""
+    league_id: str = Field(min_length=3, max_length=3)  # three digits, unused by any game
+    game_type: str = Field(min_length=1, max_length=1)  # B, F or I
+    name: str = Field(min_length=1, max_length=100)
+    description: Optional[str] = None
+    hub_fidonet_address: Optional[str] = None  # default <n>:<n>/<hub index>
+    image_id: Optional[int] = None  # default the game's newest image
+
+
+class SetUpAgain(BaseModel):
+    image_id: Optional[int] = None  # default the image it was set up from
+
+
+class SetupImage(BaseModel):
+    id: int
+    dirname: str
+    game_type: str
+    version: str
+
+
+class NewLeagueForm(BaseModel):
+    """What New League's form needs from the hub"""
+    hub_index: int
+    images: List[SetupImage]  # newest first
+    used_numbers: List[str]  # every league number in use, of any game
+    problems: List[str] = []  # why Set Up cannot work on this hub, if anything
+
+
+class SetupStarted(BaseModel):
+    league_id: int  # the new league's database id
+    full_id: str
+    setup_id: int  # its order, in the league's reset history
 
 
 class LeagueDetailResponse(BaseModel):

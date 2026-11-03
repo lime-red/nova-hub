@@ -8,7 +8,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 from sqlalchemy import exists, or_, text
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 
 from backend.core.config import get_config
 from backend.core.database import get_db
@@ -41,7 +41,12 @@ from backend.schemas.leagues import (
     LeagueStats,
     LeagueUpdate,
     MemberResponse,
+    NewLeague,
+    NewLeagueForm,
     NodelistInfo,
+    SetupImage,
+    SetupStarted,
+    SetUpAgain,
     UpdateMemberRequest,
 )
 
@@ -98,6 +103,114 @@ async def list_leagues(
         )
 
     return league_list
+
+
+@router.get("/new", response_model=NewLeagueForm, summary="New League's Form")
+async def new_league_form(
+    current_user: SysopUser = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    What New League's form offers (admin only): the images a league's game can
+    be made from, newest first; the league numbers already in use, of any game;
+    and why Set Up cannot work on this hub, if anything ([games] root unset,
+    say).
+    """
+    from backend.models.database import GameImage
+    from backend.services.league_games import games_config
+    from backend.services.league_setup import hub_index
+
+    config = get_config()._raw
+    problems = []
+    if games_config(config).root is None:
+        problems.append("[games] root is not set in config.toml, so the hub has nowhere to "
+                        "put a league's game.")
+    images = (db.query(GameImage)
+              .order_by(GameImage.created_at.desc(), GameImage.id.desc()).all())
+    return NewLeagueForm(
+        hub_index=hub_index(config),
+        images=[SetupImage(id=i.id, dirname=i.dirname, game_type=i.game_type,
+                           version=i.version) for i in images],
+        used_numbers=sorted({l.league_id for l in db.query(League).all()}),
+        problems=problems,
+    )
+
+
+@router.post("/setup", response_model=SetupStarted, status_code=202, summary="Set Up a New League")
+async def set_up_league(
+    body: NewLeague,
+    http_request: Request,
+    current_user: SysopUser = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    Make a new league and its game (admin only): the league, disabled; and the
+    hub's game for it, copied from a golden image, its bbs.cfg written and a
+    nodelist with the hub alone put in it, then checked by preflight.
+
+    Answers 202 at once. The setup is an order in the league's reset history
+    (kind "setup"); follow it with `GET /leagues/{id}/resets/{setup_id}`, or
+    the league's `game.state`: `provisioning`, then `installed`, or `failed`
+    with the folder it made removed.
+
+    Nothing runs in the game until its first reset, sent from Game Reset with
+    settings the admin chose; that makes it `ready`. The league can be enabled
+    only then.
+
+    409: the number is used by a league of any game, the folder already
+    exists, the hub address is taken, or a reset is under way. 422: anything
+    else the form got wrong, or no usable image.
+    """
+    from backend.services import league_setup
+
+    config = get_config()._raw
+    try:
+        order = league_setup.start(
+            db, config, number=body.league_id, game_type=body.game_type.upper(),
+            name=body.name, hub_address=body.hub_fidonet_address, image_id=body.image_id,
+            username=current_user.username, description=body.description)
+    except league_setup.SetupRefused as e:
+        db.rollback()
+        raise HTTPException(status_code=e.status, detail=str(e))
+    league = order.league or db.get(League, order.league_id)
+    audit.record(db, "league.set_up", actor=current_user, target=league,
+                 detail=f"{league.name}, from {league.install.image.dirname}", request=http_request)
+    db.commit()
+    league_setup.schedule(order.id, config)
+    logger.info(f"Setting up {league.full_id} for {current_user.username}")
+    return SetupStarted(league_id=league.id, full_id=league.full_id, setup_id=order.id)
+
+
+@router.post("/{league_id}/setup", response_model=SetupStarted, status_code=202,
+             summary="Set Up Again")
+async def set_up_again(
+    league_id: int,
+    body: SetUpAgain,
+    http_request: Request,
+    current_user: SysopUser = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    Set up a league whose setup failed, once the cause is fixed (admin only).
+    As Set Up, from the same image unless another is given. 409 unless the
+    league's game is `failed`.
+    """
+    from backend.services import league_setup
+
+    league = db.query(League).filter(League.id == league_id).first()
+    if not league:
+        raise HTTPException(status_code=404, detail="League not found")
+    config = get_config()._raw
+    try:
+        order = league_setup.again(db, config, league, current_user.username, body.image_id)
+    except league_setup.SetupRefused as e:
+        db.rollback()
+        raise HTTPException(status_code=e.status, detail=str(e))
+    audit.record(db, "league.set_up", actor=current_user, target=league,
+                 detail=f"again, from {league.install.image.dirname}", request=http_request)
+    db.commit()
+    league_setup.schedule(order.id, config)
+    return SetupStarted(league_id=league.id, full_id=league.full_id, setup_id=order.id)
 
 
 @router.get("/{league_id}", response_model=LeagueDetailResponse, summary="Get League Details")
@@ -226,8 +339,13 @@ def _game_info(league: League) -> Optional[LeagueGameInfo]:
     row = league.install
     if row is None:
         return None
+    from backend.models.database import GameReset
+
     install = league_game(get_config()._raw, league)
     image = row.image
+    setup = (object_session(league).query(GameReset)
+             .filter(GameReset.league_id == league.id, GameReset.kind == "setup")
+             .order_by(GameReset.id.desc()).first())
     return LeagueGameInfo(
         folder=row.folder,
         path=str(install.folder) if install else None,
@@ -237,7 +355,30 @@ def _game_info(league: League) -> Optional[LeagueGameInfo]:
         preflight_ok=row.preflight_ok,
         preflight_at=row.preflight_at.replace(tzinfo=timezone.utc) if row.preflight_at else None,
         preflight_problems=row.preflight_problems or [],
+        setup_id=setup.id if setup else None,
+        setup_status=setup.status if setup else None,
+        setup_error=setup.error if setup else None,
+        can_enable=row.state == "ready" and row.preflight_ok is True,
     )
+
+
+def _check_can_enable(league: League) -> None:
+    """A league with a game of the hub's is enabled only once that game is
+    ready and its latest preflight passed: before, it has no settings, or
+    something in it could touch another league."""
+    row = league.install
+    if row is None:
+        return
+    if row.state != "ready":
+        why = {"provisioning": "is still being set up",
+               "installed": "has had no reset yet: send its first from Game Reset",
+               "failed": "failed to set up: set it up again"}.get(row.state, f"is {row.state}")
+        raise HTTPException(status_code=409, detail=f"{league.full_id} can't be enabled: its "
+                                                    f"game {why}.")
+    if row.preflight_ok is not True:
+        raise HTTPException(status_code=409, detail=f"{league.full_id} can't be enabled until "
+                                                    f"its game passes preflight. Run Preflight "
+                                                    f"on the league page.")
 
 
 @router.post("/{league_id}/preflight", response_model=LeagueGameInfo, summary="Run Preflight")
@@ -455,6 +596,8 @@ async def update_league(
     if request.hub_routes_mail is not None:
         league.hub_routes_mail = request.hub_routes_mail
     if request.is_active is not None:
+        if request.is_active and not league.is_active:
+            _check_can_enable(league)
         league.is_active = request.is_active
 
     changes = [f"{f}: {old!r} -> {getattr(league, f)!r}"

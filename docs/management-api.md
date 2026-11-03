@@ -2427,6 +2427,105 @@ Validation Error
 
 ---
 
+### GET `/management/api/v1/leagues/new`
+
+**New League's Form**
+
+What New League's form offers (admin only): the images a league's game can
+be made from, newest first; the league numbers already in use, of any game;
+and why Set Up cannot work on this hub, if anything ([games] root unset,
+say).
+
+#### Responses
+
+#### 200
+
+Successful Response
+
+
+**Content-Type:** `application/json`
+
+---
+
+### POST `/management/api/v1/leagues/setup`
+
+**Set Up a New League**
+
+Make a new league and its game (admin only): the league, disabled; and the
+hub's game for it, copied from a golden image, its bbs.cfg written and a
+nodelist with the hub alone put in it, then checked by preflight.
+
+Answers 202 at once. The setup is an order in the league's reset history
+(kind "setup"); follow it with `GET /leagues/{id}/resets/{setup_id}`, or
+the league's `game.state`: `provisioning`, then `installed`, or `failed`
+with the folder it made removed.
+
+Nothing runs in the game until its first reset, sent from Game Reset with
+settings the admin chose; that makes it `ready`. The league can be enabled
+only then.
+
+409: the number is used by a league of any game, the folder already
+exists, the hub address is taken, or a reset is under way. 422: anything
+else the form got wrong, or no usable image.
+
+### Request Body
+
+**Content-Type:** `application/json`
+
+#### Responses
+
+#### 202
+
+Successful Response
+
+
+**Content-Type:** `application/json`
+
+#### 422
+
+Validation Error
+
+
+**Content-Type:** `application/json`
+
+---
+
+### POST `/management/api/v1/leagues/{league_id}/setup`
+
+**Set Up Again**
+
+Set up a league whose setup failed, once the cause is fixed (admin only).
+As Set Up, from the same image unless another is given. 409 unless the
+league's game is `failed`.
+
+#### Parameters
+
+**league_id**
+  - Type: `integer`
+  - Location: path *(required)*
+
+### Request Body
+
+**Content-Type:** `application/json`
+
+#### Responses
+
+#### 202
+
+Successful Response
+
+
+**Content-Type:** `application/json`
+
+#### 422
+
+Validation Error
+
+
+**Content-Type:** `application/json`
+
+---
+
 ### GET `/management/api/v1/leagues/{league_id}`
 
 **Get League Details**

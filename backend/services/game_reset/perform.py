@@ -5,12 +5,15 @@ In order, each step recorded in the row's `progress`:
   queued      the draft became this reset (status "applying")
   lock        the processing lock is held: no batch runs until the reset is done
   backup      the game folder is archived; the only way back once RESET has
-              been answered Y, which deletes GAME.DAT on the spot
+              been answered Y, which deletes GAME.DAT on the spot. A new
+              league's first reset records "image" instead: its way back is
+              its golden image
   editor      editor.EditorDriver types the draft into `<EXE> RESET`
   saved       the read-back matched, ESC saved, league-wide was answered Y
   processing  a PLANETARY run for the league, even with no packets waiting
   sent        that run went through: the Game Start (IB: the order) is on its
-              way to members
+              way to members. A first reset ends "ready" instead: its canary
+              run and preflight passed
 
 Anything that goes wrong before "saved" kills dosemu, puts the backup back
 byte for byte, and marks the reset failed with the driver's log. The draft's
@@ -18,6 +21,14 @@ settings come back as a new draft, so nothing typed is lost.
 
 One reset runs at a time across the hub. The job holds the processing lock
 throughout, so packets that arrive meanwhile wait for the run after it.
+
+A new league's first reset (league_setup) finds its game installed rather
+than ready. It has no backup: the install is the before-state, and the image
+can make it again. After "saved" the PLANETARY is the league's canary run,
+with only this league's game running; then preflight in full. All well, and
+the game is ready. Anything wrong at any step, and the folder is made again
+from the image (league_setup.rebuild) and stays installed, the settings back
+in the draft.
 
 Immortal Barons has no editor. Its "editor" step is drive_ib: the settings are
 written into the Coordinator's config.json and the game is ordered to reset
@@ -73,7 +84,8 @@ _jobs: set = set()             # running job tasks, so they aren't collected
 
 
 WRITTEN = "_written"               # drive_ib*'s result: the packets the order wrote
-KINDS = {"reset": "reset", "rules": "rules change", "freeze": "freeze", "thaw": "thaw"}
+KINDS = {"reset": "reset", "rules": "rules change", "freeze": "freeze", "thaw": "thaw",
+         "setup": "setup"}
 DRAFTED = ("reset", "rules")       # the kinds made from the league's draft
 MESSAGE_MAX = 200                  # a freeze's message, shown to every caller
 
@@ -105,11 +117,16 @@ class IbSetup:
     timeout: int
 
 
-def game_setup(config: dict, league: League):
+def game_setup(config: dict, league: League, installed_ok: bool = False):
+    """installed_ok: a reset may find the game installed, since the first is
+    what makes it ready. Nothing else may."""
     install = league_game(config, league)
     if install is None:
         raise ResetRefused(f"The hub has no game for {league.full_id}", 422)
-    if install.state != "ready":
+    if install.state == "installed" and not installed_ok:
+        raise ResetRefused(f"{league.full_id}'s game is installed but has had no reset yet. "
+                           f"Its first reset, from Game Reset, gives it its settings.", 409)
+    if install.state not in ("ready", "installed"):
         raise ResetRefused(f"{league.full_id}'s game is {install.state}, not ready", 409)
     if not install.game.dos:
         if install.binary is None:
@@ -175,7 +192,7 @@ def start(db: Session, league: League, version: int, code: str, username: str,
     if errors:
         raise ResetRefused("The draft no longer passes the game's limits: " +
                            "; ".join(f"{f}: {m}" for f, m in errors), 422)
-    setup = _checked_setup(config, league)
+    setup = _checked_setup(config, league, installed_ok=kind == "reset")
     if kind == "rules":
         settings = {k: v for k, v in settings.items() if k != "start_date"}
 
@@ -223,9 +240,9 @@ def start_order(db: Session, league: League, kind: str, code: str, username: str
     return order
 
 
-def _checked_setup(config: dict, league: League):
+def _checked_setup(config: dict, league: League, installed_ok: bool = False):
     """The game's setup, with everything the job needs there."""
-    setup = game_setup(config, league)
+    setup = game_setup(config, league, installed_ok)
     if not setup.folder.is_dir():
         raise ResetRefused(f"The game folder {setup.folder} isn't there.", 422)
     if isinstance(setup, IbSetup):
@@ -532,10 +549,31 @@ def _drive_for(reset: GameReset, setup):
     return drive_ib if isinstance(setup, IbSetup) else drive
 
 
+def _first(reset: GameReset, league: League) -> bool:
+    """Whether this is a new league's first reset (league_setup)."""
+    return (reset.kind == "reset" and league.install is not None
+            and league.install.state == "installed")
+
+
+async def _rebuild(db: Session, league: League, config: dict,
+                   log: Callable[[str], None]) -> Optional[str]:
+    """league_setup.rebuild_async: None, or why it failed."""
+    from backend.services import league_setup
+    try:
+        db.expire_all()
+        await league_setup.rebuild_async(db, config, db.get(League, league.id), log)
+        return None
+    except Exception as exc:
+        db.rollback()
+        log(f"REBUILD FAILED: {exc}")
+        return str(exc)
+
+
 async def _run(db: Session, reset_id: int, config: dict, drive_fn, lock_wait, today):
     reset = db.get(GameReset, reset_id)
     league = reset.league or db.get(League, reset.league_id)
-    setup = game_setup(config, league)
+    first = _first(reset, league)
+    setup = game_setup(config, league, installed_ok=first)
     noun = KINDS.get(reset.kind, "reset")
     if drive_fn is None:
         drive_fn = _drive_for(reset, setup)
@@ -556,9 +594,14 @@ async def _run(db: Session, reset_id: int, config: dict, drive_fn, lock_wait, to
     try:
         _stage(db, reset, "lock")
         into = data_dir / "reset_backups" / league.full_id
-        archive = await asyncio.to_thread(backup, setup.folder, into, stamp)
-        reset.backup_path = str(archive)
-        _stage(db, reset, "backup")
+        if first:
+            archive = None
+            log(f"first reset of {league.full_id}: no backup, the image is the before-state")
+            _stage(db, reset, "image")
+        else:
+            archive = await asyncio.to_thread(backup, setup.folder, into, stamp)
+            reset.backup_path = str(archive)
+            _stage(db, reset, "backup")
 
         _stage(db, reset, "editor")
         transcript = data_dir / "logs" / "reset" / f"{league.full_id}_{stamp}.log"
@@ -570,6 +613,9 @@ async def _run(db: Session, reset_id: int, config: dict, drive_fn, lock_wait, to
         except Exception as exc:
             log(f"FAILED: {exc}")
             reset.status = "failed"
+            if first:
+                await _first_failed(db, reset, league, config, str(exc), log, log_lines)
+                return
             try:
                 await asyncio.to_thread(restore, archive, setup.folder)
                 log(f"restored {setup.folder} from {archive}")
@@ -607,6 +653,9 @@ async def _run(db: Session, reset_id: int, config: dict, drive_fn, lock_wait, to
 
         from backend.services.processing_service import ProcessingService
         game = game_for_letter(league.game_type)
+        if first:
+            await _canary_run(db, reset, league, config, game, log, log_lines)
+            return
         run = await ProcessingService(db, config).process_batch(
             also=((game.code, league.league_id),))
         db.refresh(reset)
@@ -632,6 +681,63 @@ async def _run(db: Session, reset_id: int, config: dict, drive_fn, lock_wait, to
         _release_lock()
 
 
+async def _first_failed(db: Session, reset: GameReset, league: League, config: dict,
+                        why: str, log: Callable[[str], None], log_lines: list):
+    """A first reset gone wrong: the game made again from its image, still
+    installed, the settings back in the draft."""
+    failed = await _rebuild(db, league, config, log)
+    db.expire_all()
+    reset.status = "failed"
+    if failed is None:
+        reset.error = (f"{why}. The game was made again from its image and is still "
+                       f"installed, and the settings are back in the draft.")
+        ending = "restored"
+    else:
+        league.install.state = "failed"
+        reset.error = (f"{why}. Making the game again from its image then failed too "
+                       f"({failed}); set the league up again.")
+        ending = "failed"
+    reset.transcript = "\n".join(log_lines)
+    _keep_as_draft(db, reset)
+    _stage(db, reset, ending)
+    logger.warning(f"First reset {reset.id} of {league.full_id} failed ({ending}): {reset.error}")
+
+
+async def _canary_run(db: Session, reset: GameReset, league: League, config: dict, game,
+                      log: Callable[[str], None], log_lines: list):
+    """The first run of a new league's game, with canaries in place, then
+    preflight in full. Passing makes the game ready."""
+    from backend.services import league_setup, preflight
+    from backend.services.processing_service import ProcessingService
+
+    placed = league_setup.place_canaries(db, config, league, log)
+    run = await ProcessingService(db, config).process_batch(
+        also=((game.code, league.league_id),), first_reset=True)
+    db.refresh(reset)
+    reset.processing_run_id = run.id if run is not None else None
+    _stage(db, reset, "processing")
+    problems = league_setup.check_canaries(config, league, placed, run, log)
+    if run is None or run.status != "completed":
+        problems.append("the game's first run failed" + (f": {run.error_message}"
+                                                       if run is not None and run.error_message
+                                                       else ""))
+    if not problems:
+        problems = preflight.run(db, config, [league])[league.full_id]
+        db.refresh(league)
+        for p in problems:
+            log(f"preflight: {p}")
+    if problems:
+        await _first_failed(db, reset, league, config,
+                            "The new game did not pass its checks: " + "; ".join(problems),
+                            log, log_lines)
+        return
+    log("preflight passed")
+    league.install.state = "ready"
+    reset.transcript = "\n".join(log_lines)
+    _stage(db, reset, "ready")
+    logger.info(f"First reset {reset.id}: {league.full_id} is ready")
+
+
 def _collected(db: Session, league: League, written: Optional[list]) -> bool:
     """Whether the hub collected every packet the order wrote, for delivery."""
     from backend.models.database import Packet
@@ -650,11 +756,28 @@ def recover(db: Session, config: dict):
     after the save: the reset stands, and the next processing run sends it.
     Before the backup finished, nothing was touched.
     """
-    for reset in db.query(GameReset).filter(GameReset.status == "applying").all():
+    for reset in (db.query(GameReset)
+                  .filter(GameReset.status == "applying", GameReset.kind != "setup").all()):
         stages = [p["stage"] for p in reset.progress or []]
         last = stages[-1] if stages else "queued"
         noun = KINDS.get(reset.kind, "reset")
-        if "saved" in stages:
+        league = reset.league or db.get(League, reset.league_id)
+        if _first(reset, league) and last != "queued":
+            # A new league's first reset: whatever it reached, the game is made
+            # again from its image.
+            from backend.services import league_setup
+            try:
+                league_setup.rebuild(db, config, league, lambda line: None)
+                reset.error = ("The hub stopped during the league's first reset. The game was "
+                               "made again from its image and is still installed.")
+            except Exception as exc:
+                league.install.state = "failed"
+                reset.error = (f"The hub stopped during the league's first reset, and making "
+                               f"the game again from its image failed: {exc}. Set the league "
+                               f"up again.")
+            reset.status = "failed"
+            _keep_as_draft(db, reset)
+        elif "saved" in stages:
             reset.status = "applied"
             reset.error = (f"The hub stopped before the processing run after the {noun}. "
                            "It reaches the members with the next run.")

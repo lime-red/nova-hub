@@ -2632,8 +2632,9 @@ Validation Error
 Delete a league and ALL associated data (admin only).
 
 Permanently removes: league record, member associations, packets, processing
-runs, sequence alerts, and all related files on disk (packet files and
-nodelist directory).
+runs, sequence alerts, realm names, the hub game's record, and the packet
+files and nodelist directory on disk. The hub game's folder is left in place:
+it may hold the only copy of a game someone wants back.
 
 **Path Parameters:**
 - `league_id`: Database ID of the league

@@ -9439,7 +9439,7 @@
     },
     "/api/v1/leagues/{league_id}": {
       "delete": {
-        "description": "Delete a league and ALL associated data (admin only).\n\nPermanently removes: league record, member associations, packets, processing\nruns, sequence alerts, and all related files on disk (packet files and\nnodelist directory).\n\n**Path Parameters:**\n- `league_id`: Database ID of the league\n\n**Request Body:**\n- `confirmation_name`: Must match the league's confirmation name, e.g. `BRE_014`\n\n**Returns:** Success message",
+        "description": "Delete a league and ALL associated data (admin only).\n\nPermanently removes: league record, member associations, packets, processing\nruns, sequence alerts, realm names, the hub game's record, and the packet\nfiles and nodelist directory on disk. The hub game's folder is left in place:\nit may hold the only copy of a game someone wants back.\n\n**Path Parameters:**\n- `league_id`: Database ID of the league\n\n**Request Body:**\n- `confirmation_name`: Must match the league's confirmation name, e.g. `BRE_014`\n\n**Returns:** Success message",
         "operationId": "delete_league_api_v1_leagues__league_id__delete",
         "parameters": [
           {

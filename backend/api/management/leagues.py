@@ -647,8 +647,9 @@ async def delete_league(
     Delete a league and ALL associated data (admin only).
 
     Permanently removes: league record, member associations, packets, processing
-    runs, sequence alerts, and all related files on disk (packet files and
-    nodelist directory).
+    runs, sequence alerts, realm names, the hub game's record, and the packet
+    files and nodelist directory on disk. The hub game's folder is left in place:
+    it may hold the only copy of a game someone wants back.
 
     **Path Parameters:**
     - `league_id`: Database ID of the league
@@ -703,6 +704,9 @@ async def delete_league(
         f"DELETE FROM league_game_settings WHERE league_id = :lid OR packet_id IN ({packets})",
         "DELETE FROM game_resets WHERE league_id = :lid",
         "DELETE FROM sequence_alerts WHERE league_id = :lid",
+        f"DELETE FROM realm_names WHERE league_id = :lid OR packet_id IN ({packets})",
+        # The row only; the game's folder stays on disk for the admin to keep or remove.
+        "DELETE FROM league_games WHERE league_id = :lid",
         f"DELETE FROM processing_run_items WHERE league_id = :lid OR processing_run_id IN ({runs})",
         f"DELETE FROM processing_run_files WHERE league_id = :lid OR processing_run_id IN ({runs})",
         # A run can carry other leagues' packets; they keep their rows.

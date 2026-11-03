@@ -90,9 +90,11 @@ def main():
     for dir_path in dirs:
         Path(dir_path).mkdir(parents=True, exist_ok=True)
 
-    logger.info("""
+    from backend.core.version import __version__
+    title = f"Nova Hub v{__version__}"
+    logger.info(f"""
     ╔══════════════════════════════════════╗
-    ║         Nova Hub v0.2.0              ║
+    ║  {title:^34}  ║
     ║  BBS Inter-League Routing System     ║
     ╚══════════════════════════════════════╝
     """)

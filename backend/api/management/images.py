@@ -179,7 +179,7 @@ async def fetch_image(
                             or "This hub has no [games] image_url to fetch from")
     if not NAME.match(body.name):
         raise HTTPException(status_code=422, detail=f"{body.name!r} is not an image archive "
-                                                    f"name, as bre-sj1-r1{ARCHIVE}")
+                                                    f"name, as bre-sj1-r2{ARCHIVE}")
     try:
         archive = await fetch(cfg, body.name)
     except FetchError as e:

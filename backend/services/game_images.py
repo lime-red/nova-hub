@@ -1,7 +1,7 @@
 """Game images: the installs leagues' games are made from.
 
 An image is a folder in `[games] images`, named for its game and version
-(bre-sj1-r1, fe-sj1-r1, ib-v0.2.6), with a game_images row. Its manifest.json
+(bre-sj1-r2, fe-sj1-r2, ib-v0.2.6), with a game_images row. Its manifest.json
 names the game and version, where it was made from, every folder in it, and
 the sha256 of every file, so the hub can tell an image (or a game's copy of its
 fixed files) that has been changed since. Images are never changed in place: a

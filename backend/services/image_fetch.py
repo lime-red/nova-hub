@@ -100,7 +100,7 @@ async def fetch(cfg: GamesConfig, name: str) -> Path:
     if not cfg.image_url:
         raise FetchError("this hub has no [games] image_url to fetch from")
     if not NAME.match(name or ""):
-        raise FetchError(f"{name!r} is not an image archive name, as bre-sj1-r1{ARCHIVE}")
+        raise FetchError(f"{name!r} is not an image archive name, as bre-sj1-r2{ARCHIVE}")
     url = cfg.image_url.rstrip("/") + "/" + name
     headers = _login(cfg)
     cfg.images.mkdir(parents=True, exist_ok=True)

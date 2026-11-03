@@ -5,7 +5,7 @@ Make a golden image: a clean, finished install of one game version, packed as
 on its Images page (upload), from its images folder (drop-in), or by fetch.
 
     .venv/bin/python make_golden.py bre /path/to/bre_sj1.zip
-    .venv/bin/python make_golden.py fe  /path/to/fe_sj1.zip --version sj1-r1
+    .venv/bin/python make_golden.py fe  /path/to/fe_sj1.zip --version sj1-r2
     .venv/bin/python make_golden.py ib  /path/to/immortal-barons --version v0.2.6
 
 BRE and FE need dosemu on this machine: the media is cleaned of its donor's

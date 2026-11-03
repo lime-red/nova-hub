@@ -184,10 +184,10 @@ def test_the_recipe_takes_out_the_donors_league_and_keeps_the_game(tmp_path):
     game = golden.unpack_media(_media(tmp_path), tmp_path / "unpacked")
     assert game.name == "bre_sj1"
     gone = golden.clean(game)
-    assert set(gone) == {"bbs.cfg", "BRNODES.DAT", "brnodes.bak", "loc.bat", "DOORFILE.SR",
+    assert set(gone) == {"bbs.cfg", "BRNODES.DAT", "brnodes.bak", "loc.bat", "DOORFILE.SR", "COORD.KEY",
                          "DATA/GAME.DAT", "NETMAIL/10.MSG", "BULLETIN/SCORES.TXT"}
     left = sorted(p.relative_to(game).as_posix() for p in game.rglob("*"))
-    assert left == ["BACKUP", "BRE.EXE", "BRE.OVR", "BREDATA.EXE", "BULLETIN", "COORD.KEY", "DATA",
+    assert left == ["BACKUP", "BRE.EXE", "BRE.OVR", "BREDATA.EXE", "BULLETIN", "DATA",
                     "DATA/REPORTS", "DOCS", "DOCS/BRE.DOC", "GAME", "GAME/NEWS.DAT", "INBOUND",
                     "NETMAIL", "OUTBOUND"]
 

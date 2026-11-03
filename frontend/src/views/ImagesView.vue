@@ -141,7 +141,7 @@ function size(bytes: number): string {
                 v-model="fetchName"
                 type="text"
                 class="font-mono"
-                placeholder="bre-sj1-r1.tar.gz"
+                placeholder="bre-sj1-r2.tar.gz"
                 :disabled="!canFetch"
                 @keyup.enter="fetchImage"
               />

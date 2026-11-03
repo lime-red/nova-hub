@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 class ImageInfo(BaseModel):
     """A golden image the hub holds"""
     id: int
-    dirname: str  # its folder in [games] images, as bre-sj1-r1
+    dirname: str  # its folder in [games] images, as bre-sj1-r2
     game_type: str  # B, F or I
     version: str
     source: Optional[str] = None  # what it was taken from: upload, fetch, a file or path

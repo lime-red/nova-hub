@@ -7,8 +7,8 @@ All notable changes to Nova Hub will be documented in this file.
 ### Added
 - **Golden images.** A golden image is a clean, finished install of one game
   version, made by `make_golden.py` from your own copy of the game: the donor's
-  league taken out (bbs.cfg, nodes file, DATA/, BULLETIN/, NETMAIL/ and the
-  rest), GAME/ regenerated with `-Y`, and a copy RESET as a throwaway league to
+  league taken out (bbs.cfg, nodes file, the coordinator key, which RESET
+  makes anew for each league, DATA/, BULLETIN/, NETMAIL/ and the rest), GAME/ regenerated with `-Y`, and a copy RESET as a throwaway league to
   show it makes a game. It travels as a `.tar.gz` with a manifest of every file
   and folder. New leagues' games will be made from these (the New League job
   is next); the rig already makes every install from them.

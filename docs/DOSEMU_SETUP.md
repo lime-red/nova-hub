@@ -159,6 +159,12 @@ a file the manifest does not list, and the image is refused. Check on the page
 re-runs that check on an image the hub holds; preflight runs it for every
 league made from an image, and holds the league's EXEs and GAME/ to it too.
 
+New League (Leagues page) makes a league's game from an image; see
+[SETUP_GUIDE.md](SETUP_GUIDE.md#configure-leagues). A new BRE or FE game's
+bbs.cfg is `Nova Admin`, `[hub] bbs_name`, the league's hub address,
+`C:\LEAGUES\B016\INBOUND`, `C:\LEAGUES\B016\NETMAIL`, the league number and
+`NONE`, and its nodes file is the hub alone (`1 HOST`) until members join.
+
 ---
 
 ## Processing Flow in Detail

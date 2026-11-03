@@ -1,6 +1,7 @@
 # tests/conftest.py - Shared fixtures for all test modules
 
 import os
+import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -58,7 +59,9 @@ def install_game(db, config: dict, league, drive_c: Path, *, state: str = "ready
         (images / dirname).mkdir(parents=True, exist_ok=True)
         target = images / dirname / IB_BINARY
         if not target.exists():
-            target.symlink_to(Path(binary).resolve())
+            # A copy, as an import makes: an image holds no links.
+            shutil.copyfile(binary, target)
+            target.chmod(0o755)
         image = GameImage(game_type=league.game_type, version="test", dirname=dirname,
                           manifest_sha256=write_manifest(images / dirname), source="test")
         db.add(image)

@@ -55,6 +55,11 @@ class GamesConfig:
     root: Optional[Path]
     drive_c: Optional[Path]
     images: Path
+    # Where the hub can fetch image archives from, and the netrc-format file
+    # with the login for it. Both optional: a hub without them takes images by
+    # upload or drop-in.
+    image_url: Optional[str] = None
+    image_credentials: Optional[Path] = None
 
 
 def games_config(config: dict) -> GamesConfig:
@@ -65,6 +70,8 @@ def games_config(config: dict) -> GamesConfig:
         root=Path(root) if root else None,
         drive_c=Path(drive_c) if drive_c else None,
         images=Path(section.get("images") or data_dir / "images"),
+        image_url=section.get("image_url") or None,
+        image_credentials=Path(section["image_credentials"]) if section.get("image_credentials") else None,
     )
 
 

@@ -69,13 +69,10 @@ class Game:
     """
     code: str              # "B" / "F", the letter in a packet filename
     exe: str
-    data_exe: str
     nodes_file: str
-    media: Path
-    media_dir: str         # top-level directory inside the media archive
+    media: Path            # what the golden image is built from (rig.golden)
     dir_prefix: str        # first letter of the install directory name
     required_data: tuple   # must exist in DATA/ once RESET has run
-    junk: tuple            # donor state to strip before RESET
 
     @property
     def maintenance(self) -> str:
@@ -86,24 +83,16 @@ GAMES = {
     "B": Game(
         code="B",
         exe="BRE.EXE",
-        data_exe="BREDATA.EXE",
         nodes_file="BRNODES.DAT",
         media=SRV / "media" / "bre_sj1.zip",
-        media_dir="bre_sj1",
         dir_prefix="b",
         required_data=("GAME.DAT", "IDS.DAT", "PLANET.BRE"),
-        # The media ships "ROUTE * 2", which sends a leaf node's mail to itself.
-        # No working production install has a route.cfg at all -- routing comes
-        # from the HOST form in the nodes file.
-        junk=("inuse.flg", "DATA/BRE.LOC", "DATA/bre.loc", "DUPES.TXT", "route.cfg"),
     ),
     "F": Game(
         code="F",
         exe="FE.EXE",
-        data_exe="FEDATA.EXE",
         nodes_file="FENODES.DAT",
         media=SRV / "media" / "fe_sj1.zip",
-        media_dir="fe_sj1",
         dir_prefix="f",
         # Only game.dat. BRE lays down its whole DATA/ at RESET; FE does not --
         # planet.fe, routes.dat and the rest are created by the *first* PLANETARY
@@ -114,9 +103,6 @@ GAMES = {
         # a scenario makes, not during provisioning. ids.dat never appears until a
         # player joins, so it is not a provisioning signal at all.
         required_data=("game.dat",),
-        junk=("inuse.flg", "DATA/fe.loc", "DATA/FE.LOC", "DATA/dupes.fe",
-              "DUPES.TXT", "route.cfg", "routes.lst", "routes.bad",
-              "BBSINFO.LST", "PROBLEMS.LOG", "DOORFILE.SR"),
     ),
 }
 

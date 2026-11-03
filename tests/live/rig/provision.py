@@ -6,26 +6,23 @@ and dosemu wants a real home directory. Drive it from the rig owner with:
 
     sudo -u node02 /srv/novatest/venv/bin/python -m rig.provision 900B 2
 
-Provisioning is not the pure file-copy the design doc assumed. `BREDATA -Y`
-regenerates GAME/ (help text, events, news templates) but not DATA/; virgin game
-state only comes from `BRE.EXE RESET`, which is interactive and is driven here
-through sr-harness's DosSession.
+Each install is a copy of the game's golden image (rig.golden), made by
+make_golden's recipe: the media with the donor's league taken out and GAME/
+regenerated. Provisioning stamps it as this node in this league and RESETs it;
+virgin game state only comes from `BRE.EXE RESET`, which is interactive and is
+driven through sr-harness's DosSession (backend/services/golden.py).
 """
 import argparse
-import json
 import os
 import shutil
-import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from sr_harness.run import run as dosrun
-from sr_harness.session import DosSession, expand
-
+from rig import golden
 from rig.layout import DOSEMU_CONF, LEAGUES, LOGS, NODES, League, Node
+from backend.services.golden import RECIPES, Dosemu, reset
 
 
 def _crlf(*lines) -> bytes:
@@ -33,38 +30,13 @@ def _crlf(*lines) -> bytes:
 
 
 def _unpack(league: League, node: Node, target: Path):
-    game = league.g
     if target.exists():
         shutil.rmtree(target)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory() as tmp:
-        subprocess.run(["unzip", "-q", str(game.media), "-d", tmp], check=True)
-        shutil.move(str(Path(tmp) / game.media_dir), str(target))
-
-    # Donor game state is meaningless for a new league; RESET rebuilds it.
-    for junk in game.junk:
-        (target / junk).unlink(missing_ok=True)
-    # FE ships a populated BULLETIN/ in the donor tree; the scores collector would
-    # pick those up as this run's output.
-    for stale in (target / "BULLETIN").glob("*"):
-        if stale.is_file():
-            stale.unlink()
-    for sub in ("INBOUND", "OUTBOUND", "BACKUP"):
-        for f in (target / sub).glob("*"):
-            if f.is_file():
-                f.unlink()
-    for sub in ("INBOUND", "OUTBOUND", "NETMAIL", "BACKUP"):
-        (target / sub).mkdir(exist_ok=True)
+    golden.install(league.g, target)
 
 
 def _write_config(league: League, node: Node, target: Path):
     dos = league.dos_path(node)
-    # FE's media carries the donor's BBS.CFG (prod's fe_015, league 015). Beside
-    # a new bbs.cfg it is a second file on Linux but the same name to DOS, so
-    # which one the game reads is anyone's guess. Preflight refuses the pair.
-    for p in target.iterdir():
-        if p.name.lower() == "bbs.cfg":
-            p.unlink()
 
     # bbs.cfg is 7 CRLF lines. Line 4 must point at this install's own INBOUND;
     # a stale or untraversable path there is silently fatal -- the game "succeeds"
@@ -95,44 +67,8 @@ def _batch(target: Path, name: str, dos_path: str, command: str):
                                       command, "EXIT"))
 
 
-def _dosemu(target: Path, batch: str):
-    return ["/usr/bin/dosemu", "-f", str(DOSEMU_CONF), "-K", str(target),
-            "-E", batch]
-
-
-def _reset(league: League, node: Node, target: Path, log_dir: Path):
-    """Drive `<GAME>.EXE RESET` to a virgin game.
-
-    The prompt sequence is neither fixed nor in the order the flow implies:
-    confirm, then the *Configuration Editor* opens, and only after ESCaping out of
-    it does the league-wide question appear -- and only on the node whose address
-    matches the HOST entry. So state the destination and answer what turns up.
-    """
-    _batch(target, "RESET.BAT", league.dos_path(node), f"{league.g.exe} RESET")
-    (target / "inuse.flg").unlink(missing_ok=True)
-
-    session = DosSession(
-        _dosemu(target, "RESET.BAT"),
-        transcript=str(log_dir / f"prov_{league.dirname(node.index)}_reset.log"),
-    )
-    try:
-        if not session.until(r"Configuration Editor",
-                             [(r"reset the Game", "Y")], timeout=180):
-            raise RuntimeError(
-                f"RESET never reached the config editor for {target}\n"
-                f"--- screen ---\n{session.screen_text()}"
-            )
-        # dosemu treats a lone ESC as the start of an escape sequence and swallows
-        # it; repeated presses get one through. Mechanises the human workaround.
-        session.mash(expand("<ESC>"), "Configuration Editor", max_presses=80)
-        # Host node only, and only after the editor closes.
-        if session.wait_for(r"league-wide reset", timeout=60):
-            session.send("n")
-        session.pump(20)
-    finally:
-        session.close()
-
-    (target / "inuse.flg").unlink(missing_ok=True)
+def _dos(node: Node, log_dir: Path) -> Dosemu:
+    return Dosemu(drive_c=node.home / ".dosemu/drive_c", conf=DOSEMU_CONF, log_dir=log_dir)
 
 
 def _verify(league: League, node: Node, target: Path):
@@ -182,15 +118,8 @@ def provision(league: League, node: Node, log_dir: Path = LOGS) -> Path:
 
     _unpack(league, node, target)
     _write_config(league, node, target)
-
-    # BREDATA/FEDATA regenerates GAME/, not DATA/.
-    _batch(target, "GAMEDATA.BAT", league.dos_path(node),
-           f"{league.g.data_exe.replace('.EXE', '')} -Y")
-    dosrun(_dosemu(target, "GAMEDATA.BAT"),
-               log_dir / f"prov_{league.dirname(node.index)}_gamedata.log",
-               timeout=120)
-
-    _reset(league, node, target, log_dir)
+    reset(target, RECIPES[league.game], _dos(node, log_dir),
+          log_dir / f"prov_{league.dirname(node.index)}_reset.log")
 
     # RESET deletes stray .BAT files from the game directory, so the run batch has
     # to be written afterwards or it vanishes.

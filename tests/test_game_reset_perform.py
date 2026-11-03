@@ -669,7 +669,9 @@ def test_an_ib_reset_needs_the_game_and_the_coordinators_key(ib):
     with pytest.raises(perform.ResetRefused, match="coord.key"):
         ib_draft(ib)
     (ib.folder / "coord.key").write_text("secret")
-    ib.binary.unlink()
+    # The game runs its image's copy of the binary.
+    from backend.services.game_images import image_folder
+    (image_folder(ib.config, ib.league.install.image) / "immortal-barons").unlink()
     with pytest.raises(perform.ResetRefused, match="isn't there"):
         perform.start(ib.db, ib.league, 1, "900I", "lime", ib.config, TODAY)
     with pytest.raises(perform.ResetRefused, match="no game for 900I"):

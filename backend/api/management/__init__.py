@@ -27,6 +27,7 @@ from .processing import router as processing_router
 from .alerts import router as alerts_router
 from .users import router as users_router
 from .system import router as system_router
+from .images import router as images_router
 
 management_router = APIRouter()
 
@@ -132,4 +133,10 @@ management_router.include_router(
     system_router,
     prefix="/system",
     tags=["Management API - System"]
+)
+
+management_router.include_router(
+    images_router,
+    prefix="/images",
+    tags=["Management API - Images"]
 )

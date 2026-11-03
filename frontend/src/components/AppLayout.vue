@@ -63,6 +63,7 @@ const navigation = computed(() =>
 const adminNavigation = computed(() => [
   { name: 'Applications', path: '/admin/applications', icon: 'applications' },
   { name: 'Users', path: '/admin/users', icon: 'users' },
+  { name: 'Game Images', path: '/admin/images', icon: 'images' },
   { name: 'Audit Log', path: '/admin/audit', icon: 'log' },
 ])
 

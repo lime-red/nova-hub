@@ -341,6 +341,52 @@ export const relinkApi = {
 }
 
 // The audit log (admin only), newest first
+// Golden images (admin only): what leagues' games are made from
+export interface GameImageInfo {
+  id: number
+  dirname: string
+  game_type: string
+  version: string
+  source: string | null
+  made_from: string | null
+  recipe: number | null
+  created_at: string | null
+  leagues: string[]
+}
+
+export interface ImagesList {
+  images: GameImageInfo[]
+  waiting: { name: string; size: number }[]
+  folder: string
+  fetch_from: string | null
+  fetch_problems: string[]
+}
+
+export interface ImageImported {
+  image: GameImageInfo
+  created: boolean
+}
+
+export const imagesApi = {
+  list: () => api.get<ImagesList>('/images'),
+
+  upload: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return api.post<ImageImported>('/images/upload', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
+
+  importWaiting: (name: string) => api.post<ImageImported>('/images/import', { name }),
+
+  fetch: (name: string) => api.post<ImageImported>('/images/fetch', { name }),
+
+  check: (id: number) => api.post<{ dirname: string; problems: string[] }>(`/images/${id}/check`),
+
+  remove: (id: number) => api.delete(`/images/${id}`),
+}
+
 export const auditApi = {
   list: (params: {
     target_type?: string

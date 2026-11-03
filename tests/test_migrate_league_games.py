@@ -107,6 +107,8 @@ def test_a_dry_run_changes_nothing(host, capsys):
     out = capsys.readouterr().out
     assert "C:\\bbs\\doors\\bre_013\\inbound  ->  C:\\LEAGUES\\B013\\INBOUND" in out
     assert "image ib-v0.2.6" in out
+    assert KEY not in out, "the diff never shows a secret"
+    assert '-hub_board_key = "(hidden)"' in out
 
 
 def test_the_games_move_into_the_database_and_undo_puts_everything_back(host):

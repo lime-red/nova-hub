@@ -77,6 +77,14 @@ from backend.services.league_games import (
 
 KEPT = ".pre-league-games"
 UNDO = "league-games-undo.sh"
+# A setting whose value the printed diff must not show: the dry run's output
+# ends up in terminals, transcripts and tickets.
+SECRET = re.compile(r"^(\s*#?\s*\w*(?:secret|password|token|key|credentials)\w*\s*=\s*)\S.*$",
+                    re.IGNORECASE)
+
+
+def _masked(text: str) -> list[str]:
+    return [SECRET.sub(r'\1"(hidden)"', line) for line in text.splitlines(keepends=True)]
 
 DOS_KEYS = {"game_folder", "game_dos_path", "inbound_folder", "outbound_folder",
             "scores_folder", "completion_marker", "processing_command", "scores_command",
@@ -564,9 +572,10 @@ def run(config_path: Path, *, do_apply: bool, root: Optional[str] = None,
             for note in m.notes:
                 print(f"    note: {note}")
         print()
-        sys.stdout.writelines(difflib.unified_diff(
-            text.splitlines(keepends=True), new_text.splitlines(keepends=True),
-            "config.toml", "config.toml (new)"))
+        sys.stdout.writelines(line if line.endswith("\n") else line + "\n"
+                              for line in difflib.unified_diff(
+                                  _masked(text), _masked(new_text),
+                                  "config.toml", "config.toml (new)"))
         if problems:
             print("\nNothing was changed:", file=sys.stderr)
             for p in problems:

@@ -1,6 +1,7 @@
 # backend/services/processing_service.py - Complete with database
 
 import asyncio
+import time
 import threading
 import toml
 from pathlib import Path
@@ -34,6 +35,9 @@ _processing_task: Optional[asyncio.Task] = None
 # Asked for while a batch ran. There is no poll loop: a packet uploaded during a
 # run would otherwise wait for the next upload, which can be a day away.
 _rerun = False
+# When the last upload (or other trigger) came, on the monotonic clock: a pass
+# waits for this to be settle_seconds old. See _settle().
+_last_trigger = 0.0
 
 
 def find_file_case_insensitive(directory: Path, filename: str) -> Optional[Path]:
@@ -61,7 +65,8 @@ def find_file_case_insensitive(directory: Path, filename: str) -> Optional[Path]
 
 def trigger_processing():
     """Trigger background processing (non-blocking)"""
-    global _processing_task, _rerun
+    global _processing_task, _rerun, _last_trigger
+    _last_trigger = time.monotonic()
 
     # One batch at a time; the one running goes round again when it finishes.
     if _processing_task and not _processing_task.done():
@@ -99,10 +104,14 @@ async def process_batch():
         return
 
     try:
-        # A client uploads one packet per request, so a sync of several would
-        # otherwise start a run per packet. Uploads in the pause join this run.
-        await asyncio.sleep(_settle_seconds())
         while True:
+            # A client uploads one packet per request, so a sync of several
+            # would otherwise start a run per packet. Wait before every pass,
+            # not only the first: a run takes well under a second, and a pass
+            # that went straight round again took the one or two packets that
+            # came in meanwhile, so a long sync became a run per packet (#130).
+            # Each IB run also writes packets of its own for every board.
+            await _settle(*_settle_seconds())
             _rerun = False
             await _process_once()
             if not _rerun:
@@ -112,14 +121,30 @@ async def process_batch():
         _processing_lock.release()
 
 
-def _settle_seconds() -> int:
-    default = ProcessingConfig().settle_seconds
+async def _settle(quiet: float, most: float) -> None:
+    """Wait until no upload has come for `quiet` seconds, or `most` seconds
+    have gone by, whichever is first. The cap keeps a board that never stops
+    uploading from holding everyone else's packets back."""
+    start = time.monotonic()
+    while True:
+        now = time.monotonic()
+        wake = min(_last_trigger + quiet, start + max(most, quiet))
+        if now >= wake:
+            return
+        await asyncio.sleep(wake - now)
+
+
+def _settle_seconds() -> tuple[int, int]:
+    """[processing] settle_seconds and settle_max_seconds, read afresh each
+    pass so a change needs no restart."""
+    defaults = ProcessingConfig()
     try:
         section = toml.load(default_config_path()).get("processing", {})
-        return max(0, int(section.get("settle_seconds", default)))
+        return (max(0, int(section.get("settle_seconds", defaults.settle_seconds))),
+                max(0, int(section.get("settle_max_seconds", defaults.settle_max_seconds))))
     except Exception as e:
-        logger.warning(f"Could not read [processing] settle_seconds, using {default}: {e}")
-        return default
+        logger.warning(f"Could not read [processing] settle_seconds, using the defaults: {e}")
+        return defaults.settle_seconds, defaults.settle_max_seconds
 
 
 async def _process_once():

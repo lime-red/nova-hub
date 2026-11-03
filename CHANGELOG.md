@@ -186,6 +186,14 @@ All notable changes to Nova Hub will be documented in this file.
   both behind, so it failed with `FOREIGN KEY constraint failed`. Both go now.
   The game's folder stays on disk. The test seeds every table that names a
   league, so a table added later can't be missed the same way.
+- **A long sync is processed in one run, not one per packet (#130).** The hub
+  waited `settle_seconds` before its first run only; a pass that found new
+  uploads went straight round again and took the one or two that had come
+  meanwhile. One board's 556 uploads made 129 runs, and every Immortal Barons
+  run writes packets for each board, so the league got 908 extra packets.
+  Every pass now waits until uploads have been quiet for `settle_seconds`, but
+  no more than the new `[processing] settle_max_seconds` (60) in all, so a
+  stream that never stops is still processed.
 - **A nodelist can be generated from the league page.** The Nodelist row has a
   Generate button (admins), which says what was written and any warning, such
   as the hub's game not being given it. Before, the only way was the API's

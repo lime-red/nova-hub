@@ -2264,6 +2264,18 @@
             "title": "Full Id",
             "type": "string"
           },
+          "game_state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The hub's game: installed means this reset is the league's first",
+            "title": "Game State"
+          },
           "game_type": {
             "title": "Game Type",
             "type": "string"

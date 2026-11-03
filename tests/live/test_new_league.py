@@ -177,7 +177,7 @@ async def test_a_new_immortal_barons_league_is_set_up_and_made_ready(hub, fresh)
     league = await set_up(hub, "904", "I")
     folder = ROOT / "I904"
     assert (folder / "coord.pub").is_file() and league.install.hub_board_key
-    r = await first_reset(hub, league, {"turns_per_day": 23})
+    r = await first_reset(hub, league, {"turns_per_day": 15})
     assert r.status == "applied", f"{r.error}\n{r.transcript}"
     assert [p["stage"] for p in r.progress][-1] == "ready", r.transcript
     assert "no other league of this game, so no canary" in r.transcript

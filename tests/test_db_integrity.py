@@ -22,9 +22,9 @@ from backend.core import database
 from backend.core.database import get_db, sqlite_pragmas
 from backend.core.security import get_current_user, require_admin
 from backend.models.database import (
-    AttackSighting, AuditEvent, Base, Client, ClientLeaguePoll, GameReset, League, LeagueGameSettings,
-    LeagueMembership, Packet, ProcessingRun, ProcessingRunFile, ProcessingRunItem,
-    SequenceAlert, SysopUser, TrafficSighting,
+    AttackSighting, AuditEvent, Base, Client, ClientLeaguePoll, GameImage, GameReset, League,
+    LeagueGame, LeagueGameSettings, LeagueMembership, Packet, ProcessingRun, ProcessingRunFile,
+    ProcessingRunItem, RealmName, SequenceAlert, SysopUser, TrafficSighting,
 )
 
 LEAGUES = "/management/api/v1/leagues"
@@ -89,7 +89,8 @@ def _a_league_with_everything(db):
     league = League(league_id="555", game_type="B", name="BRE 555")
     other = League(league_id="556", game_type="B", name="BRE 556")
     board = Client(client_id="board", client_secret="x", bbs_name="Board")
-    db.add_all([league, other, board])
+    image = GameImage(game_type="B", version="0.98", dirname="bre-0.98", manifest_sha256="0" * 64)
+    db.add_all([league, other, board, image])
     db.flush()
     run = ProcessingRun(league_id=league.id, status="completed")
     db.add(run)
@@ -116,23 +117,40 @@ def _a_league_with_everything(db):
         ProcessingRunFile(processing_run_id=run.id, league_id=league.id,
                           file_type="score", filename="SCORES.TXT"),
         ClientLeaguePoll(client_id=board.id, league_id=league.id),
+        RealmName(league_id=league.id, planet=2, letter="A", name="Realm", packet_id=mine.id),
+        # Another league's realm, named in this league's packet: it goes with the packet.
+        RealmName(league_id=other.id, planet=2, letter="A", name="Realm", packet_id=mine.id),
+        LeagueGame(league_id=league.id, folder="B555", image=image),
     ])
     db.commit()
     return league, other, theirs
 
 
+def _tables_naming_a_league():
+    """Every table with a reference to a league, or to a league's packets or
+    runs: what deleting a league has to clear first."""
+    owned = {"leagues", "packets", "processing_runs"}
+    return sorted(t.name for t in Base.metadata.sorted_tables
+                  if t.name != "leagues" and any(fk.column.table.name in owned for fk in t.foreign_keys))
+
+
 def test_deleting_a_league_takes_everything_that_names_it(hub):
     client, db = hub
     league, other, theirs = _a_league_with_everything(db)
+    tables = _tables_naming_a_league()
+    # A table added later that names a league is seeded here, or this fails (#129).
+    for table in tables:
+        assert db.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar() > 0, f"seed a {table} row"
 
     r = client.request("DELETE", f"{LEAGUES}/{league.id}", json={"confirmation_name": "BRE_555"})
     assert r.status_code == 200, r.text
 
     db.expire_all()
-    for model in (AttackSighting, TrafficSighting, LeagueGameSettings, GameReset, SequenceAlert,
-                  ProcessingRunItem, ProcessingRunFile, ProcessingRun, LeagueMembership,
-                  ClientLeaguePoll):
-        assert db.query(model).count() == 0, model.__name__
+    for table in tables:
+        if table != "packets":
+            assert db.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar() == 0, table
+    # The image the game was made from is shared; it stays.
+    assert db.query(GameImage).count() == 1
     # Another league's packet the run carried keeps its row, without the run.
     assert db.query(Packet).one().id == theirs.id
     assert db.get(Packet, theirs.id).processing_run_id is None

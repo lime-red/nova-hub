@@ -181,6 +181,11 @@ All notable changes to Nova Hub will be documented in this file.
 ## [0.10.1] - 2026-10-30
 
 ### Fixed
+- **A league can be deleted again (#129).** Since 0.12.0 every league has a
+  row for the hub's game, and BRE leagues have realm names; the delete left
+  both behind, so it failed with `FOREIGN KEY constraint failed`. Both go now.
+  The game's folder stays on disk. The test seeds every table that names a
+  league, so a table added later can't be missed the same way.
 - **A nodelist can be generated from the league page.** The Nodelist row has a
   Generate button (admins), which says what was written and any warning, such
   as the hub's game not being given it. Before, the only way was the API's

@@ -10,8 +10,8 @@ All notable changes to Nova Hub will be documented in this file.
   league taken out (bbs.cfg, nodes file, the coordinator key, which RESET
   makes anew for each league, DATA/, BULLETIN/, NETMAIL/ and the rest), GAME/ regenerated with `-Y`, and a copy RESET as a throwaway league to
   show it makes a game. It travels as a `.tar.gz` with a manifest of every file
-  and folder. New leagues' games will be made from these (the New League job
-  is next); the rig already makes every install from them.
+  and folder. New leagues' games are made from these, and so is every install
+  on the rig.
 - **A Game Images page** (admin) lists the hub's images and the leagues made
   from each, and takes new ones by upload, from a file dropped into
   `[games] images`, or fetched from `[games] image_url` with the login in
@@ -19,7 +19,34 @@ All notable changes to Nova Hub will be documented in this file.
   Every file is checked against the manifest before the hub keeps an image;
   Check re-runs that, and an image no league uses can be deleted.
 
+- **New League** (admin, on the Leagues page) sets up a league and the hub's
+  game for it with no shell, config edit or restart. Set Up makes the league,
+  disabled, and its game from a golden image: copied in as `B016` (and so on)
+  in `[games] root`, its bbs.cfg written for the league, a nodelist with the
+  hub alone put in it, and preflight run. For Immortal Barons it makes the
+  Coordinator's data folder, its board key and Coordinator key. The game is
+  then *installed*, and nothing runs in it: a packet for it waits, and no
+  schedule touches it. A setup that fails removes the folder it made and can
+  be tried again.
+- **A new league's first reset** is sent from Game Reset as any other, with
+  settings the admin chose, so no defaults reach the league's history. It has
+  no backup (the image is its way back). Its run after the reset is a canary
+  run: a packet of every other league of the same game sits in the new game's
+  INBOUND, and the run passes only if the game left every one alone, wrote
+  nothing under another league's number, and changed no other league's files.
+  Then preflight in full. All well, and the game is *ready*; anything wrong,
+  and it is made again from its image and stays installed, the settings back
+  in the draft.
+- A league with a game of the hub's can be enabled only once that game is
+  ready and passed its latest preflight.
+
 ### Changed
+- A nodelist can be the hub alone, "1 HOST" naming no one (or for IB a roster
+  of the hub alone): a new league's game starts with one, and RESET,
+  PLANETARY and IB's -league-reset and -maint all take it. Generate Nodelist
+  no longer refuses a league with no members.
+- The Leagues page's Add League, which made a league with no game, is now
+  New League.
 - An image may no longer hold a link, or a file or folder its manifest does
   not list; preflight and the import both refuse one. Image manifests list
   folders too, so a missing empty folder is caught.

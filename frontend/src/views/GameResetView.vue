@@ -348,7 +348,16 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnOnUnload))
           </div>
         </header>
 
-        <div v-if="form.game_type === 'I'" class="alert alert-warning mb-4">
+        <div v-if="form.game_state === 'installed'" class="alert alert-success mb-4">
+          This is the league's first reset: the game was just set up and has no
+          settings yet. Choose them here, save the draft, then PERFORM RESET. After the
+          reset the hub runs the game once with a canary for every other league of the
+          same game in its INBOUND, and checks that it touched none of them nor any
+          other league's files. If anything is wrong the game is made again from its
+          image and the settings come back to the draft. Once it passes, the game is
+          ready and the league can be enabled.
+        </div>
+        <div v-else-if="form.game_type === 'I'" class="alert alert-warning mb-4">
           A reset wipes every player on every board in the league and starts a new
           game with these rules. Save the draft, then PERFORM RESET: the hub backs up
           its game, writes the rules into its config.json, orders the league reset,

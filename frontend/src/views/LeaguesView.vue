@@ -1,43 +1,89 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { useLeaguesStore } from '@/stores/leagues'
 import { useAuthStore } from '@/stores/auth'
 import AppLayout from '@/components/AppLayout.vue'
 import { GAMES, gameTypeName } from '@/games'
+import { apiError, leaguesApi, type NewLeagueForm } from '@/services/api'
 
 const leaguesStore = useLeaguesStore()
 const authStore = useAuthStore()
+const router = useRouter()
 
+// New League: Set Up makes the league (disabled) and the hub's game for it,
+// from a golden image. Its settings come with its first reset, on Game Reset.
 const showCreateModal = ref(false)
+const form = ref<NewLeagueForm | null>(null)
 const newLeagueId = ref('')
 const newGameType = ref('B')
 const newName = ref('')
 const newDescription = ref('')
+const newHubAddress = ref('')
+const newImageId = ref<number | null>(null)
+const setupError = ref<string | null>(null)
+const settingUp = ref(false)
 
 onMounted(async () => {
   await leaguesStore.loadLeagues()
 })
 
-function openCreateModal() {
+const imagesForGame = computed(() =>
+  (form.value?.images ?? []).filter((i) => i.game_type === newGameType.value))
+
+watch(newGameType, () => {
+  newImageId.value = imagesForGame.value[0]?.id ?? null
+})
+
+const numberTaken = computed(() =>
+  /^\d{3}$/.test(newLeagueId.value) && !!form.value?.used_numbers.includes(newLeagueId.value))
+
+const defaultAddress = computed(() => {
+  const n = /^\d{3}$/.test(newLeagueId.value) ? Number(newLeagueId.value) : 'n'
+  return `${n}:${n}/${form.value?.hub_index ?? 1}`
+})
+
+const canSetUp = computed(() =>
+  !!form.value && !form.value.problems.length && /^\d{3}$/.test(newLeagueId.value)
+  && newLeagueId.value !== '000' && !numberTaken.value && !!newName.value.trim()
+  && newImageId.value !== null)
+
+async function openCreateModal() {
   newLeagueId.value = ''
   newGameType.value = 'B'
   newName.value = ''
   newDescription.value = ''
-  leaguesStore.clearError()
+  newHubAddress.value = ''
+  setupError.value = null
+  form.value = null
   showCreateModal.value = true
+  try {
+    form.value = (await leaguesApi.newLeagueForm()).data
+    newImageId.value = imagesForGame.value[0]?.id ?? null
+  } catch (e: unknown) {
+    setupError.value = apiError(e, 'Could not load the form.')
+  }
 }
 
 async function handleCreate() {
-  if (!newLeagueId.value || !newName.value) return
-
-  const success = await leaguesStore.createLeague({
-    league_id: newLeagueId.value,
-    game_type: newGameType.value,
-    name: newName.value,
-    description: newDescription.value || undefined
-  })
-  if (success) {
+  if (!canSetUp.value) return
+  settingUp.value = true
+  setupError.value = null
+  try {
+    const { data } = await leaguesApi.setUp({
+      league_id: newLeagueId.value,
+      game_type: newGameType.value,
+      name: newName.value.trim(),
+      description: newDescription.value.trim() || undefined,
+      hub_fidonet_address: newHubAddress.value.trim() || undefined,
+      image_id: newImageId.value ?? undefined,
+    })
     showCreateModal.value = false
+    router.push(`/leagues/${data.league_id}`)
+  } catch (e: unknown) {
+    setupError.value = apiError(e, 'Could not set the league up.')
+  } finally {
+    settingUp.value = false
   }
 }
 </script>
@@ -51,7 +97,7 @@ async function handleCreate() {
           <p class="text-muted">Manage inter-BBS game leagues</p>
         </div>
         <button v-if="authStore.isAdmin" class="btn btn-primary" @click="openCreateModal">
-          Add League
+          New League
         </button>
       </header>
 
@@ -96,17 +142,23 @@ async function handleCreate() {
         </router-link>
       </div>
 
-      <!-- Create Modal -->
+      <!-- New League -->
       <div v-if="showCreateModal" class="modal-overlay" @click.self="showCreateModal = false">
         <div class="modal">
           <div class="modal-header">
-            <h3>Add New League</h3>
+            <h3>New League</h3>
             <button class="modal-close" @click="showCreateModal = false">&times;</button>
           </div>
           <form @submit.prevent="handleCreate">
             <div class="modal-body">
-              <div v-if="leaguesStore.error" class="alert alert-error mb-4">
-                {{ leaguesStore.error }}
+              <p class="text-muted mb-4">
+                Set Up makes the league, disabled, and the hub's game for it from a golden
+                image. Nothing runs in the game until you send its first reset from Game
+                Reset, with the settings you choose.
+              </p>
+              <div v-if="setupError" class="alert alert-error mb-4">{{ setupError }}</div>
+              <div v-if="form?.problems.length" class="alert alert-error mb-4">
+                <div v-for="p in form.problems" :key="p">{{ p }}</div>
               </div>
               <div class="form-row">
                 <div class="form-group">
@@ -115,15 +167,18 @@ async function handleCreate() {
                     id="leagueId"
                     v-model="newLeagueId"
                     type="text"
-                    placeholder="e.g., 555"
+                    placeholder="e.g., 016"
                     pattern="[0-9]{3}"
                     maxlength="3"
                     required
                   />
-                  <small class="text-muted">3-digit number</small>
+                  <small v-if="numberTaken" class="text-danger">
+                    In use: a number is one league's, of any game
+                  </small>
+                  <small v-else class="text-muted">3 digits, unused by any game</small>
                 </div>
                 <div class="form-group">
-                  <label for="gameType">Game Type</label>
+                  <label for="gameType">Game</label>
                   <select id="gameType" v-model="newGameType" required>
                     <option v-for="g in GAMES" :key="g.letter" :value="g.letter">
                       {{ g.code }} ({{ g.name }})
@@ -137,9 +192,33 @@ async function handleCreate() {
                   id="name"
                   v-model="newName"
                   type="text"
-                  placeholder="e.g., My BRE League"
+                  placeholder="e.g., Starship Junkyard BRE"
                   required
                 />
+              </div>
+              <div class="form-group">
+                <label for="image">Golden Image</label>
+                <select id="image" v-model="newImageId" :disabled="!imagesForGame.length">
+                  <option v-for="i in imagesForGame" :key="i.id" :value="i.id">
+                    {{ i.dirname }}
+                  </option>
+                </select>
+                <small v-if="form && !imagesForGame.length" class="text-danger">
+                  No {{ gameTypeName(newGameType) }} image:
+                  <router-link to="/admin/images">add one on Game Images</router-link> first
+                </small>
+                <small v-else class="text-muted">Newest first</small>
+              </div>
+              <div class="form-group">
+                <label for="hubAddress">Hub's FTN Address in the League (optional)</label>
+                <input
+                  id="hubAddress"
+                  v-model="newHubAddress"
+                  type="text"
+                  class="font-mono"
+                  :placeholder="defaultAddress"
+                />
+                <small class="text-muted">Blank: {{ defaultAddress }}</small>
               </div>
               <div class="form-group">
                 <label for="description">Description (optional)</label>
@@ -155,12 +234,8 @@ async function handleCreate() {
               <button type="button" class="btn btn-secondary" @click="showCreateModal = false">
                 Cancel
               </button>
-              <button
-                type="submit"
-                class="btn btn-primary"
-                :disabled="leaguesStore.loading || !newLeagueId || !newName"
-              >
-                Create League
+              <button type="submit" class="btn btn-primary" :disabled="!canSetUp || settingUp">
+                {{ settingUp ? 'Starting…' : 'Set Up' }}
               </button>
             </div>
           </form>

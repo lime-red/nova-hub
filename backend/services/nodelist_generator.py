@@ -31,7 +31,10 @@ that generating a nodelist cannot quietly change how a league routes.
 
 Because a partial nodelist is worse than a stale one, generate() refuses to
 write anything it cannot construct completely and leaves the previous file in
-place.
+place. A league with no members yet is not partial: its nodelist is the hub
+alone, "1 HOST" naming no one, which is how a new league's game starts
+(league_setup) and how its first reset runs. RESET and PLANETARY both take it
+(tried on the rig, 2026-11-03).
 
 Writing the file does not reach the members. They get a nodelist one way only:
 the hub's own game sends BRNODES.<league> from its OUTBOUND after its nodes file
@@ -117,9 +120,9 @@ class NodelistGenerator:
         Generate a nodelist file for the given league.
 
         Returns the path of the written file, or None if the nodelist could not
-        be built completely -- an unknown game type, no active members with a
-        BBS index, or no hub_fidonet_address for the league. Returning None
-        leaves any existing file untouched.
+        be built completely -- an unknown game type, or no hub_fidonet_address
+        for the league. Returning None leaves any existing file untouched. With
+        no active members it is the hub's entry alone.
         """
         league = self.db.query(League).filter(League.id == league_db_id).first()
         if not league:
@@ -158,10 +161,6 @@ class NodelistGenerator:
                 continue
             members.append(membership)
 
-        if not members:
-            logger.info(f"generate: no active members with BBS index for league {league.full_id}")
-            return None
-
         hub_fidonet = _sanitize_nodelist_field(league.hub_fidonet_address)
         if not hub_fidonet:
             logger.error(
@@ -179,7 +178,7 @@ class NodelistGenerator:
         # writing HOST over the top of one would silently re-point its mail.
         targets = " ".join(str(m.bbs_index) for m in members)
         routes_mail = league.hub_routes_mail is not False
-        index_line = f"{hub_index} HOST {targets}" if routes_mail else str(hub_index)
+        index_line = f"{hub_index} HOST {targets}".rstrip() if routes_mail else str(hub_index)
         lines = _entry(
             index_line,
             hub_name,

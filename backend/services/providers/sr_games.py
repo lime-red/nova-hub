@@ -456,7 +456,8 @@ class SRGamesProvider(GameProvider):
                 "and its HOST routing line cannot be written. Set it first; the "
                 "existing nodelist has been left untouched."
             ]
-        return None, ["No active members with a BBS index assigned — nodelist not generated"]
+        return None, [f"{league.full_id}: the nodelist could not be generated; the hub's "
+                      f"log says why"]
 
     # -- client config ----------------------------------------------------------
 

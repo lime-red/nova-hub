@@ -173,9 +173,23 @@ Everything above is recorded in Admin > Audit Log.
 
 ### Configure Leagues
 
-1. Leagues are automatically created when the first packet is uploaded
-2. Or manually create via the database/admin interface
-3. Configure Dosemu paths for each league if using batch processing
+A league is set up from the console: **Leagues → New League**. It needs a
+golden image of the game on the hub first (**Game Images**; see
+[DOSEMU_SETUP.md](DOSEMU_SETUP.md#golden-images)).
+
+1. **Set Up**: the league number (unused by any league of any game), the game,
+   a name and the image. The hub makes the league, disabled, and its game
+   from the image in `[games] root`, writes its bbs.cfg and a nodelist with
+   the hub alone, and runs preflight. The game is then *installed*: nothing
+   runs in it yet.
+2. **First reset**: on the league's Game Reset page, choose the settings and
+   PERFORM RESET. After the reset the hub runs the game once with a canary for
+   every other league of the same game in its INBOUND, and checks that it left
+   them, and every other league's files, alone. Then the game is *ready*.
+3. **Enable** the league, add its members, and Generate Nodelist; the hub's
+   game sends the new nodelist with its next run.
+
+The hub never makes a league from a packet's filename.
 
 ## Client Setup
 

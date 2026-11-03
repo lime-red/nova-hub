@@ -29,7 +29,27 @@ const ORDER_STEPS: Record<string, [string, string, string]> = {
   thaw: ['Thaw ordered with -league-thaw', 'The game thawed, and signed the order',
     'Thaw order on its way to members']
 }
+// New League: the setup, and the first reset, whose way back is the image and
+// whose run after it is the canary run.
+const SETUP_STEPS = [
+  { stage: 'queued', label: 'Started' },
+  { stage: 'lock', label: 'Processing paused for the setup' },
+  { stage: 'stamped', label: 'Game copied from its image, its bbs.cfg written' },
+  { stage: 'nodelist', label: 'Nodelist written, with the hub alone' },
+  { stage: 'preflight', label: 'Preflight passed' },
+  { stage: 'installed', label: 'Installed: waiting for its first reset' }
+]
+const firstReset = computed(() => reached.value.has('image'))
 const STEPS = computed(() => {
+  if (reset.value?.kind === 'setup') return SETUP_STEPS
+  if (firstReset.value) {
+    return resetSteps.value
+      .filter((s) => s.stage !== 'sent')
+      .map((s) => s.stage === 'backup' ? { stage: 'image', label: 'No backup: the image is the way back' }
+        : s.stage === 'processing' ? { stage: 'processing', label: 'First run, with canaries for the other leagues' }
+          : s)
+      .concat([{ stage: 'ready', label: 'Canaries untouched and preflight passed: the game is ready' }])
+  }
   const order = ORDER_STEPS[reset.value?.kind ?? 'reset']
   if (order) return [
     { stage: 'queued', label: 'Started' },
@@ -55,21 +75,28 @@ const resetSteps = computed(() => [
   { stage: 'processing', label: isIb.value ? 'Hub run' : 'PLANETARY run' },
   { stage: 'sent', label: `${isIb.value ? 'Reset order' : 'Game Start'} on its way to members` }
 ])
-const ENDINGS: Record<string, string> = {
-  restored: 'Something was wrong: the game was put back as it was',
-  failed: 'Stopped before the game was touched',
-  interrupted: 'The hub restarted during the reset'
-}
+const ENDINGS = computed<Record<string, string>>(() => ({
+  restored: firstReset.value
+    ? 'Something was wrong: the game was made again from its image'
+    : 'Something was wrong: the game was put back as it was',
+  failed: reset.value?.kind === 'setup'
+    ? 'The setup failed, and the folder it was making was removed'
+    : 'Stopped before the game was touched',
+  interrupted: `The hub restarted during the ${reset.value?.kind === 'setup' ? 'setup' : 'reset'}`
+}))
+// The last step of each kind of order: until then there is work to show.
+const FINAL = ['sent', 'ready', 'installed']
 
 const reached = computed(() => new Map((reset.value?.progress ?? []).map((p) => [p.stage, p.at])))
 const ending = computed(() =>
-  (reset.value?.progress ?? []).map((p) => p.stage).find((s) => s in ENDINGS)
+  (reset.value?.progress ?? []).map((p) => p.stage).find((s) => s in ENDINGS.value)
 )
 const running = computed(() => reset.value?.status === 'applying')
 // The reset is "applied" once the editor saves, but its PLANETARY run is still
 // to come: the card has work to show until "sent", or an error says it stopped.
 const working = computed(
-  () => running.value || (reset.value?.status === 'applied' && !reached.value.has('sent') && !reset.value.error)
+  () => running.value || (reset.value?.status === 'applied' && !FINAL.some((s) => reached.value.has(s))
+    && !reset.value.error)
 )
 
 // Every stage is recorded as it finishes, except "editor", recorded as the

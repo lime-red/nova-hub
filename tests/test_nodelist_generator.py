@@ -129,8 +129,12 @@ def test_refusal_leaves_the_previous_file_untouched(db_session, tmp_path, league
     assert dest.read_text() == good
 
 
-def test_no_members_writes_nothing(db_session, tmp_path, league):
-    assert _generate(db_session, tmp_path, league) is None
+def test_no_members_is_the_hub_alone(db_session, tmp_path, league):
+    """A new league's game starts with no members: its nodes file is the hub's
+    entry, HOSTing no one, which RESET and PLANETARY both take."""
+    lines = _generate(db_session, tmp_path, league).read_text().splitlines()
+    assert lines[0] == "1 HOST"
+    assert len([l for l in lines if l == ""]) == 1  # one entry
 
 
 def test_inactive_members_are_excluded_from_the_host_line(db_session, tmp_path, league):

@@ -205,6 +205,8 @@ class GameResetForm(BaseModel):
     under_way: Optional[ResetDetail] = Field(
         None, description="The league's reset in progress, if one is")
     hub_timezone: HubTimezone
+    game_state: Optional[str] = Field(
+        None, description="The hub's game: installed means this reset is the league's first")
 
 
 class ResetDraftSave(BaseModel):

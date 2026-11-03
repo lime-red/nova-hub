@@ -2264,6 +2264,18 @@
             "title": "Full Id",
             "type": "string"
           },
+          "game_state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The hub's game: installed means this reset is the league's first",
+            "title": "Game State"
+          },
           "game_type": {
             "title": "Game Type",
             "type": "string"
@@ -3592,6 +3604,11 @@
       "LeagueGameInfo": {
         "description": "The hub's own copy of the league's game (league_games), for an admin",
         "properties": {
+          "can_enable": {
+            "default": false,
+            "title": "Can Enable",
+            "type": "boolean"
+          },
           "folder": {
             "title": "Folder",
             "type": "string"
@@ -3652,6 +3669,39 @@
           "runs": {
             "title": "Runs",
             "type": "boolean"
+          },
+          "setup_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Setup Error"
+          },
+          "setup_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Setup Id"
+          },
+          "setup_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Setup Status"
           },
           "state": {
             "title": "State",
@@ -4570,6 +4620,107 @@
           "runs"
         ],
         "title": "MovementSummary",
+        "type": "object"
+      },
+      "NewLeague": {
+        "description": "New League's form: what Set Up makes the league and its game from",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "game_type": {
+            "maxLength": 1,
+            "minLength": 1,
+            "title": "Game Type",
+            "type": "string"
+          },
+          "hub_fidonet_address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hub Fidonet Address"
+          },
+          "image_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Id"
+          },
+          "league_id": {
+            "maxLength": 3,
+            "minLength": 3,
+            "title": "League Id",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "league_id",
+          "game_type",
+          "name"
+        ],
+        "title": "NewLeague",
+        "type": "object"
+      },
+      "NewLeagueForm": {
+        "description": "What New League's form needs from the hub",
+        "properties": {
+          "hub_index": {
+            "title": "Hub Index",
+            "type": "integer"
+          },
+          "images": {
+            "items": {
+              "$ref": "#/components/schemas/SetupImage"
+            },
+            "title": "Images",
+            "type": "array"
+          },
+          "problems": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Problems",
+            "type": "array"
+          },
+          "used_numbers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Used Numbers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "hub_index",
+          "images",
+          "used_numbers"
+        ],
+        "title": "NewLeagueForm",
         "type": "object"
       },
       "NodelistInfo": {
@@ -5975,6 +6126,74 @@
           "message"
         ],
         "title": "ResetWarning",
+        "type": "object"
+      },
+      "SetUpAgain": {
+        "properties": {
+          "image_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Id"
+          }
+        },
+        "title": "SetUpAgain",
+        "type": "object"
+      },
+      "SetupImage": {
+        "properties": {
+          "dirname": {
+            "title": "Dirname",
+            "type": "string"
+          },
+          "game_type": {
+            "title": "Game Type",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "dirname",
+          "game_type",
+          "version"
+        ],
+        "title": "SetupImage",
+        "type": "object"
+      },
+      "SetupStarted": {
+        "properties": {
+          "full_id": {
+            "title": "Full Id",
+            "type": "string"
+          },
+          "league_id": {
+            "title": "League Id",
+            "type": "integer"
+          },
+          "setup_id": {
+            "title": "Setup Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "league_id",
+          "full_id",
+          "setup_id"
+        ],
+        "title": "SetupStarted",
         "type": "object"
       },
       "TakenIndex": {
@@ -9154,6 +9373,70 @@
         ]
       }
     },
+    "/api/v1/leagues/new": {
+      "get": {
+        "description": "What New League's form offers (admin only): the images a league's game can\nbe made from, newest first; the league numbers already in use, of any game;\nand why Set Up cannot work on this hub, if anything ([games] root unset,\nsay).",
+        "operationId": "new_league_form_api_v1_leagues_new_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NewLeagueForm"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "New League's Form",
+        "tags": [
+          "Management API - Leagues"
+        ]
+      }
+    },
+    "/api/v1/leagues/setup": {
+      "post": {
+        "description": "Make a new league and its game (admin only): the league, disabled; and the\nhub's game for it, copied from a golden image, its bbs.cfg written and a\nnodelist with the hub alone put in it, then checked by preflight.\n\nAnswers 202 at once. The setup is an order in the league's reset history\n(kind \"setup\"); follow it with `GET /leagues/{id}/resets/{setup_id}`, or\nthe league's `game.state`: `provisioning`, then `installed`, or `failed`\nwith the folder it made removed.\n\nNothing runs in the game until its first reset, sent from Game Reset with\nsettings the admin chose; that makes it `ready`. The league can be enabled\nonly then.\n\n409: the number is used by a league of any game, the folder already\nexists, the hub address is taken, or a reset is under way. 422: anything\nelse the form got wrong, or no usable image.",
+        "operationId": "set_up_league_api_v1_leagues_setup_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewLeague"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupStarted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Up a New League",
+        "tags": [
+          "Management API - Leagues"
+        ]
+      }
+    },
     "/api/v1/leagues/{league_id}": {
       "delete": {
         "description": "Delete a league and ALL associated data (admin only).\n\nPermanently removes: league record, member associations, packets, processing\nruns, sequence alerts, and all related files on disk (packet files and\nnodelist directory).\n\n**Path Parameters:**\n- `league_id`: Database ID of the league\n\n**Request Body:**\n- `confirmation_name`: Must match the league's confirmation name, e.g. `BRE_014`\n\n**Returns:** Success message",
@@ -10064,6 +10347,59 @@
         "summary": "Apply the Draft's Rules Without a Reset",
         "tags": [
           "Management API - Game Reset"
+        ]
+      }
+    },
+    "/api/v1/leagues/{league_id}/setup": {
+      "post": {
+        "description": "Set up a league whose setup failed, once the cause is fixed (admin only).\nAs Set Up, from the same image unless another is given. 409 unless the\nleague's game is `failed`.",
+        "operationId": "set_up_again_api_v1_leagues__league_id__setup_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "league_id",
+            "required": true,
+            "schema": {
+              "title": "League Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetUpAgain"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupStarted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Up Again",
+        "tags": [
+          "Management API - Leagues"
         ]
       }
     },

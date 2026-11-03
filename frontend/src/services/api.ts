@@ -399,6 +399,26 @@ export const auditApi = {
 }
 
 // Leagues API functions
+export interface SetupImage {
+  id: number
+  dirname: string
+  game_type: string
+  version: string
+}
+
+export interface NewLeagueForm {
+  hub_index: number
+  images: SetupImage[]  // newest first
+  used_numbers: string[]  // every league number in use, of any game
+  problems: string[]  // why Set Up cannot work on this hub
+}
+
+export interface SetupStarted {
+  league_id: number
+  full_id: string
+  setup_id: number
+}
+
 export const leaguesApi = {
   list: () =>
     api.get('/leagues'),
@@ -434,6 +454,23 @@ export const leaguesApi = {
 
   delete: (id: number, confirmationName: string) =>
     api.delete(`/leagues/${id}`, { data: { confirmation_name: confirmationName } }),
+
+  // New League: the form's choices, Set Up, and Set Up again after a failure.
+  newLeagueForm: () =>
+    api.get<NewLeagueForm>('/leagues/new'),
+
+  setUp: (data: {
+    league_id: string
+    game_type: string
+    name: string
+    description?: string
+    hub_fidonet_address?: string
+    image_id?: number
+  }) =>
+    api.post<SetupStarted>('/leagues/setup', data),
+
+  setUpAgain: (id: number, imageId?: number) =>
+    api.post<SetupStarted>(`/leagues/${id}/setup`, { image_id: imageId ?? null }),
 
   addMember: (leagueId: number, data: {
     client_id: number
@@ -525,12 +562,13 @@ export interface GameResetForm {
   } | null
   under_way: ResetDetail | null
   hub_timezone: { name: string; utc_offset: string; today: string }
+  game_state: 'provisioning' | 'installed' | 'ready' | 'failed' | null  // installed: the first reset
 }
 
 // One row of a league's reset history. `source` is 'observed' for a reset
 // only seen in a Game Start packet, not performed from the console.
 // A reset; or, for an Immortal Barons league, the console's other orders.
-export type LeagueOrderKind = 'reset' | 'rules' | 'freeze' | 'thaw'
+export type LeagueOrderKind = 'reset' | 'rules' | 'freeze' | 'thaw' | 'setup'
 
 export interface ResetSummary {
   id: number

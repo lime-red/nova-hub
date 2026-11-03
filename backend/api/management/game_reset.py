@@ -149,6 +149,7 @@ def _form(db: Session, league: League) -> GameResetForm:
             seen_at=_iso(seen.seen_at)),
         under_way=None if under_way is None else _detail(db, league, under_way),
         hub_timezone=_hub_timezone(),
+        game_state=league.install.state if league.install is not None else None,
     )
 
 

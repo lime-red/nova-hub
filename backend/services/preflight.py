@@ -175,7 +175,8 @@ def check(db: Session, config: dict, league: League,
         return [f"{install.folder} does not exist"]
     if others is None:
         others = [i for i in (league_game(config, l) for l in db.query(League).all()
-                              if l.id != league.id and l.install is not None) if i]
+                              if l.id != league.id and l.install is not None
+                              and l.install.state in ("installed", "ready")) if i]
     problems = []
     for name in ("inbound", "outbound"):
         if not getattr(install, name).is_dir():
@@ -198,11 +199,14 @@ def check(db: Session, config: dict, league: League,
 def run(db: Session, config: dict, leagues: Optional[list[League]] = None) -> dict[str, list[str]]:
     """Check every league with a game (or those given), keep each result on its
     row, and return {full id: problems}."""
-    every = [l for l in db.query(League).all() if l.install is not None]
+    # A league whose setup failed has no game to check, and one being set up
+    # is checked by its setup.
+    every = [l for l in db.query(League).all()
+             if l.install is not None and l.install.state in ("installed", "ready")]
     installs = {l.id: league_game(config, l) for l in every}
     results = {}
     for league in (leagues if leagues is not None else every):
-        if league.install is None:
+        if league.install is None or league.install.state == "failed":
             continue
         others = [i for lid, i in installs.items() if i is not None and lid != league.id]
         try:

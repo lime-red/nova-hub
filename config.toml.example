@@ -18,9 +18,11 @@ state = "QLD"
 country = "AUS"
 
 [processing]
-# Seconds to wait after an upload before processing, so the rest of a
-# client's sync joins the same run.
+# A run waits until uploads have been quiet this many seconds, so the rest of
+# a client's sync joins the same run. It waits no longer than
+# settle_max_seconds in all, so a steady stream of uploads is still processed.
 settle_seconds = 5
+settle_max_seconds = 60
 # Days of bulk content to keep. Dosemu transcripts and the bodies of generated
 # files older than this are dropped; the run rows, their counts and their
 # per-league attribution are kept. 0 disables the pass entirely.

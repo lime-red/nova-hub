@@ -10,6 +10,7 @@ import os
 import shutil
 import sys
 import tarfile
+import time
 from datetime import timedelta
 from pathlib import Path
 
@@ -249,9 +250,51 @@ async def test_a_trigger_during_a_run_runs_again_after_it(monkeypatch):
 
     monkeypatch.setattr(processing_service, "_process_once", once)
     monkeypatch.setattr(processing_service, "_rerun", False)
+    monkeypatch.setattr(processing_service, "_settle_seconds", lambda: (0, 0))
     await processing_service.process_batch()
     await asyncio.sleep(0.01)
     assert len(runs) == 2
+
+
+async def _upload_stream(monkeypatch, settle, most, uploads=40, every=0.02):
+    """Trigger as a client's sync does, one upload every `every` seconds, with
+    runs that take 10 ms. Returns when processing has finished, with the time
+    each run started, measured from the first upload."""
+    runs = []
+
+    async def once():
+        runs.append(time.monotonic() - start)
+        await asyncio.sleep(0.01)
+
+    monkeypatch.setattr(processing_service, "_process_once", once)
+    monkeypatch.setattr(processing_service, "_rerun", False)
+    monkeypatch.setattr(processing_service, "_processing_task", None)
+    monkeypatch.setattr(processing_service, "_settle_seconds", lambda: (settle, most))
+    start = time.monotonic()
+    for _ in range(uploads):
+        processing_service.trigger_processing()
+        await asyncio.sleep(every)
+    while not processing_service._processing_task.done():
+        await asyncio.sleep(0.01)
+    return runs, time.monotonic() - start
+
+
+@pytest.mark.asyncio
+async def test_a_stream_of_uploads_is_one_run_not_one_per_packet(monkeypatch):
+    # #130: 556 uploads from one board's sync made 129 runs, 109 of them for a
+    # single packet. A run waits for the uploads to stop, every pass.
+    runs, _ = await _upload_stream(monkeypatch, settle=0.2, most=30)
+    assert len(runs) == 1, runs
+    assert runs[0] >= 40 * 0.02          # after the last upload, not during
+
+
+@pytest.mark.asyncio
+async def test_uploads_that_never_stop_are_still_processed(monkeypatch):
+    # The quiet wait has a cap: a stream longer than it is processed in
+    # cap-sized runs, not held back until it ends.
+    runs, took = await _upload_stream(monkeypatch, settle=0.2, most=0.3, uploads=60)
+    assert 2 <= len(runs) <= 6, runs
+    assert runs[0] < 0.6, runs
 
 
 class _Log:

@@ -40,9 +40,12 @@ class HubConfig(BaseModel):
 
 class ProcessingConfig(BaseModel):
     """Packet processing configuration"""
-    # Seconds to wait after an upload before processing, so the rest of a
-    # client's sync joins the same run. See processing_service.process_batch.
+    # A run waits until uploads have been quiet this many seconds, so the rest
+    # of a client's sync joins the same run; but never longer than
+    # settle_max_seconds, so a steady stream still gets processed.
+    # See processing_service._settle.
     settle_seconds: int = 5
+    settle_max_seconds: int = 60
     # Days of bulk content to keep. Dosemu transcripts and generated file bodies
     # older than this are dropped; the rows themselves, and every count on them,
     # are kept. 0 disables the pass. See backend/services/retention_service.py.

@@ -318,9 +318,11 @@ def download(hub, index: int):
 async def test_a_new_league_plays_a_round_with_its_members(pristine, hub, members):
     """New League end to end, as an admin and two sysops would: set up, first
     reset, enable, members join and install from the hub's nodelist. Then node
-    02 plays a turn and writes, and node 03 sees both, through the new hub game.
+    02 plays a turn and writes, node 03 reads it through the new hub game, and
+    node 03's traffic goes back the same way.
     """
     from rig import player
+    from rig.transcript import Transcript
     from backend.api.management.leagues import _check_can_enable
     from backend.services.applications import regenerate_nodelists
     from backend.services.nodelist_generator import find_nodelist
@@ -361,16 +363,15 @@ async def test_a_new_league_plays_a_round_with_its_members(pristine, hub, member
     assert run.packets_unconsumed == 0, "the new game left node 02's packet in its INBOUND"
     assert hub.transcript(run).ingested_from(2), hub.transcript(run).items
 
-    # Node 03 downloads what the hub has for it, runs its maintenance, and
-    # sees node 02 as a player would.
+    # Node 03 downloads what the hub has for it and runs its maintenance: it
+    # takes in node 02's items, routed by the new hub game, and its player
+    # reads node 02's message. (Not node 02 in node 03's IPScores: after one
+    # round no board but the host shows another's realm, 900B's included.)
     assert download(hub, 3), f"nothing for node 03; hub outbound {hub.spool('outbound')}"
-    node_rig.run(ROUND, NODES[3], "PLANETARY", tag="newleague3")
-    seen = player.visit(ROUND, NODES[3], realm="Node Three", turns=1,
-                        read_ip_scores=True, tag="newleague3")
-    assert "Node Two" in seen["ip_scores"], seen["ip_scores"][-2000:]
-    assert str(played["status_after"]["score"]) in seen["ip_scores"].replace(",", ""), (
-        f"node 02 scored {played['status_after']['score']}; node 03 shows\n"
-        f"{seen['ip_scores'][-2000:]}")
+    log = node_rig.run(ROUND, NODES[3], "PLANETARY", tag="newleague3")
+    moved = Transcript(log.read_bytes()).moved("in")
+    assert {("in", "Message", 2, 3), ("in", "Player List", 2, 3)} <= moved, moved
+    seen = player.visit(ROUND, NODES[3], realm="Node Three", turns=1, tag="newleague3")
     assert MESSAGE in seen["turn_text"], seen["turn_text"][:3000]
 
     # And back: node 03's traffic goes through the hub to node 02.

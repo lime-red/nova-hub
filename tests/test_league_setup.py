@@ -136,12 +136,12 @@ def test_set_up_refuses_what_it_should(hub):
     with pytest.raises(league_setup.SetupRefused, match="not a Falcon's Eye image"):
         _start(h, game="F", image_id=h.image.id)
 
-    other = League(league_id="902", game_type="F", name="Taken", is_active=True)
+    other = League(league_id="902", game_type="B", name="Taken", is_active=True)
     h.db.add(other)
     h.db.commit()
-    with pytest.raises(league_setup.SetupRefused, match="already 902F") as e:
+    with pytest.raises(league_setup.SetupRefused, match="902B already exists") as e:
         _start(h, number="902")
-    assert e.value.status == 409, "a number is one league's, whatever the game"
+    assert e.value.status == 409
 
     (h.root / "B903").mkdir(parents=True)
     with pytest.raises(league_setup.SetupRefused, match="already exists") as e:
@@ -153,6 +153,18 @@ def test_set_up_refuses_what_it_should(hub):
                            name="x", hub_address=None, image_id=None, username="admin")
     h.db.rollback()
     assert h.db.query(League).count() == 1, "a refusal makes nothing"
+
+
+def test_a_number_another_game_uses_is_free_for_this_one(hub):
+    """015B, 015F and 015I run side by side on prod: each game reads only its
+    own packets, and the hub's address may serve several leagues."""
+    h = hub
+    h.db.add(League(league_id="905", game_type="F", name="Falcons", is_active=True,
+                    hub_fidonet_address="905:905/1"))
+    h.db.commit()
+    order = _start(h, number="905")
+    league = h.db.get(League, order.league_id)
+    assert league.full_id == "905B" and league.hub_fidonet_address == "905:905/1"
 
 
 def test_a_tampered_image_is_refused_before_anything_is_made(hub):
@@ -506,7 +518,7 @@ async def test_the_api_sets_up_and_enables_only_a_ready_league(api):
     assert r.status_code == 202, r.text
     started = r.json()
     assert started["full_id"] == "902B" and api.scheduled == [started["setup_id"]]
-    assert c.post("/api/v1/leagues/setup", json={"league_id": "902", "game_type": "F",
+    assert c.post("/api/v1/leagues/setup", json={"league_id": "902", "game_type": "B",
                                                  "name": "Again"}).status_code == 409
 
     await league_setup.run_job(started["setup_id"], h.config)
@@ -525,3 +537,29 @@ async def test_the_api_sets_up_and_enables_only_a_ready_league(api):
     assert c.get(f"/api/v1/leagues/{league_id}").json()["game"]["can_enable"] is True
     assert c.put(f"/api/v1/leagues/{league_id}", json={"is_active": True}).status_code == 200
     assert c.post(f"/api/v1/leagues/{league_id}/setup", json={}).status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_a_league_is_deleted_once_its_setup_has_ended(api, monkeypatch):
+    """Not while the job is making it; a failed setup's league goes cleanly."""
+    c, h = api.client, api.hub
+    r = c.post("/api/v1/leagues/setup", json={"league_id": "902", "game_type": "B",
+                                              "name": "Doomed"})
+    league_id = r.json()["league_id"]
+    confirm = {"confirmation_name": "BRE_902"}
+    r = c.request("DELETE", f"/api/v1/leagues/{league_id}", json=confirm)
+    assert r.status_code == 409 and "being set up" in r.json()["detail"]
+
+    def broken(*a, **k):
+        raise league_setup.SetupFailed("the image would not copy")
+    monkeypatch.setattr(league_setup, "_place_dos", broken)
+    await league_setup.run_job(api.scheduled[-1], h.config)
+    h.db.expire_all()
+    assert h.db.get(League, league_id).install.state == "failed"
+
+    r = c.request("DELETE", f"/api/v1/leagues/{league_id}", json=confirm)
+    assert r.status_code == 200, r.text
+    h.db.expire_all()
+    assert h.db.get(League, league_id) is None
+    assert h.db.query(GameReset).filter_by(league_id=league_id).count() == 0
+    assert not (h.root / "B902").exists()

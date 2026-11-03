@@ -170,11 +170,12 @@ def start(db: Session, config: dict, *, number: str, game_type: str, name: str,
     name = (name or "").strip()
     if not name:
         raise SetupRefused("Give the league a name.")
-    taken = db.query(League).filter(League.league_id == number).first()
+    # Unique within the game, not across games: each game reads only its own
+    # packets (900B, 900F), so 015B, 015F and 015I live side by side on prod.
+    taken = (db.query(League)
+             .filter(League.league_id == number, League.game_type == game.letter).first())
     if taken is not None:
-        raise SetupRefused(f"League {number} is already {taken.full_id} ({taken.name}). A "
-                           f"number is used by one league, of any game: the games tell "
-                           f"leagues apart by number alone.", 409)
+        raise SetupRefused(f"League {taken.full_id} already exists ({taken.name}).", 409)
     address = (hub_address or "").strip() or default_address(config, number)
     try:
         _check_hub_address_is_free(db, address)

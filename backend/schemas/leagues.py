@@ -159,7 +159,7 @@ class NewLeagueForm(BaseModel):
     """What New League's form needs from the hub"""
     hub_index: int
     images: List[SetupImage]  # newest first
-    used_numbers: List[str]  # every league number in use, of any game
+    used_ids: List[str]  # every league in use, as 015B: a number is unique within its game
     problems: List[str] = []  # why Set Up cannot work on this hub, if anything
 
 

@@ -36,7 +36,8 @@ watch(newGameType, () => {
 })
 
 const numberTaken = computed(() =>
-  /^\d{3}$/.test(newLeagueId.value) && !!form.value?.used_numbers.includes(newLeagueId.value))
+  /^\d{3}$/.test(newLeagueId.value)
+  && !!form.value?.used_ids.includes(newLeagueId.value + newGameType.value))
 
 const defaultAddress = computed(() => {
   const n = /^\d{3}$/.test(newLeagueId.value) ? Number(newLeagueId.value) : 'n'
@@ -173,9 +174,9 @@ async function handleCreate() {
                     required
                   />
                   <small v-if="numberTaken" class="text-danger">
-                    In use: a number is one league's, of any game
+                    {{ newLeagueId }}{{ newGameType }} already exists
                   </small>
-                  <small v-else class="text-muted">3 digits, unused by any game</small>
+                  <small v-else class="text-muted">3 digits, unused by this game</small>
                 </div>
                 <div class="form-group">
                   <label for="gameType">Game</label>

@@ -409,7 +409,7 @@ export interface SetupImage {
 export interface NewLeagueForm {
   hub_index: number
   images: SetupImage[]  // newest first
-  used_numbers: string[]  // every league number in use, of any game
+  used_ids: string[]  // every league in use, as 015B: a number is unique within its game
   problems: string[]  // why Set Up cannot work on this hub
 }
 

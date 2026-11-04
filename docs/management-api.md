@@ -2715,6 +2715,49 @@ Validation Error
 
 ---
 
+### GET `/management/api/v1/leagues/{league_id}/scores`
+
+**League Scores**
+
+The league's current standings: the newest copy of each score file the
+hub's game wrote (players and boards, by score, net worth, land and net
+worth density), with when it was made and the processing run that made
+it. Not the news files. Empty for a league whose game has written none,
+or for a game that writes none (Immortal Barons).
+
+**Path Parameters:**
+- `league_id`: Database ID of the league
+
+**Example:**
+```bash
+curl -X GET "https://hub.example.com/management/api/v1/leagues/1/scores" \
+  -b cookies.txt
+```
+
+#### Parameters
+
+**league_id**
+  - Type: `integer`
+  - Location: path *(required)*
+
+#### Responses
+
+#### 200
+
+Successful Response
+
+
+**Content-Type:** `application/json`
+
+#### 422
+
+Validation Error
+
+
+**Content-Type:** `application/json`
+
+---
+
 ### GET `/management/api/v1/leagues/{league_id}/member-status`
 
 **League Member Status**

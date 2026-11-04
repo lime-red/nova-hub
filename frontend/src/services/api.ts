@@ -168,6 +168,15 @@ export interface LeagueStatusRow {
   state_detail: string | null
 }
 
+// The newest copy of one of a league's score files (#127).
+export interface LeagueScoreFile {
+  filename: string
+  label: string
+  generated_at: string
+  processing_run_id: number
+  file_data_html: string | null
+}
+
 export interface LeagueStatusResponse {
   tracking_since: string | null
   rows: LeagueStatusRow[]
@@ -425,6 +434,9 @@ export const leaguesApi = {
 
   memberStatus: (id: number) =>
     api.get<LeagueStatusResponse>(`/leagues/${id}/member-status`),
+
+  scores: (id: number) =>
+    api.get<LeagueScoreFile[]>(`/leagues/${id}/scores`),
 
   get: (id: number) =>
     api.get(`/leagues/${id}`),

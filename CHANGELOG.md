@@ -15,6 +15,12 @@ All notable changes to Nova Hub will be documented in this file.
   window, then the league, then the page's own filters, in the same place on
   each. Filters are kept in the address, so Back keeps them and a filtered view
   can be linked. A league page links to its runs, movements and attacks.
+- **`run.py --diff-template`** lists what a hub's `config.toml` sets
+  differently from `config.toml.example`, apart from the keys meant to differ
+  per host (where it listens and keeps its files, who it is, its secrets,
+  sign-in and alerting): values that differ, keys left to the code's default,
+  and keys the template does not know. Exits 1 if there are any, and never
+  prints a secret. It keeps dev and test configured as production is (#126).
 - **Golden images.** A golden image is a clean, finished install of one game
   version, made by `make_golden.py` from your own copy of the game: the donor's
   league taken out (bbs.cfg, nodes file, the coordinator key, which RESET
@@ -50,8 +56,22 @@ All notable changes to Nova Hub will be documented in this file.
   in the draft.
 - A league with a game of the hub's can be enabled only once that game is
   ready and passed its latest preflight.
+- **A league's page shows its current scores** (BRE and FE): the newest copy
+  of each score file the hub's game wrote, players and boards by score, net
+  worth, land and density, with when it was made and a link to the run that
+  made it. The news files are left out (#127).
 
 ### Changed
+- **The deploy playbook builds a hub exactly as production runs one** (#126).
+  The venv is synced from `uv.lock` (`uv sync --frozen --no-dev`), the
+  frontend installs with `--frozen-lockfile` under a pinned pnpm
+  (`nova_hub_pnpm_version`, 10.28.0), and `nova_hub_version` checks out a tag,
+  branch or commit. On a host whose fleet roles own them, `nova_hub_manage_caddy`
+  and `nova_hub_manage_dosemu` hand Caddy and dosemu2 over; dosemu2 is
+  installed `present`, never `latest`. A fresh config gets a generated JWT
+  secret in place of the placeholder (a real one is never rotated), and the
+  first admin's generated password goes to `~novahub/admin-password` (0600)
+  instead of the play's output. The repo default is now gitea.
 - A nodelist can be the hub alone, "1 HOST" naming no one (or for IB a roster
   of the hub alone): a new league's game starts with one, and RESET,
   PLANETARY and IB's -league-reset and -maint all take it. Generate Nodelist

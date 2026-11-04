@@ -40,7 +40,7 @@ table is what actually holds.
 | — | BRE **banks the day's gold automatically** at the end of a turn, so a realm that has just played reads `Gold: 0` with a full account. Any "is this realm broke?" logic has to read gold *plus* bank. |
 | — | `(7) Send Messages` on the main menu is **local to the planet** — it asks `(A-Y,Z=All) Send to:` and never leaves the board. Interplanetary mail, the kind that becomes a packet, is `(9) InterPlanetary Ops` → `(7) Send Message` → a scope, of which `(3) All Planets` needs no planet number. |
 | — | `(9)` → `(1) View IPScores` is a *menu of reports*, not a listing. Only the `Top Players by ...` reports name individual realms; the `Top Planets by ...` ones are per-board totals. |
-| The rig runs on the repo's pinned dependencies | The rig venv **has never matched `requirements.txt` and cannot.** It is python 3.13; the product pins `aiohttp==3.10.0`, which publishes no wheel for 3.13 and fails to build from source there (3.14.3 is what is installed and working). The rig imports the hub's own code, not a pinned dependency surface, so `tests/live/requirements.txt` adds only what the rig needs and leaves the base environment alone. See §11. |
+| The rig runs on the repo's pinned dependencies | It does now, exactly: the rig venv is synced from `uv.lock` (`run.sh --setup`), with the `dev` and `rig` dependency groups on top. For a long time it could not -- the product pinned `aiohttp==3.10.0`, which has no wheel for the rig's python 3.13 -- and drifted. See §11. |
 | — | Re-running while a packet is still pending in OUTBOUND **rewrites it in place and keeps its number** — 176 → 232 → 288 bytes under one filename. A packet sitting in a game outbound folder is not a finished artefact; its contents change until something collects it. |
 
 ---
@@ -299,8 +299,8 @@ taken and the path of the JSONL log they were written to.
 
 ### Driving an interactive DOS game: what it actually takes
 
-The driving itself now lives in **sr-harness** (`lime/sr-harness`, pinned in
-`tests/live/requirements.txt`), which was split out of this rig's `dosdrive.py`,
+The driving itself now lives in **sr-harness** (`lime/sr-harness`, a product dependency pinned in
+`pyproject.toml`), which was split out of this rig's `dosdrive.py`,
 `dosrun.py`, `dospath.py` and `player.py`. It also plays Falcon's Eye. Its
 `.claude/skills/` (`driving-dos-doors`, `bre-harness`, `fe-harness`) are the
 maintained account of the traps below and of everything since; `rig/player.py`
@@ -383,18 +383,23 @@ reach it through `sudo -u`. One venv per machine, not per checkout: the node
 users have to be able to execute it, and each one's game tree is private to
 itself.
 
-Three things it needs that are not in `requirements.txt`, because they belong to
-the rig rather than to the product:
+It is **synced from `uv.lock`**, like every other environment (#126):
+
+```sh
+tests/live/run.sh --setup          # uv sync --frozen --group dev --group rig, then runs as normal
+```
+
+That is the product's locked versions -- the same ones CI and production run,
+sr-harness and pyte among them -- plus two dependency groups from
+`pyproject.toml`: `dev` (pytest) and `rig`, which holds what only the rig
+imports:
 
 | | why |
 |---|---|
-| `sr-harness @ ...@v0.1.1` | drives the games: the pty runner, the screen, the BRE player walk, the 8.3 guard |
-| `pyte==0.8.2` | the terminal emulator sr-harness reconstructs the 80×25 screen with, pinned exactly |
 | `bre-agent @ ...@v0.1.0` | the decision module `player.py` hands the wheel to for `agent_rounds` |
 
-```sh
-tests/live/run.sh --setup          # installs them, then runs as normal
-```
+The sync is exact: the venv holds what the lock says and nothing else, so
+nothing installed by hand survives it, by design.
 
 `bre-agent` is pinned to a **tag, not a branch**: a scenario asserting on which
 action the agent chose is asserting on that version's goal weights and alignment
@@ -402,65 +407,30 @@ table, so an unpinned dependency would make those tests change meaning without a
 commit. `claude/bre-agent` and `lime/sr-harness` are public, so the rig and the nightly runner need no
 credentials — novatest-hl has no ssh access to gitea, but https works.
 
-Both were previously installed by hand and recorded nowhere. `run.sh` now checks
-for them before doing anything and says exactly how to fix it, because the
-alternative is a machine that looks healthy until a walk dies on an ImportError
-deep inside dosemu — which reads like a broken test rather than a half-built
-host.
+`run.sh` checks for what the rig imports before doing anything and says exactly
+how to fix it, because the alternative is a machine that looks healthy until a
+walk dies on an ImportError deep inside dosemu — which reads like a broken test
+rather than a half-built host.
+
+uv itself is `/usr/local/bin/uv` on the rig (`UV=` overrides it).
 
 ### Rebuilding the venv from scratch
 
 ```sh
-python3 -m venv /srv/novatest/venv
-/srv/novatest/venv/bin/pip install -r <repo>/requirements.txt   # see the caveat below
-/srv/novatest/venv/bin/pip install -r <repo>/tests/live/requirements.txt
-sudo chown -R novahub-t:novahub-t /srv/novatest/venv
+sudo install -d -o novahub-t -g novahub-t /srv/novatest/venv
+sudo -u novahub-t python3.13 -m venv /srv/novatest/venv
+sudo -u novahub-t /srv/novatest/nova-hub/tests/live/run.sh --setup --collect-only -q
 sudo chmod -R a+rX /srv/novatest/venv
 ```
 
-The caveat: on python 3.13 the product requirements do **not** install cleanly —
-`aiohttp==3.10.0` has no wheel for it and its source build fails. The working
-environment has 3.14.3. Installing the product requirements with that one pin
-relaxed is what the current venv effectively is; nothing in the rig depends on
-the exact versions, since it imports the hub's own modules directly.
-
 ### The unit suite on the rig
 
-The rig tree carries its own `config.toml`, and it is **host state, not in git** —
-`/srv/novatest/nova-hub` is a deployed copy, not a checkout. The product's
-`get_config()` reads `config.toml` relative to the cwd, so running the unit suite
-from the rig tree picks that file up.
-
-It was copied from a dev box and still said `data_dir = "/home/lime/nova-data"` —
-a path that does not exist on novatest-hl and that `novahub-t` could not write to
-anyway. That cost exactly one test:
-`tests/test_integration.py::test_service_packet_upload_and_list` returned 500 with
-`PermissionError: [Errno 13]`. `data_dir` is now `/home/novahub-t/unit-data`, owned
-by the rig user, and the suite is **196 passed, 46 skipped**.
-
-Two things make that failure much harder to read than it should be, and both are
-worth knowing before chasing the next one:
-
-- The fixture builds its client with `TestClient(app, raise_server_exceptions=False)`,
-  so the body is a bare `Internal Server Error` and pytest prints no traceback.
-  To see the real exception, wrap
-  `starlette.middleware.errors.ServerErrorMiddleware.__call__` in a plugin that
-  prints it and pass `-p`. The rig tree is not writable by the session user, so
-  put the plugin in `/tmp` and run with `PYTHONPATH=/tmp`.
-- That test *intended* to isolate uploads to `tmp_path` by monkeypatching
-  `backend.core.config.get_config`, but the patch never reached the upload
-  handler: `packets.py` binds `get_config` at import time, so rebinding it on
-  the source module is not seen there. The packet landed in the ambient
-  `data_dir` instead, and the test quietly depended on that path being writable —
-  which is why it passed on a dev box and failed here. It now patches
-  `backend.api.service.packets.get_config` (the name that is actually used) and
-  asserts the packet is in `tmp_path`, so a patch that misses fails loudly rather
-  than passing by accident. Verified by running it against a deliberately
-  unwritable `data_dir`: green, and the ambient directory stays empty.
-
-None of the live rig tests are affected: they build their own data dirs
-(`rig/hub.py::make_data_dir`), and the viewer hub has its own config at
-`/srv/novatest/viewer/config.toml`.
+The unit suite builds its own config from `config.toml.example` (see
+`tests/conftest.py`), so it needs no `config.toml` anywhere. The rig tree used
+to carry one as host state, copied from a dev box: it named the **dev hub's
+database** and dev's leagues 013/014, and once cost a test a 500 by pointing
+`data_dir` at a path `novahub-t` could not write. Nothing read it any more, so
+it is gone (#126) and `run.sh --try` no longer links it into try trees.
 
 ## 12. Immortal Barons: league 900I, release and trunk
 

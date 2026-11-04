@@ -220,3 +220,14 @@ class LeagueListResponse(BaseModel):
     """List of leagues"""
     leagues: List[LeagueResponse]
     total: int
+
+
+class LeagueScoreFile(BaseModel):
+    """The newest copy of one of the league's score files, as the hub's game
+    last wrote it."""
+    filename: str            # e.g. "PLYSCORE.ANS"
+    label: str               # what it ranks, e.g. "Players by score"
+    generated_at: datetime   # when the hub took it from the game, UTC
+    processing_run_id: int   # the run that made it
+    file_data_html: Optional[str] = None  # the ANSI as HTML
+

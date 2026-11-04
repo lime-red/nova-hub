@@ -13,4 +13,6 @@ all:
       # nova_hub_user: novahub        # dedicated service user (created automatically)
       # nova_hub_dir: /home/novahub/nova-hub
       # nova_data_dir: /home/novahub/nova-data
-      # nova_hub_branch: main
+      # nova_hub_version: v0.12.0    # tag, branch or commit; production runs tags
+      # nova_hub_manage_caddy: false  # where the fleet's caddy role owns /etc/caddy
+      # nova_hub_manage_dosemu: false # where the fleet's dosemu role pins dosemu2

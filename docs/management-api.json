@@ -3911,6 +3911,47 @@
         "title": "LeagueResponse",
         "type": "object"
       },
+      "LeagueScoreFile": {
+        "description": "The newest copy of one of the league's score files, as the hub's game\nlast wrote it.",
+        "properties": {
+          "file_data_html": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Data Html"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "processing_run_id": {
+            "title": "Processing Run Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "filename",
+          "label",
+          "generated_at",
+          "processing_run_id"
+        ],
+        "title": "LeagueScoreFile",
+        "type": "object"
+      },
       "LeagueStats": {
         "description": "League statistics",
         "properties": {
@@ -10396,6 +10437,53 @@
         "summary": "Apply the Draft's Rules Without a Reset",
         "tags": [
           "Management API - Game Reset"
+        ]
+      }
+    },
+    "/api/v1/leagues/{league_id}/scores": {
+      "get": {
+        "description": "The league's current standings: the newest copy of each score file the\nhub's game wrote (players and boards, by score, net worth, land and net\nworth density), with when it was made and the processing run that made\nit. Not the news files. Empty for a league whose game has written none,\nor for a game that writes none (Immortal Barons).\n\n**Path Parameters:**\n- `league_id`: Database ID of the league\n\n**Example:**\n```bash\ncurl -X GET \"https://hub.example.com/management/api/v1/leagues/1/scores\" \\\n  -b cookies.txt\n```",
+        "operationId": "get_league_scores_api_v1_leagues__league_id__scores_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "league_id",
+            "required": true,
+            "schema": {
+              "title": "League Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LeagueScoreFile"
+                  },
+                  "title": "Response Get League Scores Api V1 Leagues  League Id  Scores Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "League Scores",
+        "tags": [
+          "Management API - Leagues"
         ]
       }
     },

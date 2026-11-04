@@ -4,7 +4,9 @@
 #   tools/release.sh <tag> [--dry-run]
 #
 # The notes are that version's section of CHANGELOG.md (the "## [x.y.z]" heading
-# down to the next "## "), so the changelog stays the one place they are written.
+# down to the next "## ") as the tag has it, so the changelog stays the one
+# place they are written. They are read from the tag, not the working tree, so
+# it does not matter what this checkout is on.
 #
 # Releases are not git refs, so gitea's push mirror cannot carry them; this does
 # both sides with the same text. Run it after the tag has reached GitHub through
@@ -28,17 +30,24 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 repo=$(basename "$(git -C "$root" remote get-url origin)" .git)
 version=${tag#v}
 
+timeout 120 git -C "$root" fetch --quiet --tags origin || echo "(fetch failed: using the tags already here)" >&2
+if ! changelog=$(git -C "$root" show "refs/tags/$tag:CHANGELOG.md" 2>/dev/null); then
+    echo "No tag $tag here (or it has no CHANGELOG.md)." >&2
+    exit 1
+fi
+
 # The section's lines, without the blank lines around them.
 notes=$(awk -v v="$version" '
     index($0, "## [" v "]") == 1 { on = 1; next }
     on && /^## /                 { exit }
     on && (n || NF)              { line[++n] = $0; if (NF) last = n }
     END                          { for (i = 1; i <= last; i++) print line[i] }
-' "$root/CHANGELOG.md")
+' <<< "$changelog")
 
 if [[ -z $notes ]]; then
-    echo "No '## [$version]' section in CHANGELOG.md. The release commit makes it:" >&2
-    echo "  tools/changelog.py release $version   (gathers changelog.d/ into CHANGELOG.md)" >&2
+    echo "$tag's CHANGELOG.md has no '## [$version]' section. The release commit" >&2
+    echo "should have made it with tools/changelog.py release $version; that tag" >&2
+    echo "cannot move, so publish the notes by hand or tag a new version." >&2
     exit 1
 fi
 

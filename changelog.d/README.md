@@ -25,3 +25,13 @@ At release, `tools/changelog.py release <version>` gathers the fragments into a
 deletes them. Commit both changes in the release commit.
 `tools/changelog.py preview` shows what that section will say, and
 `tools/changelog.py check` checks the fragments. CI runs the check as a test.
+
+The order of a release:
+
+1. **Release commit on main:** `tools/changelog.py release <version>`, then the
+   version bump in `backend/core/version.py` and `frontend/package.json`, then
+   `export_api_docs.py`.
+2. **Tag it**, once CI is green.
+3. **`tools/release.sh <tag>`**, from any checkout, at any time after. It reads
+   the notes from the tags , not the working trees, so the
+   checkout can be on any branch or behind.

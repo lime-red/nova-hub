@@ -228,6 +228,11 @@ wheels = [
 ]
 
 [[package]]
+name = "bre-agent"
+version = "0.1.0"
+source = { git = "https://gitea-hl.taild204f.ts.net/claude/bre-agent.git?rev=v0.1.0#953a04fe2a521673df9f8e3590eb349ab521ceb9" }
+
+[[package]]
 name = "certifi"
 version = "2026.7.22"
 source = { registry = "https://pypi.org/simple" }
@@ -834,6 +839,9 @@ dev = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
 ]
+rig = [
+    { name = "bre-agent" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -864,6 +872,7 @@ dev = [
     { name = "pytest", specifier = ">=8.3.4" },
     { name = "pytest-asyncio", specifier = ">=0.24.0" },
 ]
+rig = [{ name = "bre-agent", git = "https://gitea-hl.taild204f.ts.net/claude/bre-agent.git?rev=v0.1.0" }]
 
 [[package]]
 name = "packaging"

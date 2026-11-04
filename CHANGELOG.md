@@ -26,10 +26,6 @@ All notable changes to Nova Hub will be documented in this file.
 - **The rig's viewer hub, `tests/live/serve.py`** (#126). The standing test hub
   on novatest-hl (`https://novatest-hl.<tailnet>.ts.net`) replaces it.
 
-### Fixed
-- **A league's Scores no longer show `SCORES.ANS`** (#127). The league page
-  showed it as a ninth tab, "Scores", alongside the eight rankings.
-
 ## [0.13.0] - 2026-11-05
 
 ### Added

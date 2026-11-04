@@ -226,6 +226,19 @@
             group: "{{ nova_hub_group }}"
             mode: "0755"
 
+      # Where league games live: config.toml.example's [games] root, under
+      # dosemu's drive C. --validate fails until it exists (#126).
+      - name: Create the games root
+        ansible.builtin.file:
+            path: "/home/{{ nova_hub_user }}/.dosemu/drive_c/leagues"
+            state: directory
+            owner: "{{ nova_hub_user }}"
+            group: "{{ nova_hub_group }}"
+            mode: "0755"
+        # As the hubs user, so .dosemu and drive_c are its own too, not roots.
+        become: true
+        become_user: "{{ nova_hub_user }}"
+
       - name: Clone or update nova-hub repository
         ansible.builtin.git:
             repo: "{{ nova_hub_repo }}"

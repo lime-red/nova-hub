@@ -10,10 +10,12 @@
 # --build provisions all six installs and captures pristine fixtures. It is a
 # once-per-machine step; every run after that restores from those fixtures.
 #
-# --setup installs what the rig interpreter needs (tests/live/requirements.txt).
-# Without it a missing dependency surfaces as an ImportError from inside a walk,
-# which reads like a broken test rather than a half-built machine, so every run
-# checks for them first and says plainly what to do.
+# --setup syncs the rig interpreter from uv.lock: the product's own versions,
+# plus the dev and rig groups (pytest, bre-agent). It is exact, so the venv
+# holds what the lock says and nothing else. Without it a missing dependency
+# surfaces as an ImportError from inside a walk, which reads like a broken test
+# rather than a half-built machine, so every run checks first and says plainly
+# what to do.
 #
 # --try REF runs the suite from a pushed branch, tag or commit instead of this
 # checkout, which stays on main. REF is checked out (detached) as a git worktree
@@ -21,7 +23,7 @@
 # in from here, and that tree's own run.sh is run with the remaining arguments.
 # An experiment has to be pushed to gitea to be tried, which is the point: what
 # the rig runs is always something the repo has. The venv is shared, so a REF
-# whose requirements differ from this checkout's gets a warning, not its own.
+# whose uv.lock differs from this checkout's gets a warning, not its own.
 # Remove a finished one with: git -C /srv/novatest/nova-hub worktree remove <dir>
 #
 # Every run also readies what the Immortal Barons scenarios play: the latest IB
@@ -36,6 +38,7 @@ set -euo pipefail
 LIVE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$LIVE_DIR/../.." && pwd)"
 PYTHON="${NOVATEST_PYTHON:-/srv/novatest/venv/bin/python}"
+UV="${UV:-$(command -v uv || echo /usr/local/bin/uv)}"
 
 if [[ ! -x "$PYTHON" ]]; then
     echo "no rig interpreter at $PYTHON (set NOVATEST_PYTHON)" >&2
@@ -64,7 +67,9 @@ done
 
 TRY_ROOT=/srv/novatest/try
 # Not tracked by git, and needed by a tree checked out beside this one.
-HOST_STATE=(config.toml frontend/dist dosemu_configs deploy/inventory.yml)
+# (No config.toml: nothing here reads one. The unit suite builds its own from
+# config.toml.example, and every live scenario builds a hub with its own.)
+HOST_STATE=(frontend/dist dosemu_configs deploy/inventory.yml)
 
 if [[ -n "$try_ref" ]]; then
     if [[ ! -d "$TRY_ROOT" || ! -w "$TRY_ROOT" ]]; then
@@ -90,12 +95,11 @@ if [[ -n "$try_ref" ]]; then
             ln -s "$REPO/$path" "$tree/$path"
         fi
     done
-    for req in requirements.txt tests/live/requirements.txt; do
-        if ! cmp -s "$REPO/$req" "$tree/$req"; then
-            echo "WARNING: $req differs from $REPO's, and the venv is shared:" >&2
-            echo "  the run uses what $PYTHON has, not what $try_ref asks for" >&2
-        fi
-    done
+    if ! cmp -s "$REPO/uv.lock" "$tree/uv.lock"; then
+        echo "WARNING: uv.lock differs from $REPO's, and the venv is shared:" >&2
+        echo "  the run uses what $PYTHON has, not what $try_ref asks for," >&2
+        echo "  unless you pass --setup, which syncs the venv to $try_ref's lock" >&2
+    fi
     echo "trying $try_ref at $(git -C "$tree" log -1 --format='%h %s') in $tree" >&2
     if (( build )); then args=(--build "${args[@]}"); fi
     if (( setup )); then args=(--setup "${args[@]}"); fi
@@ -115,8 +119,14 @@ if git -C "$REPO" symbolic-ref -q HEAD >/dev/null && git -C "$REPO" fetch -q ori
 fi
 
 if (( setup )); then
-    # nova-hub's own pins plus the rig's additions: see tests/live/requirements.txt
-    "$PYTHON" -m pip install -r "$LIVE_DIR/requirements.txt"
+    # The product's locked versions plus the dev and rig groups (pyproject.toml).
+    # --frozen: install the lock as committed, never re-resolve it here.
+    if [[ ! -x "$UV" ]]; then
+        echo "no uv at $UV (set UV, or install it to /usr/local/bin)" >&2
+        exit 1
+    fi
+    UV_PROJECT_ENVIRONMENT="$(dirname "$(dirname "$PYTHON")")" \
+        "$UV" sync --project "$REPO" --frozen --group dev --group rig
 fi
 
 # sr_harness drives the games (and brings pyte, its screen emulator), and
@@ -130,8 +140,7 @@ EOF
 )
 if [[ -n "$missing" ]]; then
     echo "rig interpreter $PYTHON is missing: $missing" >&2
-    echo "install what the rig needs with: $0 --setup" >&2
-    echo "  (or: $PYTHON -m pip install -r $LIVE_DIR/requirements.txt)" >&2
+    echo "sync the rig interpreter with: $0 --setup" >&2
     exit 1
 fi
 

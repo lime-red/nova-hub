@@ -50,6 +50,14 @@ dev = [
     "pytest>=8.3.4",
     "pytest-asyncio>=0.24.0",
 ]
+# What only the live rig imports. The rig venv is synced from uv.lock with this
+# group and dev, so it runs exactly the versions CI and production run (#126).
+# bre-agent is the decision module rig/player.py hands the wheel to; pinned to a
+# tag, since a scenario asserting on which action it chose asserts on that
+# version's weights.
+rig = [
+    "bre-agent @ git+https://gitea-hl.taild204f.ts.net/claude/bre-agent.git@v0.1.0",
+]
 
 [tool.pytest.ini_options]
 # No async fixtures; this only silences pytest-asyncio's warning that it is unset.

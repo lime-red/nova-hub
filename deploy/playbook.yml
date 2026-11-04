@@ -12,11 +12,17 @@
 #   nova_hub_user:         System user to run as (default: novahub)
 #   nova_hub_dir:          Install directory (default: /home/{{ nova_hub_user }}/nova-hub)
 #   nova_data_dir:         Data directory (default: /home/{{ nova_hub_user }}/nova-data)
-#   nova_hub_repo:         Git repo URL (default: https://github.com/lime-red/nova-hub.git)
-#   nova_hub_branch:       Git branch (default: main)
+#   nova_hub_repo:         Git repo URL (default: gitea, anonymous https)
+#   nova_hub_version:      Tag, branch or commit to check out (default: main).
+#                          Production runs tags; nova_hub_branch is the old name.
+#   nova_hub_manage_caddy: Install and configure Caddy here (default: true).
+#                          false where the fleet's caddy role owns it (#126).
+#   nova_hub_manage_dosemu: Install dosemu2 here (default: true). false where
+#                          the fleet's dosemu role pins and holds it (#126).
 #   first_run:             Create admin user (default: false)
 #   nova_hub_admin_password: Initial admin password (RECOMMENDED on first_run).
-#                            If omitted a random password is generated and printed.
+#                            If omitted a random one is generated and written
+#                            to ~novahub/admin-password (0600), never printed.
 
 - name: Deploy Nova Hub
   hosts: nova_hub
@@ -28,8 +34,12 @@
       nova_hub_group: novahub
       nova_hub_dir: "/home/{{ nova_hub_user }}/nova-hub"
       nova_data_dir: "/home/{{ nova_hub_user }}/nova-data"
-      nova_hub_repo: "https://github.com/lime-red/nova-hub.git"
+      nova_hub_repo: "https://gitea-hl.taild204f.ts.net/lime/nova-hub.git"
       nova_hub_branch: main
+      nova_hub_version: "{{ nova_hub_branch }}"
+      nova_hub_manage_caddy: true
+      nova_hub_manage_dosemu: true
+      nova_hub_pnpm_version: "10.28.0"
       first_run: false
 
       # dosemu2 comes from the maintainers' Ubuntu PPA. There is no Debian
@@ -74,46 +84,51 @@
             cache_valid_time: 3600
 
       # ── Caddy (TLS reverse proxy) ────────────────────────────────
-      - name: Install Caddy prerequisites
-        ansible.builtin.apt:
-            name:
-                - debian-keyring
-                - debian-archive-keyring
-                - apt-transport-https
-                - curl
-            state: present
+      # Off where the fleet's caddy role owns /etc/caddy (dev and test, #126):
+      # two writers of one Caddyfile would undo each other on every run.
+      - name: Caddy
+        when: nova_hub_manage_caddy | bool
+        block:
+          - name: Install Caddy prerequisites
+            ansible.builtin.apt:
+                name:
+                    - debian-keyring
+                    - debian-archive-keyring
+                    - apt-transport-https
+                    - curl
+                state: present
 
-      - name: Add Caddy GPG key
-        ansible.builtin.shell:
-            cmd: curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-        args:
-            creates: /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+          - name: Add Caddy GPG key
+            ansible.builtin.shell:
+                cmd: curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+            args:
+                creates: /usr/share/keyrings/caddy-stable-archive-keyring.gpg
 
-      - name: Add Caddy apt repository
-        ansible.builtin.shell:
-            cmd: curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
-        args:
-            creates: /etc/apt/sources.list.d/caddy-stable.list
+          - name: Add Caddy apt repository
+            ansible.builtin.shell:
+                cmd: curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
+            args:
+                creates: /etc/apt/sources.list.d/caddy-stable.list
 
-      - name: Install Caddy
-        ansible.builtin.apt:
-            name: caddy
-            state: present
-            update_cache: true
+          - name: Install Caddy
+            ansible.builtin.apt:
+                name: caddy
+                state: present
+                update_cache: true
 
-      - name: Deploy Caddyfile
-        ansible.builtin.template:
-            src: Caddyfile.j2
-            dest: /etc/caddy/Caddyfile
-            mode: "0644"
-        notify:
-            - Reload Caddy
+          - name: Deploy Caddyfile
+            ansible.builtin.template:
+                src: Caddyfile.j2
+                dest: /etc/caddy/Caddyfile
+                mode: "0644"
+            notify:
+                - Reload Caddy
 
-      - name: Enable and start Caddy
-        ansible.builtin.systemd:
-            name: caddy
-            enabled: true
-            state: started
+          - name: Enable and start Caddy
+            ansible.builtin.systemd:
+                name: caddy
+                enabled: true
+                state: started
 
       # ── uv (Python package manager) ─────────────────────────────
       - name: Install uv
@@ -131,7 +146,8 @@
         become: true
         become_user: "{{ nova_hub_user }}"
         register: python_install
-        changed_when: "'Already' not in python_install.stdout"
+        # uv reports on stderr; it says Installed only when it fetched one
+        changed_when: "'Installed' in python_install.stderr"
 
       # ── Node.js and pnpm (for frontend build) ───────────────────
       - name: Install Node.js via nodesource
@@ -145,47 +161,61 @@
             name: nodejs
             state: present
 
-      - name: Install pnpm
-        ansible.builtin.shell:
-            cmd: npm install -g pnpm
-        args:
-            creates: /usr/bin/pnpm
+      # Pinned: an unpinned install picked up pnpm 12 on a fresh host, which
+      # refuses the lockfile's build scripts (esbuild, vue-demi) outright, while
+      # every working host builds with 10. Move it on every host together.
+      - name: Read the installed pnpm version
+        ansible.builtin.command: pnpm -v
+        register: pnpm_installed
+        changed_when: false
+        failed_when: false
+
+      - name: Install pnpm {{ nova_hub_pnpm_version }}
+        ansible.builtin.command: npm install -g pnpm@{{ nova_hub_pnpm_version }}
+        when: pnpm_installed.rc != 0 or pnpm_installed.stdout | trim != nova_hub_pnpm_version
 
       # ── dosemu2 ─────────────────────────────────────────────────
       # Was six hand-picked .deb URLs, which froze this host on whatever
       # versions happened to be current the day they were written and drifted
       # away from the rig. The PPA is the same source those debs came from;
       # apt just picks up the current build and keeps it updated.
-      - name: Ensure the apt keyring directory exists
-        ansible.builtin.file:
-            path: /etc/apt/keyrings
-            state: directory
-            mode: "0755"
-            owner: root
-            group: root
+      # Off where the fleet's dosemu role pins and holds the known-good build.
+      - name: dosemu2
+        when: nova_hub_manage_dosemu | bool
+        block:
+          - name: Ensure the apt keyring directory exists
+            ansible.builtin.file:
+                path: /etc/apt/keyrings
+                state: directory
+                mode: "0755"
+                owner: root
+                group: root
 
-      - name: Fetch the dosemu2 PPA signing key
-        ansible.builtin.get_url:
-            url: "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x{{ dosemu2_ppa_key_fingerprint }}"
-            dest: /etc/apt/keyrings/dosemu2-ppa.asc
-            mode: "0644"
-            owner: root
-            group: root
+          - name: Fetch the dosemu2 PPA signing key
+            ansible.builtin.get_url:
+                url: "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x{{ dosemu2_ppa_key_fingerprint }}"
+                dest: /etc/apt/keyrings/dosemu2-ppa.asc
+                mode: "0644"
+                owner: root
+                group: root
 
-      - name: Add the dosemu2 PPA
-        ansible.builtin.apt_repository:
-            repo: >-
-                deb [signed-by=/etc/apt/keyrings/dosemu2-ppa.asc]
-                https://ppa.launchpadcontent.net/dosemu2/ppa/ubuntu
-                {{ dosemu2_ppa_suite }} main
-            filename: dosemu2-ppa
-            state: present
-            update_cache: true
+          - name: Add the dosemu2 PPA
+            ansible.builtin.apt_repository:
+                repo: >-
+                    deb [signed-by=/etc/apt/keyrings/dosemu2-ppa.asc]
+                    https://ppa.launchpadcontent.net/dosemu2/ppa/ubuntu
+                    {{ dosemu2_ppa_suite }} main
+                filename: dosemu2-ppa
+                state: present
+                update_cache: true
 
-      - name: Install dosemu2
-        ansible.builtin.apt:
-            name: "{{ dosemu2_packages }}"
-            state: latest
+          - name: Install dosemu2
+            ansible.builtin.apt:
+                name: "{{ dosemu2_packages }}"
+                # present, never latest: dosemu2 builds after 10289 stop BRE's RESET
+                # from reaching its editor, and an upgrade is not undoable from the
+                # PPA, which keeps one version. Move it only after the rig passes.
+                state: present
 
       # ── Application ─────────────────────────────────────────────
       - name: Create data directory
@@ -200,7 +230,7 @@
         ansible.builtin.git:
             repo: "{{ nova_hub_repo }}"
             dest: "{{ nova_hub_dir }}"
-            version: "{{ nova_hub_branch }}"
+            version: "{{ nova_hub_version }}"
             force: false
         become: true
         become_user: "{{ nova_hub_user }}"
@@ -233,30 +263,43 @@
             owner: "{{ nova_hub_user }}"
             group: "{{ nova_hub_group }}"
 
-      # ── Python virtual environment and dependencies ─────────────
-      - name: Create venv and install Python dependencies
-        ansible.builtin.shell:
-            cmd: |
-                /home/{{ nova_hub_user }}/.local/bin/uv venv --python 3.13 --allow-existing &&
-                /home/{{ nova_hub_user }}/.local/bin/uv pip install -r requirements.txt
-            chdir: "{{ nova_hub_dir }}"
-        become: true
-        become_user: "{{ nova_hub_user }}"
-        when: git_result.changed or first_run | bool
+      # The example ships a placeholder the hub refuses to start with. Replace
+      # it, once: the regexp matches only the placeholder, so a real secret is
+      # never rotated (that would sign every admin out).
+      - name: Generate the JWT secret if config.toml still has the placeholder
+        ansible.builtin.lineinfile:
+            path: "{{ nova_hub_dir }}/config.toml"
+            regexp: '^jwt_secret\s*=\s*"change-me-in-production"'
+            line: >-
+                jwt_secret = "{{ lookup('ansible.builtin.password', '/dev/null length=64 chars=ascii_letters,digits') }}"
+            # backrefs: no match leaves the file alone, rather than appending
+            backrefs: true
+            owner: "{{ nova_hub_user }}"
+            group: "{{ nova_hub_group }}"
+        no_log: true
 
-      - name: Ensure Python dependencies are up to date
-        ansible.builtin.shell:
-            cmd: /home/{{ nova_hub_user }}/.local/bin/uv pip install -r requirements.txt
+      # ── Python virtual environment and dependencies ─────────────
+      # Synced from uv.lock, exactly: the venv holds the locked versions and
+      # nothing else, the same set CI and the rig run (#126). --no-dev leaves
+      # pytest out; requirements.txt is only the lock's export now.
+      - name: Sync the venv from uv.lock
+        ansible.builtin.command:
+            cmd: /home/{{ nova_hub_user }}/.local/bin/uv sync --frozen --no-dev --python 3.13
             chdir: "{{ nova_hub_dir }}"
         become: true
         become_user: "{{ nova_hub_user }}"
-        when: not (git_result.changed or first_run | bool)
+        register: uv_sync
+        changed_when: "'Installed' in uv_sync.stderr or 'Uninstalled' in uv_sync.stderr"
 
       # ── Frontend build ──────────────────────────────────────────
       - name: Install frontend dependencies
         ansible.builtin.shell:
-            cmd: pnpm install
+            cmd: pnpm install --frozen-lockfile
             chdir: "{{ nova_hub_dir }}/frontend"
+        # CI: never prompt. Without it pnpm asks on a tty-less stdin whether to
+        # rebuild a node_modules another pnpm version made, and waits forever.
+        environment:
+            CI: "true"
         become: true
         become_user: "{{ nova_hub_user }}"
         when: git_result.changed or first_run | bool
@@ -279,12 +322,33 @@
         when: git_result.changed or first_run | bool
 
       # ── Create admin user (first run only) ──────────────────────
+      - name: Choose the admin password
+        ansible.builtin.set_fact:
+            _admin_password: >-
+                {{ nova_hub_admin_password | default(lookup('ansible.builtin.password',
+                   '/dev/null length=24 chars=ascii_letters,digits'), true) }}
+        no_log: true
+        when: first_run | bool
+
+      # Kept on the host for whoever signs in first, never in the play's output.
+      - name: Keep the admin password where only the hub's user can read it
+        ansible.builtin.copy:
+            content: "{{ _admin_password }}\n"
+            dest: "/home/{{ nova_hub_user }}/admin-password"
+            owner: "{{ nova_hub_user }}"
+            group: "{{ nova_hub_group }}"
+            mode: "0600"
+            force: false
+        no_log: true
+        when: first_run | bool and nova_hub_admin_password is not defined
+
       - name: Create admin user
         ansible.builtin.shell:
-            cmd: "{{ nova_hub_dir }}/.venv/bin/python create_admin_sql.py"
+            cmd: "{{ nova_hub_dir }}/.venv/bin/python create_admin_sql.py > /dev/null"
             chdir: "{{ nova_hub_dir }}"
         environment:
-            NOVA_HUB_ADMIN_PASSWORD: "{{ nova_hub_admin_password | default('') }}"
+            NOVA_HUB_ADMIN_PASSWORD: "{{ _admin_password }}"
+        no_log: true
         become: true
         become_user: "{{ nova_hub_user }}"
         when: first_run | bool

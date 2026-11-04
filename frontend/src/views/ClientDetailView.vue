@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, computed } from 'vue'
+import { onMounted, ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useClientsStore, type FtnAddressInfo } from '@/stores/clients'
 import { useAuthStore } from '@/stores/auth'
@@ -124,22 +124,28 @@ async function handleCollect() {
   }
 }
 
-// Onboarding's Verify step: approved -> claimed -> first sign-in -> first upload -> active
+// Onboarding's Verify step: approved -> claimed -> first token -> first upload -> active.
+// Every step after Approved is the BBS's own doing, the last three its
+// nova-client's: nobody's sign-in to this console moves it on (#122).
 const STAGES = [
   { key: 'approved', label: 'Approved' },
-  { key: 'claimed', label: 'Credentials claimed' },
-  { key: 'first_token', label: 'First sign-in' },
-  { key: 'first_upload', label: 'First upload' },
+  { key: 'claimed', label: 'Credentials collected' },
+  { key: 'first_token', label: 'nova-client connected' },
+  { key: 'first_upload', label: 'First packet' },
   { key: 'active', label: 'Active' },
 ] as const
 const stageIndex = computed(() =>
   STAGES.findIndex((s) => s.key === (clientsStore.currentClient?.stage ?? 'approved'))
 )
 const STAGE_HINT: Record<string, string> = {
-  approved: 'Waiting for the sysop to claim the credentials.',
-  claimed: 'Credentials claimed; the client has not signed in yet.',
-  first_token: 'The client signs in but has not uploaded a packet yet. Usually game paths.',
-  first_upload: 'Has exchanged packets, but has not been seen in the last two days.',
+  approved: "Next: the BBS's sysop collects the client ID and secret, with Collect credentials " +
+    'or the claim link. Until then its nova-client has nothing to connect with.',
+  claimed: "Next: the BBS's nova-client connects to the hub. The sysop puts the client ID " +
+    "and secret in nova-client's config.toml and runs it. Signing in to this console " +
+    "doesn't count: this step is the BBS's nova-client.",
+  first_token: "nova-client connects but hasn't uploaded a packet yet: usually the game " +
+    "paths in its config.toml.",
+  first_upload: "Has exchanged packets, but nova-client hasn't connected in the last two days.",
 }
 
 // A sysop asking for more leagues for this BBS. The admin approves it, like a join.
@@ -255,10 +261,14 @@ async function loadLeagueStatus() {
   }
 }
 
-onMounted(async () => {
+async function load() {
   await clientsStore.loadClient(clientId.value)
   await Promise.all([loadClaimStatus(), loadUsers(), loadRequests(), loadLeagueStatus()])
-})
+}
+
+onMounted(load)
+// The same page, another client: Vue keeps the view, so load it afresh.
+watch(clientId, load)
 
 function openEditModal() {
   if (clientsStore.currentClient) {

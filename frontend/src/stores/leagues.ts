@@ -116,17 +116,24 @@ export const useLeaguesStore = defineStore('leagues', () => {
     }
   }
 
+  // The id last asked for. A page shows nothing rather than another one's
+  // data while its own loads, and a slow answer for an id since left behind
+  // is dropped rather than shown under the new one's URL (#124).
+  let currentLeagueWanted: number | null = null
+
   async function loadLeague(id: number): Promise<void> {
+    currentLeagueWanted = id
+    if (currentLeague.value?.id !== id) currentLeague.value = null
     loading.value = true
     error.value = null
 
     try {
       const response = await leaguesApi.get(id)
-      currentLeague.value = response.data
+      if (currentLeagueWanted === id) currentLeague.value = response.data
     } catch (err: unknown) {
-      error.value = apiError(err, 'Failed to load league')
+      if (currentLeagueWanted === id) error.value = apiError(err, 'Failed to load league')
     } finally {
-      loading.value = false
+      if (currentLeagueWanted === id) loading.value = false
     }
   }
 

@@ -7,6 +7,7 @@ import AppLayout from '@/components/AppLayout.vue'
 import ResetHistory from '@/components/ResetHistory.vue'
 import LeagueStatusTable from '@/components/LeagueStatusTable.vue'
 import IbHubGame from '@/components/IbHubGame.vue'
+import LeagueScores from '@/components/LeagueScores.vue'
 import { apiError, gameResetApi, leaguesApi, type LeagueStatusResponse, type ResetField } from '@/services/api'
 import { gameForLetter, gameTypeName } from '@/games'
 
@@ -663,6 +664,8 @@ async function handleDelete() {
             />
           </div>
         </div>
+
+        <LeagueScores v-if="!isImmortalBarons" :league-id="leagueId" />
 
         <IbHubGame
           v-if="isImmortalBarons && authStore.isAdmin"

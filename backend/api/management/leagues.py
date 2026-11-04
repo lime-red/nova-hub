@@ -427,6 +427,7 @@ def _coordinator_key(league: League) -> tuple[Optional[str], Optional[str]]:
 
 # The score files a league page shows, best first, and what each ranks. The
 # news files are left out: they are the day's events, not standings (#127).
+# So is SCORES.ANS: the rankings above already cover what it shows.
 SCORE_LABELS = {
     "PLYSCORE.ANS": "Players by score",
     "PLYWORTH.ANS": "Players by net worth",
@@ -436,7 +437,6 @@ SCORE_LABELS = {
     "BBSWORTH.ANS": "Boards by net worth",
     "BBSLAND.ANS": "Boards by land",
     "BBSWLAND.ANS": "Boards by net worth density",
-    "SCORES.ANS": "Scores",
 }
 
 

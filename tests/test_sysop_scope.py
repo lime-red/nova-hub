@@ -260,8 +260,8 @@ def test_an_admin_still_sees_everything(world):
 
 
 def test_a_league_page_shows_its_newest_score_files(world):
-    """#127: the newest copy of each score file, not the news, with when and
-    which run; a sysop sees their own league's, not another's."""
+    """#127: the newest copy of each score file, not the news or SCORES.ANS,
+    with when and which run; a sysop sees their own league's, not another's."""
     from datetime import datetime
 
     client, db, act_as, ids = world
@@ -277,6 +277,7 @@ def test_a_league_page_shows_its_newest_score_files(world):
     score(new, "plyscore.ans", "\x1b[1;33mNode Two\x1b[0m 213", 2)
     score(old, "BBSSCORE.ANS", "boards", 1)
     score(new, "YESNEWS.ANS", "the news", 2)
+    score(new, "SCORES.ANS", "not shown either", 2)
     score(new, "PLYSCORE.ANS", "fe players", 2, league="fe")
     db.add(ProcessingRunFile(processing_run_id=new.id, league_id=ids["bre"], file_type="score",
                              filename="PLYLAND.ANS", file_data=None))  # blanked by retention

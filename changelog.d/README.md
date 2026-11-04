@@ -33,5 +33,5 @@ The order of a release:
    `export_api_docs.py`.
 2. **Tag it**, once CI is green.
 3. **`tools/release.sh <tag>`**, from any checkout, at any time after. It reads
-   the notes from the tags , not the working trees, so the
+   the notes from the tag's `CHANGELOG.md`, not the working tree's, so the
    checkout can be on any branch or behind.

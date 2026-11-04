@@ -257,3 +257,42 @@ def test_an_admin_still_sees_everything(world):
     assert {m["client_oauth_id"] for m in league["members"]} == {"alpha-oauth", "bravo-oauth"}
     owner = get(client, f"/clients/{ids['alpha']}")["owners"][0]
     assert owner["email"] == "alice@example.com"
+
+
+def test_a_league_page_shows_its_newest_score_files(world):
+    """#127: the newest copy of each score file, not the news, with when and
+    which run; a sysop sees their own league's, not another's."""
+    from datetime import datetime
+
+    client, db, act_as, ids = world
+    old, new = ProcessingRun(status="completed"), ProcessingRun(status="completed")
+    db.add_all([old, new])
+    db.flush()
+
+    def score(run, name, text, when, league="bre"):
+        db.add(ProcessingRunFile(processing_run_id=run.id, league_id=ids[league],
+                                 file_type="score", filename=name, file_data=text,
+                                 created_at=datetime(2026, 11, 4, when)))
+    score(old, "PLYSCORE.ANS", "yesterday's players", 1)
+    score(new, "plyscore.ans", "\x1b[1;33mNode Two\x1b[0m 213", 2)
+    score(old, "BBSSCORE.ANS", "boards", 1)
+    score(new, "YESNEWS.ANS", "the news", 2)
+    score(new, "PLYSCORE.ANS", "fe players", 2, league="fe")
+    db.add(ProcessingRunFile(processing_run_id=new.id, league_id=ids["bre"], file_type="score",
+                             filename="PLYLAND.ANS", file_data=None))  # blanked by retention
+    db.commit()
+
+    act_as("alice")
+    files = get(client, f"/leagues/{ids['bre']}/scores")
+    assert [(f["filename"], f["label"], f["processing_run_id"]) for f in files] == [
+        ("PLYSCORE.ANS", "Players by score", new.id),
+        ("BBSSCORE.ANS", "Boards by score", old.id),
+    ]
+    assert "Node Two" in files[0]["file_data_html"] and "\x1b" not in files[0]["file_data_html"]
+    assert files[0]["generated_at"].startswith("2026-11-04T02:00:00")
+    assert files[0]["generated_at"].endswith(("Z", "+00:00"))
+    assert client.get(f"{API}/leagues/{ids['fe']}/scores").status_code == 404
+
+    act_as("admin")
+    assert get(client, f"/leagues/{ids['fe']}/scores")[0]["filename"] == "PLYSCORE.ANS"
+

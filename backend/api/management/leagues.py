@@ -1,5 +1,6 @@
 """Management API league management endpoints"""
 
+import html
 import shutil
 from datetime import timezone
 from pathlib import Path
@@ -38,6 +39,7 @@ from backend.schemas.leagues import (
     LeagueDetailResponse,
     LeagueGameInfo,
     LeagueResponse,
+    LeagueScoreFile,
     LeagueStats,
     LeagueUpdate,
     MemberResponse,
@@ -421,6 +423,78 @@ def _coordinator_key(league: League) -> tuple[Optional[str], Optional[str]]:
     from backend.core.config import get_config
     from backend.services.providers import provider_for
     return provider_for(league.game_type).coordinator_key(get_config(), league)
+
+
+# The score files a league page shows, best first, and what each ranks. The
+# news files are left out: they are the day's events, not standings (#127).
+SCORE_LABELS = {
+    "PLYSCORE.ANS": "Players by score",
+    "PLYWORTH.ANS": "Players by net worth",
+    "PLYLAND.ANS": "Players by land",
+    "PLYWLAND.ANS": "Players by net worth density",
+    "BBSSCORE.ANS": "Boards by score",
+    "BBSWORTH.ANS": "Boards by net worth",
+    "BBSLAND.ANS": "Boards by land",
+    "BBSWLAND.ANS": "Boards by net worth density",
+    "SCORES.ANS": "Scores",
+}
+
+
+@router.get("/{league_id}/scores", response_model=List[LeagueScoreFile],
+            summary="League Scores")
+async def get_league_scores(
+    league_id: int,
+    scope: Scope = Depends(get_scope),
+    db: Session = Depends(get_db),
+):
+    """
+    The league's current standings: the newest copy of each score file the
+    hub's game wrote (players and boards, by score, net worth, land and net
+    worth density), with when it was made and the processing run that made
+    it. Not the news files. Empty for a league whose game has written none,
+    or for a game that writes none (Immortal Barons).
+
+    **Path Parameters:**
+    - `league_id`: Database ID of the league
+
+    **Example:**
+    ```bash
+    curl -X GET "https://hub.example.com/management/api/v1/leagues/1/scores" \\
+      -b cookies.txt
+    ```
+    """
+    from sqlalchemy import func
+    from backend.services.log_prettify import ansi_to_html
+
+    scope.require_league(league_id)
+    if db.query(League.id).filter(League.id == league_id).first() is None:
+        raise HTTPException(status_code=404, detail="League not found")
+
+    newest = (
+        db.query(func.max(ProcessingRunFile.id))
+        .filter(ProcessingRunFile.league_id == league_id,
+                ProcessingRunFile.file_type == "score",
+                ProcessingRunFile.file_data != None,  # noqa: E711 (retention blanks old ones)
+                func.upper(ProcessingRunFile.filename).in_(list(SCORE_LABELS)))
+        .group_by(func.upper(ProcessingRunFile.filename))
+    )
+    rows = db.query(ProcessingRunFile).filter(ProcessingRunFile.id.in_(newest)).all()
+    order = list(SCORE_LABELS)
+    rows.sort(key=lambda r: order.index(r.filename.upper()))
+
+    files = []
+    for row in rows:
+        try:
+            body = await ansi_to_html(row.file_data)
+        except Exception:
+            # Rendered as HTML; the raw text is game output carrying names
+            # players chose.
+            body = html.escape(row.file_data)
+        files.append(LeagueScoreFile(
+            filename=row.filename.upper(), label=SCORE_LABELS[row.filename.upper()],
+            generated_at=row.created_at.replace(tzinfo=timezone.utc),
+            processing_run_id=row.processing_run_id, file_data_html=body))
+    return files
 
 
 @router.get("/{league_id}/member-status", response_model=LeagueStatusResponse,

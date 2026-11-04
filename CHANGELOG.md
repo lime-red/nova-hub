@@ -40,6 +40,10 @@ All notable changes to Nova Hub will be documented in this file.
   in the draft.
 - A league with a game of the hub's can be enabled only once that game is
   ready and passed its latest preflight.
+- **A league's page shows its current scores** (BRE and FE): the newest copy
+  of each score file the hub's game wrote, players and boards by score, net
+  worth, land and density, with when it was made and a link to the run that
+  made it. The news files are left out (#127).
 
 ### Changed
 - A nodelist can be the hub alone, "1 HOST" naming no one (or for IB a roster

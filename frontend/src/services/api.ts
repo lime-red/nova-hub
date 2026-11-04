@@ -706,9 +706,29 @@ export interface IbGameState {
 }
 
 // Processing API functions
+export interface ProcessingRunFilters {
+  limit?: number
+  before_id?: number    // the last id of the page before: keyset paging
+  league_id?: number
+  status?: string       // "completed", "failed", "running"
+  problems?: boolean    // failed, or packets unconsumed or quarantined
+  days?: number         // omitted: all time
+}
+
+export interface ProcessingRunSummary {
+  total: number
+  completed: number
+  failed: number
+  running: number
+  problems: number
+}
+
 export const processingApi = {
-  listRuns: (limit = 50) =>
-    api.get('/processing/runs', { params: { limit } }),
+  listRuns: (params: ProcessingRunFilters = {}) =>
+    api.get('/processing/runs', { params }),
+
+  summary: (params: { league_id?: number; days?: number } = {}) =>
+    api.get<ProcessingRunSummary>('/processing/runs/summary', { params }),
 
   getRun: (id: number) =>
     api.get(`/processing/runs/${id}`),

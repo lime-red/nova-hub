@@ -236,6 +236,18 @@
         become_user: "{{ nova_hub_user }}"
         register: git_result
 
+      # A pinned deploy (deploy.sh <tag>) runs from a copy outside the tree:
+      # checking out a new version rewrites deploy/deploy.sh under the shell
+      # reading it. Refreshed from the tree each run, so it keeps up (#126).
+      - name: Put deploy.sh where a pinned deploy runs it from
+        ansible.builtin.copy:
+            src: "{{ nova_hub_dir }}/deploy/deploy.sh"
+            dest: "/home/{{ nova_hub_user }}/deploy.sh"
+            remote_src: true
+            owner: "{{ nova_hub_user }}"
+            group: "{{ nova_hub_group }}"
+            mode: "0700"
+
       # ── Configuration ───────────────────────────────────────────
       - name: Deploy config.toml from example if not present
         ansible.builtin.copy:

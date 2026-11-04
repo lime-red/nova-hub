@@ -5,9 +5,11 @@
 # installs under real unix users. See live-rig.yml.
 name: tests
 
+# Branches are tested once, through their PR; main on push. Pushing every
+# branch as well ran each PR commit twice on the one shared runner.
 on:
   push:
-    branches: [main, "**"]
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:

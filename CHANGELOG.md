@@ -53,9 +53,22 @@ All notable changes to Nova Hub will be documented in this file.
 - The Leagues page's Add League, which made a league with no game, is now
   New League.
 - A league can't be deleted while its game is being set up or reset.
+- Deleting a league archives the hub's game for it, in
+  `<data_dir>/league_archives/<015B>-<time>/`: the game folder as
+  `game.tar.gz` and the league's reset backups beside it. The folder then
+  leaves `[games] root`, so the number can be set up again; before, it was
+  left there. If the archive can't be written, nothing is deleted.
 - An image may no longer hold a link, or a file or folder its manifest does
   not list; preflight and the import both refuse one. Image manifests list
   folders too, so a missing empty folder is caught.
+- A client's onboarding steps are named for what the BBS does: Credentials
+  collected, nova-client connected, First packet. Each says what it is
+  waiting for; signing in to the console never moved a client on, though
+  "First sign-in" read as if it did (#122).
+
+### Fixed
+- A league, client or processing run page no longer shows the one you were
+  on before while its own loads, nor opens that one's Edit form (#124).
 
 ## [0.12.0] - 2026-11-03
 

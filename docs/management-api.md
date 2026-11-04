@@ -2633,8 +2633,12 @@ Delete a league and ALL associated data (admin only).
 
 Permanently removes: league record, member associations, packets, processing
 runs, sequence alerts, realm names, the hub game's record, and the packet
-files and nodelist directory on disk. The hub game's folder is left in place:
-it may hold the only copy of a game someone wants back.
+files and nodelist directory on disk. The hub game's folder and the
+league's reset backups are archived first, in
+`<data_dir>/league_archives/<015B>-<UTC time>/`, then the folder leaves
+`[games] root`, so the number can be set up again. 409 while the league's
+game is being set up or reset; 500, deleting nothing, if the archive can't
+be written.
 
 **Path Parameters:**
 - `league_id`: Database ID of the league

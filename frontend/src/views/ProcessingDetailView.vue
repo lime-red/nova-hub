@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, computed } from 'vue'
+import { onMounted, ref, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useProcessingStore } from '@/stores/processing'
 import { useAuthStore } from '@/stores/auth'
@@ -22,7 +22,8 @@ const movements = ref<Movement[]>([])
 // and their own packets.
 const authStore = useAuthStore()
 
-onMounted(async () => {
+async function load() {
+  movements.value = []
   await processingStore.loadRun(runId.value)
   if (!authStore.isAdmin) return
   try {
@@ -31,7 +32,11 @@ onMounted(async () => {
   } catch {
     // The run itself is the page; its movements are an extra.
   }
-})
+}
+
+onMounted(load)
+// The same page, another run: Vue keeps the view, so load it afresh.
+watch(runId, load)
 
 /** Grouped the way you read them: everything one node sent another. */
 const movementsByPair = computed(() => {

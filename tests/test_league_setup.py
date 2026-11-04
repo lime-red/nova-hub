@@ -563,3 +563,62 @@ async def test_a_league_is_deleted_once_its_setup_has_ended(api, monkeypatch):
     assert h.db.get(League, league_id) is None
     assert h.db.query(GameReset).filter_by(league_id=league_id).count() == 0
     assert not (h.root / "B902").exists()
+
+
+@pytest.mark.asyncio
+async def test_deleting_a_league_archives_its_game_and_frees_the_number(api, monkeypatch):
+    """The folder and the reset backups go into one archive before any row;
+    the folder leaves [games] root, so the number can be set up again."""
+    import tarfile
+    from backend.services import league_archive
+
+    c, h = api.client, api.hub
+    r = c.post("/api/v1/leagues/setup", json={"league_id": "902", "game_type": "B",
+                                              "name": "Kept"})
+    league_id = r.json()["league_id"]
+    await league_setup.run_job(api.scheduled[-1], h.config)
+    assert (h.root / "B902" / "bbs.cfg").is_file()
+    backups = Path(h.config["server"]["data_dir"]) / "reset_backups" / "902B"
+    backups.mkdir(parents=True)
+    (backups / "902B-1.tar.gz").write_bytes(b"a backup")
+    confirm = {"confirmation_name": "BRE_902"}
+
+    # The archive can't be written: nothing is deleted.
+    def full(*a, **k):
+        raise OSError("No space left on device")
+    with monkeypatch.context() as m:
+        m.setattr(league_archive, "archive", full)
+        r = c.request("DELETE", f"/api/v1/leagues/{league_id}", json=confirm)
+    assert r.status_code == 500 and "nothing was deleted" in r.json()["detail"]
+    h.db.expire_all()
+    assert h.db.get(League, league_id) is not None and (h.root / "B902").is_dir()
+
+    r = c.request("DELETE", f"/api/v1/leagues/{league_id}", json=confirm)
+    assert r.status_code == 200, r.text
+    assert "archived in" in r.json()["message"]
+    assert not (h.root / "B902").exists() and not backups.exists()
+    [kept] = (Path(h.config["server"]["data_dir"]) / "league_archives").iterdir()
+    assert kept.name.startswith("902B-")
+    assert (kept / "reset_backups" / "902B-1.tar.gz").read_bytes() == b"a backup"
+    with tarfile.open(kept / "game.tar.gz") as tar:
+        assert "B902/bbs.cfg" in tar.getnames()
+
+    # The number is free again.
+    r = c.post("/api/v1/leagues/setup", json={"league_id": "902", "game_type": "B",
+                                              "name": "Again"})
+    assert r.status_code == 202, r.text
+
+
+def test_a_delete_that_fails_puts_the_backups_back(hub, tmp_path):
+    from backend.services import league_archive
+
+    data = Path(hub.config["server"]["data_dir"])
+    backups = data / "reset_backups" / "902B"
+    backups.mkdir(parents=True)
+    (backups / "b.tar.gz").write_bytes(b"x")
+    archived = league_archive.archive(hub.config, "902B", None)
+    assert archived.folder is None and not backups.exists()
+    league_archive.discard(archived)
+    assert (backups / "b.tar.gz").read_bytes() == b"x"
+    assert not archived.path.exists()
+    assert league_archive.archive(hub.config, "903B", "B903") is None, "nothing to keep"

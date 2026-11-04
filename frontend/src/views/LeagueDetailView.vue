@@ -127,11 +127,15 @@ async function loadMemberStatus() {
   }
 }
 
-onMounted(async () => {
+async function load() {
   await leaguesStore.loadLeague(leagueId.value)
   loadResetFields()
   loadMemberStatus()
-})
+}
+
+onMounted(load)
+// The same page, another league: Vue keeps the view, so load it afresh.
+watch(leagueId, load)
 
 function openEditModal() {
   if (leaguesStore.currentLeague) {
@@ -965,6 +969,11 @@ async function handleDelete() {
               <li>All sequence alerts</li>
               <li>Nodelist files on disk</li>
             </ul>
+            <p class="mt-2">
+              The hub's game for this league and its reset backups are kept: archived in the
+              hub's <code>league_archives</code> folder, and the game folder leaves
+              <code>[games] root</code> so the number can be set up again.
+            </p>
             <p class="delete-warning mt-2">This action cannot be undone.</p>
             <div class="form-group mt-3">
               <label>To confirm, type <code class="confirm-code">{{ confirmationName }}</code> below:</label>

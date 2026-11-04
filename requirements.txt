@@ -69,7 +69,7 @@ idna==3.11
     #   anyio
     #   httpx
     #   yarl
-jinja2==3.1.4
+jinja2==3.1.6
     # via nova-hub
 loguru==0.7.2
     # via nova-hub

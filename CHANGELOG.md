@@ -42,6 +42,16 @@ All notable changes to Nova Hub will be documented in this file.
   ready and passed its latest preflight.
 
 ### Changed
+- **The deploy playbook builds a hub exactly as production runs one** (#126).
+  The venv is synced from `uv.lock` (`uv sync --frozen --no-dev`), the
+  frontend installs with `--frozen-lockfile` under a pinned pnpm
+  (`nova_hub_pnpm_version`, 10.28.0), and `nova_hub_version` checks out a tag,
+  branch or commit. On a host whose fleet roles own them, `nova_hub_manage_caddy`
+  and `nova_hub_manage_dosemu` hand Caddy and dosemu2 over; dosemu2 is
+  installed `present`, never `latest`. A fresh config gets a generated JWT
+  secret in place of the placeholder (a real one is never rotated), and the
+  first admin's generated password goes to `~novahub/admin-password` (0600)
+  instead of the play's output. The repo default is now gitea.
 - A nodelist can be the hub alone, "1 HOST" naming no one (or for IB a roster
   of the hub alone): a new league's game starts with one, and RESET,
   PLANETARY and IB's -league-reset and -maint all take it. Generate Nodelist

@@ -2,7 +2,11 @@
 
 from pathlib import Path
 
-from backend.core.config_template import UNSET, diff_against_template, format_diff
+import toml
+
+from backend.core.config_template import (
+    UNSET, _flatten, code_defaults, diff_against_template, format_diff, is_per_host,
+)
 
 TEMPLATE = '''
 [server]
@@ -84,3 +88,48 @@ def test_a_setting_about_passwords_is_not_hidden():
     config = template.replace("12", "16")
     out = format_diff(diff_against_template(config, template), "c", "t")
     assert "16" in out
+
+
+def test_an_unset_key_shows_the_code_default_beside_the_template():
+    config = TEMPLATE.replace("settle_seconds = 5\n", "").replace("retention_days = 30\n", "")
+    d = diff_against_template(config, TEMPLATE, defaults={
+        "processing.settle_seconds": 5, "processing.retention_days": 14})
+    text = format_diff(d, "config.toml", "config.toml.example")
+    assert "processing.settle_seconds: 5  (template: 5)\n" in text + "\n"
+    assert "processing.retention_days: 14  (template: 30)  <- not what the template says" in text
+
+
+def test_an_unset_key_with_no_known_default_says_so():
+    config = TEMPLATE.replace("settle_seconds = 5\n", "")
+    d = diff_against_template(config, TEMPLATE, defaults={})
+    assert ("processing.settle_seconds: (unknown)  (template: 5)  "
+            "<- the code's default is not known here") in format_diff(d, "c", "t")
+
+
+def test_a_commented_key_that_is_set_shows_the_code_default():
+    config = TEMPLATE.replace("timeout = 300", 'timeout = 300\nterm = "xterm"')
+    d = diff_against_template(config, TEMPLATE, defaults={"dosemu.term": "linux"})
+    assert ('dosemu.term: "xterm"  (template: (commented out), code default: "linux")'
+            in format_diff(d, "c", "t"))
+
+
+def _shipped_template():
+    return (Path(__file__).resolve().parents[1] / "config.toml.example").read_text()
+
+
+def test_every_shared_key_in_the_template_has_a_known_code_default():
+    """A key the hub reads raw, outside Config's models, needs its reader's
+    default in _raw_defaults, or --diff-template cannot say what leaving it out
+    means."""
+    defaults = code_defaults()
+    keys = _flatten(toml.loads(_shipped_template()))
+    assert [k for k in keys if not is_per_host(k) and k not in defaults] == []
+
+
+def test_the_template_says_what_the_code_does():
+    """Leaving a shared key out of config.toml must mean what the template says.
+    If a default changes, change the template with it (or the other way round)."""
+    defaults = code_defaults()
+    keys = _flatten(toml.loads(_shipped_template()))
+    assert {k: (v, defaults[k]) for k, v in keys.items()
+            if not is_per_host(k) and k in defaults and defaults[k] != v} == {}

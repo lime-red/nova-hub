@@ -12,7 +12,9 @@ template does not mention at all is reported separately, since it is usually
 stale or misspelt (the hub ignores keys it does not know).
 
 Values are printed so the difference can be read, except for keys whose name
-says they hold a secret.
+says they hold a secret. A key a config leaves out runs on the code's default,
+so that default is printed beside the template's value: if the two disagree,
+leaving the key out is not the same as following the template.
 """
 
 from __future__ import annotations
@@ -53,6 +55,7 @@ _SECTION = re.compile(r"^\s*\[([^\]]+)\]\s*$")
 _COMMENTED_KEY = re.compile(r"^\s*#\s*([A-Za-z_][A-Za-z0-9_]*)\s*=")
 
 UNSET = object()
+UNKNOWN = object()
 
 
 def _flatten(d: dict, prefix: str = "") -> dict[str, Any]:
@@ -81,6 +84,24 @@ def _commented_keys(text: str) -> set[str]:
     return keys
 
 
+def _raw_defaults() -> dict[str, Any]:
+    """Keys the hub reads from the raw config rather than through Config's
+    models, and the defaults their readers use."""
+    from backend.services import sequence_validator
+
+    return {
+        "processing.sequence_alerts_enabled": sequence_validator.DEFAULT_ALERTS_ENABLED,
+        "processing.sequence_alert_max_age_days": sequence_validator.DEFAULT_ALERT_MAX_AGE_DAYS,
+    }
+
+
+def code_defaults() -> dict[str, Any]:
+    """What the hub uses for each key a config.toml leaves out."""
+    from backend.core.config import Config
+
+    return {**_flatten(Config().model_dump()), **_raw_defaults()}
+
+
 def is_per_host(key: str) -> bool:
     for pattern in PER_HOST:
         if pattern.endswith(".*"):
@@ -103,18 +124,25 @@ class TemplateDiff:
     """(key, template value): the config leaves it to the code's default."""
     unknown: list[tuple[str, Any]] = field(default_factory=list)
     """(key, config value): the template does not mention it."""
+    defaults: dict[str, Any] = field(default_factory=dict)
+    """The code's default for each key, where it is known."""
+
+    def default(self, key: str) -> Any:
+        return self.defaults.get(key, UNKNOWN)
 
     @property
     def clean(self) -> bool:
         return not (self.differs or self.unset or self.unknown)
 
 
-def diff_against_template(config_text: str, template_text: str) -> TemplateDiff:
+def diff_against_template(config_text: str, template_text: str,
+                          defaults: dict[str, Any] | None = None) -> TemplateDiff:
+    """``defaults`` are the code's defaults by key; ``code_defaults()`` if not given."""
     config = _flatten(toml.loads(config_text))
     template = _flatten(toml.loads(template_text))
     documented = _commented_keys(template_text) - template.keys()
 
-    result = TemplateDiff()
+    result = TemplateDiff(defaults=code_defaults() if defaults is None else defaults)
     for key in sorted(template.keys() | config.keys() | documented):
         if is_per_host(key):
             continue
@@ -135,6 +163,8 @@ def diff_against_template(config_text: str, template_text: str) -> TemplateDiff:
 def _show(key: str, value: Any) -> str:
     if value is UNSET:
         return "(commented out)"
+    if value is UNKNOWN:
+        return "(unknown)"
     if is_secret(key):
         return "(hidden)"
     return toml.dumps({"v": value}).split("=", 1)[1].strip()
@@ -150,12 +180,21 @@ def format_diff(diff: TemplateDiff, config_path: str, template_path: str) -> str
         lines.append("")
         lines.append("Differs from the template:")
         for key, tmpl, conf in diff.differs:
-            lines.append(f"  {key}: {_show(key, conf)}  (template: {_show(key, tmpl)})")
+            note = f"template: {_show(key, tmpl)}"
+            if tmpl is UNSET:
+                note += f", code default: {_show(key, diff.default(key))}"
+            lines.append(f"  {key}: {_show(key, conf)}  ({note})")
     if diff.unset:
         lines.append("")
         lines.append("Not set, so the code's default applies:")
         for key, tmpl in diff.unset:
-            lines.append(f"  {key}  (template: {_show(key, tmpl)})")
+            default = diff.default(key)
+            line = f"  {key}: {_show(key, default)}  (template: {_show(key, tmpl)})"
+            if default is UNKNOWN:
+                line += "  <- the code's default is not known here"
+            elif default != tmpl:
+                line += "  <- not what the template says"
+            lines.append(line)
     if diff.unknown:
         lines.append("")
         lines.append("Not in the template (stale or misspelt? the hub ignores keys it does not know):")

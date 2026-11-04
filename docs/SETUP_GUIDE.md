@@ -127,7 +127,9 @@ paths), who it is (`[hub]`), its secrets and trusted proxies, `[identity]` and
 
 It reports values that differ, keys left to the code's default, and keys the
 template does not know (usually stale or misspelt: the hub ignores them), and
-exits 1 if there are any. Secret values are never printed. Run it after an
+exits 1 if there are any. A key left out shows the code's default beside the
+template's value, and is marked if the two disagree: then leaving it out is not
+the same as following the template. Secret values are never printed. Run it after an
 upgrade that changes the template, and on dev and test to be sure they run what
 production runs.
 

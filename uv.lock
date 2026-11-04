@@ -209,11 +209,11 @@ wheels = [
 
 [[package]]
 name = "ansi2html"
-version = "1.9.1"
+version = "1.9.5"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/ca/f1/a82ae514fe3d2d66b20a24dd53d45f588a6c0a1d9b5f493eddff679bd99a/ansi2html-1.9.1.tar.gz", hash = "sha256:5c6837a13ecc1903aab7a545353312049dfedfe5105362ad3a8d9d207871ec71", size = 44288, upload-time = "2023-12-11T15:06:31.833Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c2/49/682b08f7d8247d18aaafaedaf50609de6d91d5ab378c912b5508392578a8/ansi2html-1.9.5.tar.gz", hash = "sha256:ae17e92f1d6cac0e67d367e07fb0ba8a23dac8f193fc5d7a8c8a50fe5ddd95a4", size = 45225, upload-time = "2026-09-06T12:43:46.36Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/42/d7/1bc3433a2406b891182c25a7926abe3eb19af5870d540375ebf7795885b3/ansi2html-1.9.1-py3-none-any.whl", hash = "sha256:29ccdb1e83520d648ebdc9c9544059ea4d424ecc33d3ef723657f7f5a9ae5225", size = 17606, upload-time = "2023-12-11T15:06:30.364Z" },
+    { url = "https://files.pythonhosted.org/packages/c2/d4/104cba52b1aa94d1c60ae342c264d4308af59d3d8832b4975802e9fe8978/ansi2html-1.9.5-py3-none-any.whl", hash = "sha256:fff3d25b149951474a688c7e22240f93e69ac5aa023c44ab5dce806befcba281", size = 17877, upload-time = "2026-09-06T12:43:44.78Z" },
 ]
 
 [[package]]

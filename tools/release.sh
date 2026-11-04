@@ -37,7 +37,8 @@ notes=$(awk -v v="$version" '
 ' "$root/CHANGELOG.md")
 
 if [[ -z $notes ]]; then
-    echo "No '## [$version]' section in CHANGELOG.md -- write the notes there first." >&2
+    echo "No '## [$version]' section in CHANGELOG.md. The release commit makes it:" >&2
+    echo "  tools/changelog.py release $version   (gathers changelog.d/ into CHANGELOG.md)" >&2
     exit 1
 fi
 

@@ -201,6 +201,14 @@ def ib_upgrade(rig_available):
             pytest.fail(f"IB {kind} {entry.get('ref', '')}: {entry['error']}", pytrace=False)
         pair.append(Build(kind=kind, ref=entry["ref"], commit=entry.get("commit", ""),
                           binary=Path(entry["binary"]), version=entry["version"]))
+    # Before the league is even started: once a release carries the bump (v0.2.8
+    # did, 6 -> 7), there is nothing to cross until trunk bumps again.
+    from rig.ib_builds import protocol
+
+    old, new = (protocol(b.commit) for b in pair)
+    if old is not None and old == new:
+        pytest.skip(f"{pair[0].version} and {pair[1].version} both speak protocol {old}: "
+                    "no bump to cross")
     return tuple(pair)
 
 

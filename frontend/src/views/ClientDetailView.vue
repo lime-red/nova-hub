@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, computed } from 'vue'
+import { onMounted, ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useClientsStore, type FtnAddressInfo } from '@/stores/clients'
 import { useAuthStore } from '@/stores/auth'
@@ -255,10 +255,14 @@ async function loadLeagueStatus() {
   }
 }
 
-onMounted(async () => {
+async function load() {
   await clientsStore.loadClient(clientId.value)
   await Promise.all([loadClaimStatus(), loadUsers(), loadRequests(), loadLeagueStatus()])
-})
+}
+
+onMounted(load)
+// The same page, another client: Vue keeps the view, so load it afresh.
+watch(clientId, load)
 
 function openEditModal() {
   if (clientsStore.currentClient) {

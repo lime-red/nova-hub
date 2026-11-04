@@ -68,17 +68,24 @@ export const useProcessingStore = defineStore('processing', () => {
     }
   }
 
+  // The id last asked for. A page shows nothing rather than another one's
+  // data while its own loads, and a slow answer for an id since left behind
+  // is dropped rather than shown under the new one's URL (#124).
+  let currentRunWanted: number | null = null
+
   async function loadRun(id: number): Promise<void> {
+    currentRunWanted = id
+    if (currentRun.value?.id !== id) currentRun.value = null
     loading.value = true
     error.value = null
 
     try {
       const response = await processingApi.getRun(id)
-      currentRun.value = response.data
+      if (currentRunWanted === id) currentRun.value = response.data
     } catch (err: unknown) {
-      error.value = apiError(err, 'Failed to load processing run')
+      if (currentRunWanted === id) error.value = apiError(err, 'Failed to load processing run')
     } finally {
-      loading.value = false
+      if (currentRunWanted === id) loading.value = false
     }
   }
 

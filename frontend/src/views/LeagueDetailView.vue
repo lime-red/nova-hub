@@ -126,11 +126,15 @@ async function loadMemberStatus() {
   }
 }
 
-onMounted(async () => {
+async function load() {
   await leaguesStore.loadLeague(leagueId.value)
   loadResetFields()
   loadMemberStatus()
-})
+}
+
+onMounted(load)
+// The same page, another league: Vue keeps the view, so load it afresh.
+watch(leagueId, load)
 
 function openEditModal() {
   if (leaguesStore.currentLeague) {

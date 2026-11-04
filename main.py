@@ -101,6 +101,9 @@ async def lifespan(app: FastAPI):
     # blanks bulk columns instead of deleting rows.
     app.state.retention_task = asyncio.create_task(_retention_loop(config))
 
+    # Log each member board's League Status when it changes; see member_watch.py.
+    app.state.member_watch_task = asyncio.create_task(_member_watch_loop(config))
+
     # Processing starts on an upload, so packets left unprocessed when the hub
     # stopped would otherwise wait for the next one.
     from backend.models.database import Packet
@@ -117,9 +120,10 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
-    task = getattr(app.state, "retention_task", None)
-    if task is not None:
-        task.cancel()
+    for name in ("retention_task", "member_watch_task"):
+        task = getattr(app.state, name, None)
+        if task is not None:
+            task.cancel()
 
     logger.info("Nova Hub shutting down...")
 
@@ -150,6 +154,31 @@ async def _retention_loop(config):
         finally:
             session.close()
         await asyncio.sleep(24 * 60 * 60)
+
+
+async def _member_watch_loop(config):
+    """Every few minutes, log the member boards whose League Status changed.
+
+    A plain loop for the retention loop's reason: a pass that fails is logged
+    and the next one runs; it can never take the hub down.
+    """
+    import asyncio
+
+    from backend.services import member_watch
+
+    logger = get_logger(context="member_watch")
+    seen = {}
+    while True:
+        session = get_session()
+        try:
+            seen = await asyncio.to_thread(member_watch.check, session, config._raw, seen)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.exception(f"Member status pass failed (the hub is unaffected): {e}")
+        finally:
+            session.close()
+        await asyncio.sleep(member_watch.CHECK_EVERY_SECONDS)
 
 
 # --- Service API Sub-Application ---

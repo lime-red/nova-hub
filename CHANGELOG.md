@@ -49,6 +49,11 @@ All notable changes to Nova Hub will be documented in this file.
 - The Leagues page's Add League, which made a league with no game, is now
   New League.
 - A league can't be deleted while its game is being set up or reset.
+- Deleting a league archives the hub's game for it, in
+  `<data_dir>/league_archives/<015B>-<time>/`: the game folder as
+  `game.tar.gz` and the league's reset backups beside it. The folder then
+  leaves `[games] root`, so the number can be set up again; before, it was
+  left there. If the archive can't be written, nothing is deleted.
 - An image may no longer hold a link, or a file or folder its manifest does
   not list; preflight and the import both refuse one. Image manifests list
   folders too, so a missing empty folder is caught.

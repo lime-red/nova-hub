@@ -110,17 +110,24 @@ export const useClientsStore = defineStore('clients', () => {
     }
   }
 
+  // The id last asked for. A page shows nothing rather than another one's
+  // data while its own loads, and a slow answer for an id since left behind
+  // is dropped rather than shown under the new one's URL (#124).
+  let currentClientWanted: number | null = null
+
   async function loadClient(id: number): Promise<void> {
+    currentClientWanted = id
+    if (currentClient.value?.id !== id) currentClient.value = null
     loading.value = true
     error.value = null
 
     try {
       const response = await clientsApi.get(id)
-      currentClient.value = response.data
+      if (currentClientWanted === id) currentClient.value = response.data
     } catch (err: unknown) {
-      error.value = apiError(err, 'Failed to load client')
+      if (currentClientWanted === id) error.value = apiError(err, 'Failed to load client')
     } finally {
-      loading.value = false
+      if (currentClientWanted === id) loading.value = false
     }
   }
 

@@ -57,6 +57,14 @@ All notable changes to Nova Hub will be documented in this file.
 - An image may no longer hold a link, or a file or folder its manifest does
   not list; preflight and the import both refuse one. Image manifests list
   folders too, so a missing empty folder is caught.
+- A client's onboarding steps are named for what the BBS does: Credentials
+  collected, nova-client connected, First packet. Each says what it is
+  waiting for; signing in to the console never moved a client on, though
+  "First sign-in" read as if it did (#122).
+
+### Fixed
+- A league, client or processing run page no longer shows the one you were
+  on before while its own loads, nor opens that one's Edit form (#124).
 
 ## [0.12.0] - 2026-11-03
 

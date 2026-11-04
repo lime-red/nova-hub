@@ -36,8 +36,29 @@ ROLLBACK_FILE=$HOME/deploy-rollback-commit.txt
 # a rollback would use; the rest are there for the case where a fault is noticed
 # a deploy or two late.
 KEEP_BACKUPS=3
-UV=$(command -v uv || echo "$HOME/.local/bin/uv")
-PNPM=$(command -v pnpm || echo /usr/bin/pnpm)
+# uv and pnpm are not always on a non-interactive shell's PATH: look where
+# each host keeps them.
+find_tool() {
+  command -v "$1" 2>/dev/null && return
+  for candidate in "$HOME/.local/bin/$1" "/usr/local/bin/$1" "/usr/bin/$1"; do
+    [ -x "$candidate" ] && { echo "$candidate"; return; }
+  done
+}
+UV=$(find_tool uv)
+PNPM=$(find_tool pnpm)
+
+# Runs one step, shows the end of what it printed, and stops the deploy if it
+# failed. A step piped into tail would hide its failure from set -e.
+step() {
+  step_log=$(mktemp)
+  if "$@" > "$step_log" 2>&1; then
+    tail -n 12 "$step_log"; rm -f "$step_log"
+  else
+    tail -n 40 "$step_log"; rm -f "$step_log"
+    echo "STOP: this step failed: $*"
+    exit 1
+  fi
+}
 
 MODE=show
 TARGET=
@@ -132,6 +153,10 @@ if [ "$MODE" = show ]; then
 fi
 
 DB=$(database_path)
+# Before anything moves: a missing tool found halfway through would leave the
+# hub half deployed.
+[ -n "$UV" ] || { echo "STOP: no uv on this host"; exit 1; }
+[ -n "$PNPM" ] || { echo "STOP: no pnpm on this host"; exit 1; }
 
 if [ "$MODE" != here ]; then
   echo
@@ -252,9 +277,9 @@ echo "=== sync the venv from uv.lock ==="
 # Exactly the lock: what CI, the rig and every other hub run. Dev keeps its
 # test tools; a pinned hub leaves them out.
 if [ "$MODE" = here ]; then
-  "$UV" sync --frozen 2>&1 | tail -12
+  step "$UV" sync --frozen
 else
-  "$UV" sync --frozen --no-dev 2>&1 | tail -12
+  step "$UV" sync --frozen --no-dev
 fi
 
 echo
@@ -262,9 +287,9 @@ echo "=== rebuild the frontend ==="
 # dist is not in git and is what the browser actually loads, so a checkout alone
 # leaves the UI on the previous version. CI=true: pnpm never stops to ask.
 cd "$LIVE/frontend"
-CI=true "$PNPM" install --frozen-lockfile --prefer-offline 2>&1 | tail -3
+step env CI=true "$PNPM" install --frozen-lockfile --prefer-offline
 rm -rf dist
-"$PNPM" run build 2>&1 | tail -3
+step "$PNPM" run build
 echo "--- dist: ---"
 ls dist
 cd "$LIVE"
@@ -272,7 +297,7 @@ cd "$LIVE"
 echo
 echo "=== apply migrations ==="
 .venv/bin/alembic current 2>&1 | tail -1
-.venv/bin/alembic upgrade head 2>&1 | tail -5
+step .venv/bin/alembic upgrade head
 echo "now at:"
 .venv/bin/alembic current 2>&1 | tail -1
 echo "integrity: $(db_integrity "$DB")"

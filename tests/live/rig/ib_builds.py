@@ -26,6 +26,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -56,6 +57,17 @@ def _get(url: str, timeout: int = 120) -> bytes:
 def _git(*args, cwd=SRC) -> str:
     return subprocess.run(["git", *args], cwd=cwd, check=True,
                           capture_output=True, text=True).stdout.strip()
+
+
+def protocol(commit: str):
+    """The packet protocol a build speaks (game.Protocol), read from the source at
+    its commit, or None if that cannot be read. A build does not report it."""
+    try:
+        text = _git("show", f"{commit}:internal/game/version.go")
+    except (subprocess.CalledProcessError, OSError):
+        return None
+    m = re.search(r"^const Protocol\s*=\s*(\d+)", text, re.M)
+    return int(m.group(1)) if m else None
 
 
 def _version(binary: Path) -> str:

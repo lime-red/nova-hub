@@ -111,6 +111,26 @@ jwt_secret = "change-me-in-production"  # Generate a secure random key
 jwt_expiry_hours = 24
 ```
 
+#### Checking a config against the template
+
+Every hub starts from `config.toml.example`, and only a few keys are meant to
+differ between hosts: where it listens and is reached (`server.host`, `port`,
+`public_url`), where its files live (`data_dir`, `database.path`, the `[games]`
+paths), who it is (`[hub]`), its secrets and trusted proxies, `[identity]` and
+`[alerting]`. To list anything else that differs:
+
+```bash
+.venv/bin/python run.py --diff-template          # against config.toml.example
+.venv/bin/python run.py --diff-template OTHER.toml
+.venv/bin/python run.py --validate --diff-template
+```
+
+It reports values that differ, keys left to the code's default, and keys the
+template does not know (usually stale or misspelt: the hub ignores them), and
+exits 1 if there are any. Secret values are never printed. Run it after an
+upgrade that changes the template, and on dev and test to be sure they run what
+production runs.
+
 ### 7. Start the Server
 
 ```bash

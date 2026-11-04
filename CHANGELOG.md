@@ -5,6 +5,12 @@ All notable changes to Nova Hub will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **`run.py --diff-template`** lists what a hub's `config.toml` sets
+  differently from `config.toml.example`, apart from the keys meant to differ
+  per host (where it listens and keeps its files, who it is, its secrets,
+  sign-in and alerting): values that differ, keys left to the code's default,
+  and keys the template does not know. Exits 1 if there are any, and never
+  prints a secret. It keeps dev and test configured as production is (#126).
 - **Golden images.** A golden image is a clean, finished install of one game
   version, made by `make_golden.py` from your own copy of the game: the donor's
   league taken out (bbs.cfg, nodes file, the coordinator key, which RESET

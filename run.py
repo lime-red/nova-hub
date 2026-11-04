@@ -32,6 +32,15 @@ def main():
         help="Validate configuration without starting server"
     )
     parser.add_argument(
+        "--diff-template",
+        nargs="?",
+        const=str(Path(__file__).resolve().parent / "config.toml.example"),
+        metavar="TEMPLATE",
+        help="List what the config sets differently from the template "
+             "(default: config.toml.example), apart from the keys meant to "
+             "differ per host. Exits 1 if anything does.",
+    )
+    parser.add_argument(
         "--dev",
         action="store_true",
         help="Development mode: enable auto-reload and verbose output (do NOT use in production)"
@@ -43,6 +52,15 @@ def main():
     )
 
     args = parser.parse_args()
+
+    template_rc = 0
+    if args.diff_template:
+        from backend.core.config_template import run as diff_template
+
+        template_rc = diff_template(args.config, args.diff_template)
+        if not args.validate:
+            sys.exit(template_rc)
+        print()
 
     # Handle validation mode
     if args.validate:
@@ -61,7 +79,7 @@ def main():
             validator = HubValidator(args.config, db_session)
             success = validator.validate()
             validator.print_results()
-            sys.exit(0 if success else 1)
+            sys.exit(0 if success and template_rc == 0 else 1)
         finally:
             db_session.close()
         return

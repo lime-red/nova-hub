@@ -648,8 +648,12 @@ async def delete_league(
 
     Permanently removes: league record, member associations, packets, processing
     runs, sequence alerts, realm names, the hub game's record, and the packet
-    files and nodelist directory on disk. The hub game's folder is left in place:
-    it may hold the only copy of a game someone wants back.
+    files and nodelist directory on disk. The hub game's folder and the
+    league's reset backups are archived first, in
+    `<data_dir>/league_archives/<015B>-<UTC time>/`, then the folder leaves
+    `[games] root`, so the number can be set up again. 409 while the league's
+    game is being set up or reset; 500, deleting nothing, if the archive can't
+    be written.
 
     **Path Parameters:**
     - `league_id`: Database ID of the league
@@ -690,6 +694,21 @@ async def delete_league(
     league_name = league.full_id
     league_id_str = league.league_id
 
+    # The hub's game for it, and its reset backups, into an archive before
+    # anything goes; the folder leaves [games] root once the delete commits.
+    import asyncio
+    from backend.services import league_archive
+    raw_config = get_config()._raw
+    try:
+        archived = await asyncio.to_thread(
+            league_archive.archive, raw_config, league.full_id,
+            league.install.folder if league.install else None)
+    except Exception as e:
+        logger.exception(f"Could not archive {league.full_id}'s game: {e}")
+        raise HTTPException(status_code=500, detail=f"{league.full_id}'s game could not be "
+                            f"archived, so nothing was deleted: {e}")
+    kept = archived.describe() if archived else ""
+
     # Collect packet filenames for disk cleanup using raw SQL (no ORM tracking)
     result = db.execute(
         text("SELECT filename FROM packets WHERE league_id = :lid"), {"lid": league_id}
@@ -703,7 +722,8 @@ async def delete_league(
     # Recorded first, while the league is there to describe. The event keeps
     # its id and name; it does not reference the row.
     audit.record(db, "league.deleted", actor=current_user, target=league,
-                 detail=f"with {len(packet_filenames)} packets", request=http_request)
+                 detail=f"with {len(packet_filenames)} packets" + (f"; {kept}" if kept else ""),
+                 request=http_request)
     lid = {"lid": league_id}
     packets = "SELECT id FROM packets WHERE league_id = :lid"
     runs = "SELECT id FROM processing_runs WHERE league_id = :lid"
@@ -714,7 +734,7 @@ async def delete_league(
         "DELETE FROM game_resets WHERE league_id = :lid",
         "DELETE FROM sequence_alerts WHERE league_id = :lid",
         f"DELETE FROM realm_names WHERE league_id = :lid OR packet_id IN ({packets})",
-        # The row only; the game's folder stays on disk for the admin to keep or remove.
+        # The row; the game's folder is archived above and removed below.
         "DELETE FROM league_games WHERE league_id = :lid",
         f"DELETE FROM processing_run_items WHERE league_id = :lid OR processing_run_id IN ({runs})",
         f"DELETE FROM processing_run_files WHERE league_id = :lid OR processing_run_id IN ({runs})",
@@ -727,12 +747,16 @@ async def delete_league(
         "DELETE FROM leagues WHERE id = :lid",
     ):
         db.execute(text(statement), lid)
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        league_archive.discard(archived)
+        raise
+    await asyncio.to_thread(league_archive.finish, archived)
 
     # Clean up packet files from disk
-    from backend.core.config import get_config
-
-    data_dir = Path(get_config().get("server", {}).get("data_dir", "./data"))
+    data_dir = league_archive.data_dir(raw_config)
     for filename in packet_filenames:
         if Path(filename).name != filename:
             continue        # never a path: every name passed parse_packet_filename
@@ -750,9 +774,10 @@ async def delete_league(
             shutil.rmtree(nodelist_dir)
             logger.info(f"Deleted nodelist directory {nodelist_dir}")
 
-    logger.info(f"Deleted league {league_name} and all associated data by {current_user.username}")
+    logger.info(f"Deleted league {league_name} and all associated data by {current_user.username}"
+                + (f"; {kept}" if kept else ""))
 
-    return {"message": f"League {league_name} deleted successfully"}
+    return {"message": f"League {league_name} deleted successfully" + (f"; {kept}" if kept else "")}
 
 
 def _check_hub_address_is_free(db: Session, address: Optional[str]) -> None:

@@ -3112,16 +3112,20 @@ Validation Error
 
 **List Processing Runs**
 
-List processing runs
+List processing runs, newest first, a page at a time
 
 **Query Parameters:**
 - `limit`: Number of runs to return (default: 50, max: 200)
+- `before_id`: For the next page, the last id of this one (keyset paging:
+  runs arriving meanwhile do not shift the pages)
+- `league_id`, `status`, `problems`, `days`: filters, all optional
 
-**Returns:** List of processing runs ordered by most recent first
+**Returns:** Processing runs, most recent first. Fewer than `limit` means
+there are no more.
 
 **Example:**
 ```bash
-curl -X GET "https://hub.example.com/management/api/v1/processing/runs?limit=20" \
+curl -X GET "https://hub.example.com/management/api/v1/processing/runs?league_id=3&problems=true" \
   -b cookies.txt
 ```
 
@@ -3130,6 +3134,76 @@ curl -X GET "https://hub.example.com/management/api/v1/processing/runs?limit=20"
 **limit**
 - Number of runs to return
   - Type: `integer`
+  - Location: query
+
+**before_id**
+- Only runs older than this one: the last id of the previous page
+  - Type: `string`
+  - Location: query
+
+**league_id**
+- Only runs that carried a packet or made a file in this league
+  - Type: `string`
+  - Location: query
+
+**status**
+- Only runs with this outcome
+  - Type: `string`
+  - Location: query
+
+**problems**
+- Only runs that failed or left packets unconsumed or quarantined
+  - Type: `boolean`
+  - Location: query
+
+**days**
+- Only runs started in the last this many days; all when omitted
+  - Type: `string`
+  - Location: query
+
+#### Responses
+
+#### 200
+
+Successful Response
+
+
+**Content-Type:** `application/json`
+
+#### 422
+
+Validation Error
+
+
+**Content-Type:** `application/json`
+
+---
+
+### GET `/management/api/v1/processing/runs/summary`
+
+**Summarise Processing Runs**
+
+Count the runs a Processing Runs page would list, by outcome
+
+Takes the list's league and window filters; the counts are what its status
+and problems filters would then show.
+
+**Example:**
+```bash
+curl -X GET "https://hub.example.com/management/api/v1/processing/runs/summary?days=7" \
+  -b cookies.txt
+```
+
+#### Parameters
+
+**league_id**
+- Only runs in this league
+  - Type: `string`
+  - Location: query
+
+**days**
+- Only runs started in the last this many days; all when omitted
+  - Type: `string`
   - Location: query
 
 #### Responses

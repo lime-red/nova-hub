@@ -21,6 +21,9 @@ class ProcessingRunResponse(BaseModel):
         [], description="The leagues the run processed, e.g. ['015B', '015F']: those whose "
                         "packets it moved or whose score and listing files it made")
     league_name: Optional[str] = Field(None, description="The same leagues, comma-separated")
+    league_ids: List[int] = Field(
+        [], description="The same leagues' database ids, in the same order, for links")
+    packets_quarantined: int = 0
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -64,3 +67,15 @@ class ProcessingRunDetail(BaseModel):
     bbsinfo_files: List[ProcessingRunFile] = []
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ProcessingRunSummary(BaseModel):
+    """How many runs in a window, by outcome, for the console's tiles. Counts
+    honour the league and window filters, not the status ones, so a tile says
+    what clicking it would show."""
+    total: int
+    completed: int
+    failed: int
+    running: int
+    problems: int = Field(..., description="Failed, or left packets unconsumed or quarantined")
+

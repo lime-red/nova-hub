@@ -5,6 +5,16 @@ All notable changes to Nova Hub will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Processing Runs: filters, paging and tiles** (#125). Filter by window,
+  league, status, or runs with problems (failed, or packets left unconsumed or
+  quarantined); Load more pages back through history without the pages
+  shifting as new runs arrive. Tiles count the window's runs by outcome, and
+  clicking one shows those runs. Unconsumed and quarantined packets are flagged
+  on each row, and each league links to its page.
+- **One filter bar for Processing Runs, Movements and Attacks** (#125): the
+  window, then the league, then the page's own filters, in the same place on
+  each. Filters are kept in the address, so Back keeps them and a filtered view
+  can be linked. A league page links to its runs, movements and attacks.
 - **Golden images.** A golden image is a clean, finished install of one game
   version, made by `make_golden.py` from your own copy of the game: the donor's
   league taken out (bbs.cfg, nodes file, the coordinator key, which RESET

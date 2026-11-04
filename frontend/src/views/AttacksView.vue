@@ -22,8 +22,11 @@
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import AppLayout from '@/components/AppLayout.vue'
+import FilterBar from '@/components/FilterBar.vue'
+import { asBool, asNumber, asString, useQueryRef } from '@/composables/useQueryRef'
+import { useLeagues } from '@/composables/useLeagues'
 import {
-  attacksApi, leaguesApi, trafficApi,
+  attacksApi, trafficApi,
   type AttackForces, type AttackJourney, type TrafficDetails, type TrafficJourney,
 } from '@/services/api'
 import { useAuthStore } from '@/stores/auth'
@@ -34,22 +37,17 @@ const loading = ref(false)
 const error = ref<string | null>(null)
 const journeys = ref<AttackJourney[]>([])
 const traffic = ref<TrafficJourney[]>([])
-const leagues = ref<Array<{ id: number; name: string; full_id: string }>>([])
-// "015B Medusa Test League 015": two leagues can share a number and even a
-// name, one BRE and one FE, so the name alone doesn't say which.
-const leagueLabels = computed(() => new Map(leagues.value.map((l) => [l.id, `${l.full_id} ${l.name}`])))
-function leagueLabel(id: number, name?: string | null): string {
-  return leagueLabels.value.get(id) ?? name ?? '-'
-}
+const { leagueLabel } = useLeagues()
 const expanded = ref<Set<string>>(new Set())
 
-const days = ref(14)
-const leagueId = ref<number | undefined>(undefined)
-const planet = ref<number | undefined>(undefined)
-const onlyMit = ref(false)
-const idSearch = ref('')
-const launchedOn = ref('')   // YYYY-MM-DD, matched client-side
-const kind = ref('')         // '' everything, 'Attack', or a traffic kind
+// In the URL, so Back keeps them and a filtered view can be linked (#125).
+const days = useQueryRef<number>('days', 14, asNumber)
+const leagueId = useQueryRef<number | undefined>('league', undefined, asNumber)
+const planet = useQueryRef<number | undefined>('planet', undefined, asNumber)
+const onlyMit = useQueryRef<boolean>('mit', false, asBool)
+const idSearch = useQueryRef<string>('id', '', asString)
+const launchedOn = useQueryRef<string>('on', '', asString)   // YYYY-MM-DD, matched client-side
+const kind = useQueryRef<string>('kind', '', asString)       // '' everything, 'Attack', or a traffic kind
 
 const STEPS: Array<{ key: keyof AttackJourney; label: string }> = [
   { key: 'attack_at_hub', label: 'Attack reached the hub' },
@@ -294,15 +292,7 @@ const filtersActive = computed(
   () => !!(kind.value || leagueId.value || planet.value || onlyMit.value || idSearch.value || launchedOn.value)
 )
 
-onMounted(async () => {
-  try {
-    const { data } = await leaguesApi.list()
-    leagues.value = data
-  } catch {
-    // The league filter is a convenience; the page works without it.
-  }
-  await load()
-})
+onMounted(load)
 
 let idTimer: ReturnType<typeof setTimeout> | undefined
 watch(idSearch, () => {
@@ -323,21 +313,32 @@ watch([days, leagueId, planet, onlyMit], load)
             through the hub to its result &mdash; who to whom, not what
           </p>
         </div>
-        <div class="window-picker">
-          <label for="days">Launched</label>
-          <select id="days" v-model.number="days" class="form-select">
-            <option :value="1">Last 24 hours</option>
-            <option :value="7">Last 7 days</option>
-            <option :value="14">Last 14 days</option>
-            <option :value="30">Last 30 days</option>
-            <option :value="90">Last 90 days</option>
-          </select>
-          <!-- Reloads with the filters as they are; F5 starts the page afresh. -->
-          <button class="btn btn-secondary" :disabled="loading" @click="load">
-            {{ loading ? 'Refreshing...' : 'Refresh' }}
-          </button>
-        </div>
+        <!-- Reloads with the filters as they are; F5 starts the page afresh. -->
+        <button class="btn btn-secondary" :disabled="loading" @click="load">
+          {{ loading ? 'Refreshing...' : 'Refresh' }}
+        </button>
       </header>
+
+      <FilterBar
+        v-model:days="days"
+        v-model:league-id="leagueId"
+        :day-options="[1, 7, 14, 30, 90]"
+        window-label="Launched"
+        :active="filtersActive"
+        @clear="clearFilters"
+      >
+        <select v-model="kind" class="form-select" aria-label="Type">
+          <option value="">Everything</option>
+          <option value="Attack">Attacks</option>
+          <option v-for="k in kinds" :key="k" :value="k">{{ k }}</option>
+        </select>
+        <input v-model.number="planet" type="number" min="1" class="form-input narrow"
+               placeholder="Planet" title="Attacker's or target's planet" />
+        <input v-model="launchedOn" type="date" class="form-input"
+               title="The Date: on the player's MIT report" />
+        <input v-model="idSearch" type="text" class="form-input id-input font-mono"
+               placeholder="Attack ID" title="Any leading part of the ID" />
+      </FilterBar>
 
       <div v-if="error" class="alert alert-error">
         {{ error }}
@@ -379,26 +380,6 @@ watch([days, leagueId, planet, onlyMit], load)
             <h2>
               {{ shown.length }} journey<span v-if="shown.length !== 1">s</span>
             </h2>
-            <div class="filters">
-              <select v-model="kind" class="form-select">
-                <option value="">Everything</option>
-                <option value="Attack">Attacks</option>
-                <option v-for="k in kinds" :key="k" :value="k">{{ k }}</option>
-              </select>
-              <select v-model="leagueId" class="form-select">
-                <option :value="undefined">All leagues</option>
-                <option v-for="l in leagues" :key="l.id" :value="l.id">{{ leagueLabel(l.id, l.name) }}</option>
-              </select>
-              <input v-model.number="planet" type="number" min="1" class="form-input narrow"
-                     placeholder="Planet" title="Attacker's or target's planet" />
-              <input v-model="launchedOn" type="date" class="form-input"
-                     title="The Date: on the player's MIT report" />
-              <input v-model="idSearch" class="form-input id-input font-mono"
-                     placeholder="Attack ID" title="Any leading part of the ID" />
-              <button v-if="filtersActive" class="btn btn-sm btn-secondary" @click="clearFilters">
-                Clear
-              </button>
-            </div>
           </div>
           <div class="card-body" style="padding: 0;">
             <div v-if="shown.length === 0" class="empty">

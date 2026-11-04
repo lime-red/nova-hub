@@ -1,18 +1,22 @@
 """Management API processing run endpoints"""
 
 import html
-from typing import Dict, List, Optional
+from datetime import timedelta
+from typing import Dict, List, Literal, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from backend.core.database import get_db
-from backend.core.scope import Scope, get_scope
+from backend.core.scope import Scope, get_scope, runs_touching
 from backend.core.security import require_admin
 from backend.logging_config import get_logger
+from backend.core.clock import utcnow
 from backend.models.database import League, Packet, ProcessingRun, ProcessingRunFile, SysopUser
 from backend.schemas.processing import (
+    ProcessingRunSummary,
     ProcessingRunDetail,
     ProcessingRunFile as ProcessingRunFileSchema,
     ProcessingRunPacket,
@@ -25,7 +29,8 @@ logger = get_logger(context="management_processing")
 router = APIRouter()
 
 
-def _run_leagues(db: Session, run_ids: List[int], scope: Scope) -> Dict[int, List[str]]:
+def _run_leagues(db: Session, run_ids: List[int],
+                 scope: Scope) -> Dict[int, List[Tuple[str, int]]]:
     """The leagues each run processed, as "015B", sorted, in one pass for any
     number of runs. A run takes every league with work in one go, so its own
     league_id has never been set; what it did is the record: the leagues whose
@@ -42,42 +47,80 @@ def _run_leagues(db: Session, run_ids: List[int], scope: Scope) -> Dict[int, Lis
     )
     league_ids = {lid for _, lid in pairs if lid is not None and scope.sees_league(lid)}
     names = {l.id: l.full_id for l in db.query(League).filter(League.id.in_(league_ids))}
-    out: Dict[int, List[str]] = {rid: [] for rid in run_ids}
+    out: Dict[int, List[Tuple[str, int]]] = {rid: [] for rid in run_ids}
     for rid, lid in pairs:
         if lid in names:
-            out[rid].append(names[lid])
+            out[rid].append((names[lid], lid))
     return {rid: sorted(v) for rid, v in out.items()}
+
+
+RunStatus = Literal["completed", "failed", "running"]
+
+
+def _runs_query(db: Session, scope: Scope, league_id: Optional[int], days: Optional[int]):
+    """The runs a page may show: the caller's scope, then the league and window
+    filters. Shared by the list and its summary so the tiles count what the
+    list shows."""
+    query = db.query(ProcessingRun)
+    if not scope.is_admin:
+        query = query.filter(scope.run_clause())
+    if league_id is not None:
+        scope.require_league(league_id)
+        query = query.filter(runs_touching([league_id]))
+    if days:
+        query = query.filter(ProcessingRun.started_at >= utcnow() - timedelta(days=days))
+    return query
+
+
+def _problem_clause():
+    return or_(ProcessingRun.status == "failed",
+               ProcessingRun.packets_unconsumed > 0,
+               ProcessingRun.packets_quarantined > 0)
 
 
 @router.get("/runs", response_model=List[ProcessingRunResponse], summary="List Processing Runs")
 async def list_runs(
     limit: int = Query(50, ge=1, le=200, description="Number of runs to return"),
+    before_id: Optional[int] = Query(None, description="Only runs older than this one: "
+                                     "the last id of the previous page"),
+    league_id: Optional[int] = Query(None, description="Only runs that carried a packet "
+                                     "or made a file in this league"),
+    status: Optional[RunStatus] = Query(None, description="Only runs with this outcome"),
+    problems: bool = Query(False, description="Only runs that failed or left packets "
+                           "unconsumed or quarantined"),
+    days: Optional[int] = Query(None, ge=1, le=3650, description="Only runs started in "
+                                "the last this many days; all when omitted"),
     scope: Scope = Depends(get_scope),
     db: Session = Depends(get_db),
 ):
     """
-    List processing runs
+    List processing runs, newest first, a page at a time
 
     **Query Parameters:**
     - `limit`: Number of runs to return (default: 50, max: 200)
+    - `before_id`: For the next page, the last id of this one (keyset paging:
+      runs arriving meanwhile do not shift the pages)
+    - `league_id`, `status`, `problems`, `days`: filters, all optional
 
-    **Returns:** List of processing runs ordered by most recent first
+    **Returns:** Processing runs, most recent first. Fewer than `limit` means
+    there are no more.
 
     **Example:**
     ```bash
-    curl -X GET "https://hub.example.com/management/api/v1/processing/runs?limit=20" \\
+    curl -X GET "https://hub.example.com/management/api/v1/processing/runs?league_id=3&problems=true" \\
       -b cookies.txt
     ```
     """
-    query = db.query(ProcessingRun)
-    if not scope.is_admin:
-        query = query.filter(scope.run_clause())
-    runs = (
-        query
-        .order_by(ProcessingRun.started_at.desc())
-        .limit(limit)
-        .all()
-    )
+    query = _runs_query(db, scope, league_id, days)
+    if before_id is not None:
+        query = query.filter(ProcessingRun.id < before_id)
+    if status is not None:
+        query = query.filter(ProcessingRun.status == status)
+    if problems:
+        query = query.filter(_problem_clause())
+    # By id, not started_at: ids only grow, which is what keyset paging needs,
+    # and a run's id and start order are the same.
+    runs = query.order_by(ProcessingRun.id.desc()).limit(limit).all()
 
     leagues_of = _run_leagues(db, [r.id for r in runs], scope)
     run_list = []
@@ -96,14 +139,51 @@ async def list_runs(
                 duration=duration,
                 packets_processed=run.packets_processed,
                 packets_unconsumed=run.packets_unconsumed or 0,
+                packets_quarantined=run.packets_quarantined or 0,
                 status=run.status,
                 error_message=run.error_message,
-                leagues=leagues,
-                league_name=", ".join(leagues) or None,
+                leagues=[name for name, _ in leagues],
+                league_ids=[lid for _, lid in leagues],
+                league_name=", ".join(name for name, _ in leagues) or None,
             )
         )
 
     return run_list
+
+
+@router.get("/runs/summary", response_model=ProcessingRunSummary,
+            summary="Summarise Processing Runs")
+async def summarise_runs(
+    league_id: Optional[int] = Query(None, description="Only runs in this league"),
+    days: Optional[int] = Query(None, ge=1, le=3650, description="Only runs started in "
+                                "the last this many days; all when omitted"),
+    scope: Scope = Depends(get_scope),
+    db: Session = Depends(get_db),
+):
+    """
+    Count the runs a Processing Runs page would list, by outcome
+
+    Takes the list's league and window filters; the counts are what its status
+    and problems filters would then show.
+
+    **Example:**
+    ```bash
+    curl -X GET "https://hub.example.com/management/api/v1/processing/runs/summary?days=7" \\
+      -b cookies.txt
+    ```
+    """
+    query = _runs_query(db, scope, league_id, days)
+    by_status = dict(
+        query.with_entities(ProcessingRun.status, func.count(ProcessingRun.id))
+        .group_by(ProcessingRun.status).all()
+    )
+    return ProcessingRunSummary(
+        total=sum(by_status.values()),
+        completed=by_status.get("completed", 0),
+        failed=by_status.get("failed", 0),
+        running=by_status.get("running", 0),
+        problems=query.filter(_problem_clause()).count(),
+    )
 
 
 @router.get("/runs/{run_id}", response_model=ProcessingRunDetail, summary="Get Processing Run Details")
@@ -139,7 +219,7 @@ async def get_run(
         delta = run.completed_at - run.started_at
         duration = f"{max(0, int(delta.total_seconds()))}s"
 
-    leagues = _run_leagues(db, [run.id], scope)[run.id]
+    leagues = [name for name, _ in _run_leagues(db, [run.id], scope)[run.id]]
 
     # Get packets processed in this run
     packets = db.query(Packet).filter(Packet.processing_run_id == run_id).all()

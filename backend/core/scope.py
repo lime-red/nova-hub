@@ -94,14 +94,7 @@ class Scope:
             return None
         if not self.league_ids:
             return false()
-        leagues = list(self.league_ids)
-        return or_(
-            ProcessingRun.league_id.in_(leagues),
-            exists().where(Packet.processing_run_id == ProcessingRun.id,
-                           Packet.league_id.in_(leagues)),
-            exists().where(ProcessingRunFile.processing_run_id == ProcessingRun.id,
-                           ProcessingRunFile.league_id.in_(leagues)),
-        )
+        return runs_touching(self.league_ids)
 
     def sees_packet(self, packet: Packet) -> bool:
         return self.is_admin or any(
@@ -137,3 +130,19 @@ async def get_scope(
 ) -> Scope:
     """FastAPI dependency: the signed-in user's Scope."""
     return scope_for(db, current_user)
+
+
+def runs_touching(league_ids):
+    """A filter for ProcessingRun queries: the runs that carried a packet or
+    made a file in any of league_ids. A run processes every league with work
+    at once, so its own league_id is normally unset and what it did is the
+    record. The console's league column and league filter use the same rule."""
+    leagues = list(league_ids)
+    return or_(
+        ProcessingRun.league_id.in_(leagues),
+        exists().where(Packet.processing_run_id == ProcessingRun.id,
+                       Packet.league_id.in_(leagues)),
+        exists().where(ProcessingRunFile.processing_run_id == ProcessingRun.id,
+                       ProcessingRunFile.league_id.in_(leagues)),
+    )
+

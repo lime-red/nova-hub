@@ -573,11 +573,19 @@ async function handleDelete() {
                   <div class="stat-value">{{ leaguesStore.currentLeague.stats.processed_packets }}</div>
                   <div class="stat-label">Processed</div>
                 </div>
-                <div class="stat">
+                <router-link :to="`/processing?league=${leagueId}`" class="stat stat-link">
                   <div class="stat-value">{{ leaguesStore.currentLeague.stats.processing_runs }}</div>
                   <div class="stat-label">Processing Runs</div>
-                </div>
+                </router-link>
               </div>
+              <p class="league-links">
+                See this league's
+                <router-link :to="`/processing?league=${leagueId}`">processing runs</router-link>
+                <template v-if="authStore.isAdmin">,
+                  <router-link :to="`/movements?league=${leagueId}`">movements</router-link>
+                  and <router-link :to="`/attacks?league=${leagueId}`">attacks &amp; traffic</router-link>
+                </template>
+              </p>
             </div>
           </div>
         </div>
@@ -1321,5 +1329,19 @@ table .actions {
   gap: 0.75rem;
   padding: 1rem 1.5rem;
   border-top: 1px solid var(--color-border);
+}
+
+.stat-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.stat-link:hover .stat-value {
+  color: var(--color-primary);
+}
+
+.league-links {
+  margin: 1rem 0 0;
+  font-size: 0.875rem;
 }
 </style>

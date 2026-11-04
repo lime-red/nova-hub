@@ -8,8 +8,11 @@ export interface ProcessingRun {
   completed_at?: string
   duration?: string
   packets_processed: number
+  packets_unconsumed?: number
+  packets_quarantined?: number
   status: string  // "running", "completed", "failed"
   leagues: string[]  // what it processed, e.g. ["015B", "015F"]
+  league_ids?: number[]  // the same leagues' ids, in the same order
   league_name?: string
 }
 
@@ -59,7 +62,7 @@ export const useProcessingStore = defineStore('processing', () => {
     error.value = null
 
     try {
-      const response = await processingApi.listRuns(limit)
+      const response = await processingApi.listRuns({ limit })
       runs.value = response.data
     } catch (err: unknown) {
       error.value = apiError(err, 'Failed to load processing runs')

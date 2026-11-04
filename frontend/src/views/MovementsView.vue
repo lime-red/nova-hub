@@ -14,25 +14,26 @@
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import AppLayout from '@/components/AppLayout.vue'
-import { leaguesApi, movementsApi, type Movement, type MovementSummary } from '@/services/api'
+import FilterBar from '@/components/FilterBar.vue'
+import { asNumber, asString, useQueryRef } from '@/composables/useQueryRef'
+import { useLeagues } from '@/composables/useLeagues'
+import { movementsApi, type Movement, type MovementSummary } from '@/services/api'
 
 const loading = ref(false)
 const error = ref<string | null>(null)
 const movements = ref<Movement[]>([])
 const summary = ref<MovementSummary | null>(null)
-const leagues = ref<Array<{ id: number; name: string; full_id: string }>>([])
-// "015B Medusa Test League 015": two leagues can share a number and even a
-// name, one BRE and one FE, so the name alone doesn't say which.
-const leagueLabels = computed(() => new Map(leagues.value.map((l) => [l.id, `${l.full_id} ${l.name}`])))
-function leagueLabel(id: number | null, name?: string | null): string {
-  return (id !== null && leagueLabels.value.get(id)) || name || '-'
-}
+const { leagueLabel } = useLeagues()
 
-const days = ref(7)
-const leagueId = ref<number | undefined>(undefined)
-const direction = ref<'in' | 'out' | undefined>(undefined)
-const itemType = ref<string | undefined>(undefined)
-const node = ref<number | undefined>(undefined)
+// In the URL, so Back keeps them and a filtered view can be linked (#125).
+const days = useQueryRef<number>('days', 7, asNumber)
+const leagueId = useQueryRef<number | undefined>('league', undefined, asNumber)
+const direction = useQueryRef<'in' | 'out' | undefined>('direction', undefined, {
+  parse: (raw) => (raw === 'in' || raw === 'out' ? raw : undefined),
+  format: (v) => v,
+})
+const itemType = useQueryRef<string | undefined>('type', undefined, asString)
+const node = useQueryRef<number | undefined>('node', undefined, asNumber)
 
 /** Item types actually seen in the window, so the filter offers only real ones. */
 const knownTypes = computed(() => {
@@ -58,7 +59,7 @@ async function load() {
       league_id: leagueId.value,
       direction: direction.value,
       item_type: itemType.value,
-      node: node.value,
+      node: typeof node.value === 'number' ? node.value : undefined,
       limit: 500,
     }
     const [list, sum] = await Promise.all([
@@ -79,11 +80,10 @@ function clearFilters() {
   itemType.value = undefined
   node.value = undefined
   leagueId.value = undefined
-  load()
 }
 
 const filtersActive = computed(
-  () => !!(direction.value || itemType.value || node.value !== undefined || leagueId.value)
+  () => !!(direction.value || itemType.value || typeof node.value === 'number' || leagueId.value)
 )
 
 function shortTime(stamp: string | null): string {
@@ -91,15 +91,7 @@ function shortTime(stamp: string | null): string {
   return stamp.replace('T', ' ').slice(0, 19)
 }
 
-onMounted(async () => {
-  try {
-    const { data } = await leaguesApi.list()
-    leagues.value = data
-  } catch {
-    // The league filter is a convenience; the page works without it.
-  }
-  await load()
-})
+onMounted(load)
 
 watch([days, leagueId, direction, itemType, node], load)
 </script>
@@ -114,16 +106,32 @@ watch([days, leagueId, direction, itemType, node], load)
             What the games exchanged between nodes, from each run's detailed output
           </p>
         </div>
-        <div class="window-picker">
-          <label for="days">Window</label>
-          <select id="days" v-model.number="days" class="form-select">
-            <option :value="1">Last 24 hours</option>
-            <option :value="7">Last 7 days</option>
-            <option :value="30">Last 30 days</option>
-            <option :value="90">Last 90 days</option>
-          </select>
-        </div>
       </header>
+
+      <FilterBar
+        v-model:days="days"
+        v-model:league-id="leagueId"
+        :active="filtersActive"
+        @clear="clearFilters"
+      >
+        <select v-model="direction" class="form-select" aria-label="Direction">
+          <option :value="undefined">Both directions</option>
+          <option value="in">Incoming</option>
+          <option value="out">Outgoing</option>
+        </select>
+        <select v-model="itemType" class="form-select" aria-label="Item type">
+          <option :value="undefined">All types</option>
+          <option v-for="t in knownTypes" :key="t" :value="t">{{ t }}</option>
+        </select>
+        <input
+          v-model.number="node"
+          type="number"
+          min="1"
+          class="form-input narrow"
+          placeholder="Node"
+          title="Matches either end of the transfer"
+        />
+      </FilterBar>
 
       <div v-if="error" class="alert alert-error">
         {{ error }}
@@ -222,32 +230,6 @@ watch([days, leagueId, direction, itemType, node], load)
                 {{ movements.length }} movement<span v-if="movements.length !== 1">s</span>
                 <span class="text-muted" v-if="movements.length === 500"> (showing the most recent 500)</span>
               </h2>
-              <div class="filters">
-                <select v-model="leagueId" class="form-select">
-                  <option :value="undefined">All leagues</option>
-                  <option v-for="l in leagues" :key="l.id" :value="l.id">{{ leagueLabel(l.id, l.name) }}</option>
-                </select>
-                <select v-model="direction" class="form-select">
-                  <option :value="undefined">Both directions</option>
-                  <option value="in">Incoming</option>
-                  <option value="out">Outgoing</option>
-                </select>
-                <select v-model="itemType" class="form-select">
-                  <option :value="undefined">All types</option>
-                  <option v-for="t in knownTypes" :key="t" :value="t">{{ t }}</option>
-                </select>
-                <input
-                  v-model.number="node"
-                  type="number"
-                  min="1"
-                  class="form-input node-input"
-                  placeholder="Node"
-                  title="Matches either end of the transfer"
-                />
-                <button v-if="filtersActive" class="btn btn-sm btn-secondary" @click="clearFilters">
-                  Clear
-                </button>
-              </div>
             </div>
             <div class="card-body" style="padding: 0;">
               <table class="table">

@@ -4,6 +4,8 @@ All notable changes to Nova Hub will be documented in this file.
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-11-05
+
 ### Added
 - **Processing Runs: filters, paging and tiles** (#125). Filter by window,
   league, status, or runs with problems (failed, or packets left unconsumed or

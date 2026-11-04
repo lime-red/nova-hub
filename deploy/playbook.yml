@@ -226,6 +226,19 @@
             group: "{{ nova_hub_group }}"
             mode: "0755"
 
+      # Where league games live: config.toml.example's [games] root, under
+      # dosemu's drive C. --validate fails until it exists (#126).
+      - name: Create the games root
+        ansible.builtin.file:
+            path: "/home/{{ nova_hub_user }}/.dosemu/drive_c/leagues"
+            state: directory
+            owner: "{{ nova_hub_user }}"
+            group: "{{ nova_hub_group }}"
+            mode: "0755"
+        # As the hubs user, so .dosemu and drive_c are its own too, not roots.
+        become: true
+        become_user: "{{ nova_hub_user }}"
+
       - name: Clone or update nova-hub repository
         ansible.builtin.git:
             repo: "{{ nova_hub_repo }}"
@@ -235,6 +248,18 @@
         become: true
         become_user: "{{ nova_hub_user }}"
         register: git_result
+
+      # A pinned deploy (deploy.sh <tag>) runs from a copy outside the tree:
+      # checking out a new version rewrites deploy/deploy.sh under the shell
+      # reading it. Refreshed from the tree each run, so it keeps up (#126).
+      - name: Put deploy.sh where a pinned deploy runs it from
+        ansible.builtin.copy:
+            src: "{{ nova_hub_dir }}/deploy/deploy.sh"
+            dest: "/home/{{ nova_hub_user }}/deploy.sh"
+            remote_src: true
+            owner: "{{ nova_hub_user }}"
+            group: "{{ nova_hub_group }}"
+            mode: "0700"
 
       # ── Configuration ───────────────────────────────────────────
       - name: Deploy config.toml from example if not present

@@ -215,8 +215,11 @@ Each member needs a **fresh install** of the game for the new league, never a
 copy of a league it already plays. A played BRE or FE game records the
 coordinator it belongs to, and each new league's coordinator has a key of its
 own, so a copy rejects the first reset ("Illegal Global Reset Attempted" in its
-`PROBLEMS.LOG`). The hub then reports that member as silent. A member who copied
-a folder replaces it with a fresh install, and you reset the league again. See
+`PROBLEMS.LOG`). The hub then reports that member as silent. A fresh install
+needs one local `BRE RESET` / `FE RESET` before it can take the league's reset;
+without it, maintenance stops with "Game files could not be opened". A member
+who copied a folder replaces it with a fresh install and RESETs it, and you
+reset the league again. See
 nova-client's README, "Joining a league: start from a fresh install".
 
 The hub never makes a league from a packet's filename.

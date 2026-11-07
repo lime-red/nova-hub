@@ -1,0 +1,19 @@
+# The live rig's Actions runner (tests/live/runner/README.md).
+[Unit]
+Description=Gitea Actions runner for the nova-hub live rig
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/var/lib/gitea-runner/.runner
+
+[Service]
+User=gitea-runner
+Group=gitea-runner
+WorkingDirectory=/var/lib/gitea-runner
+ExecStart=/usr/local/bin/act_runner daemon --config /etc/act_runner/config.yaml
+Restart=on-failure
+RestartSec=30
+# No PrivateTmp: the rig's lock and logs must be the same files an ssh-started
+# run sees.
+
+[Install]
+WantedBy=multi-user.target

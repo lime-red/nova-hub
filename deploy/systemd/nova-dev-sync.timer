@@ -1,0 +1,12 @@
+# Every half hour: soon enough that dev runs what was merged this morning,
+# rarely enough that a run of Renovate merges lands as one rebuild.
+[Unit]
+Description=Keep the dev hub and client on main
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=30min
+RandomizedDelaySec=2min
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,4 @@
+# /etc/sudoers.d/gitea-runner, installed by tests/live/runner/install.sh.
+# The rig's Actions runner may start the nightly run as the rig user, and
+# nothing else. nightly.sh checks its own arguments.
+gitea-runner ALL=(novahub-t) NOPASSWD: /srv/novatest/nova-hub/tests/live/nightly.sh

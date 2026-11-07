@@ -65,6 +65,20 @@ while (( $# )); do
     shift
 done
 
+# One run at a time: every run restores the same installs and fixtures, so a
+# second one (the nightly, say, while someone is trying a branch) would wreck
+# both. A --try run takes the lock here and keeps it across the exec into the
+# tried tree's run.sh, which sees NOVATEST_RIG_LOCKED and does not take it again.
+LOCK=/run/lock/novatest-rig.lock
+if [[ -z "${NOVATEST_RIG_LOCKED:-}" ]]; then
+    exec 9>>"$LOCK" || { echo "cannot open $LOCK" >&2; exit 1; }
+    if ! flock -n 9; then
+        echo "another rig run holds $LOCK; waiting for it (up to an hour)" >&2
+        flock -w 3600 9 || { echo "gave up waiting for $LOCK" >&2; exit 1; }
+    fi
+    export NOVATEST_RIG_LOCKED=1
+fi
+
 TRY_ROOT=/srv/novatest/try
 # Not tracked by git, and needed by a tree checked out beside this one.
 # (No config.toml: nothing here reads one. The unit suite builds its own from

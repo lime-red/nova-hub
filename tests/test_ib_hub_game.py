@@ -46,6 +46,10 @@ def test_version_order():
     assert version_key("0.2.7-rc1") < version_key("0.2.7")
     assert below("0.2.6", "0.2.7") and not below("0.2.7", "0.2.7")
     assert not below(None, "0.2.7") and not below("0.2.6", None)
+    # v0.2.8 and later state the build beside the version
+    assert version_key("0.2.8 (0d0e41e)") == version_key("0.2.8")
+    assert not below("0.2.8 (0d0e41e)", "0.2.8") and below("0.2.6", "0.2.8 (0d0e41e)")
+    assert version_key("0.2.9-dev (07216fa)") < version_key("0.2.9")
 
 
 def test_the_world_is_read_board_by_board(tmp_path):

@@ -609,6 +609,7 @@ export interface ResetDetail extends ResetSummary {
     bbs_index: string
     bbs_name: string | null
     filename: string
+    packets: number
     downloaded_at: string | null
   }[]
 }

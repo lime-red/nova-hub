@@ -881,6 +881,31 @@ def test_perform_over_the_api(api, monkeypatch, tmp_path):
     assert db.query(AuditEvent).filter_by(action="game_reset.performed").count() == 1
 
 
+
+def test_members_are_counted_by_board_not_by_packet(db_session, sample_league):
+    """An IB thaw writes several packets for each member: the card counts boards,
+    and a board has the order only once it has downloaded all of them."""
+    from backend.api.management.game_reset import _members
+    db, league = db_session, sample_league
+    run = ProcessingRun(status="completed")
+    db.add(run)
+    db.commit()
+    t0 = datetime(2026, 11, 8, 12, 0)
+    for dest, seq, got in [("02", 1, t0), ("02", 2, t0 + timedelta(minutes=5)),
+                           ("03", 1, t0), ("03", 2, None), ("04", 1, None)]:
+        db.add(Packet(filename=f"555B01{dest}.{seq:03d}", league_id=league.id,
+                      source_bbs_index="01", dest_bbs_index=dest, sequence_number=seq,
+                      file_size=1, uploaded_at=t0, downloaded_at=got,
+                      processing_run_id=run.id))
+    db.commit()
+
+    rows = {m.bbs_index: m for m in _members(db, league, run.id)}
+    assert sorted(rows) == ["02", "03", "04"]
+    assert [rows[i].packets for i in ("02", "03", "04")] == [2, 2, 1]
+    assert rows["02"].filename == "555B0102.001"
+    assert rows["02"].downloaded_at.startswith("2026-11-08T12:05")
+    assert rows["03"].downloaded_at is None and rows["04"].downloaded_at is None
+
 # ── an IB league's other orders ──────────────────────────────────────────
 
 def ib_rules(g, **settings):

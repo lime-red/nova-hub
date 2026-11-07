@@ -81,10 +81,18 @@ def _members(db: Session, league: League, run_id: Optional[int]) -> List[ResetMe
              if m.bbs_index is not None and m.client is not None}
     packets = (db.query(Packet)
                .filter(Packet.league_id == league.id, Packet.processing_run_id == run_id)
-               .order_by(Packet.dest_bbs_index).all())
-    return [ResetMember(bbs_index=p.dest_bbs_index, bbs_name=names.get(p.dest_bbs_index.upper()),
-                        filename=p.filename, downloaded_at=_iso(p.downloaded_at))
-            for p in packets]
+               .order_by(Packet.dest_bbs_index, Packet.id).all())
+    # One row per board, not per packet: an IB order can write several packets
+    # for each member (a thaw wrote ten apiece), and a member has the order
+    # only once it has downloaded every one of them.
+    boards: dict = {}
+    for p in packets:
+        boards.setdefault(p.dest_bbs_index.upper(), []).append(p)
+    return [ResetMember(bbs_index=index, bbs_name=names.get(index),
+                        filename=ps[0].filename, packets=len(ps),
+                        downloaded_at=None if any(p.downloaded_at is None for p in ps)
+                        else _iso(max(p.downloaded_at for p in ps)))
+            for index, ps in boards.items()]
 
 
 def _detail(db: Session, league: League, r: GameReset,

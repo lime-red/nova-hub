@@ -208,12 +208,15 @@ onBeforeUnmount(() => window.clearTimeout(timer))
           </p>
           <table class="table members">
             <thead>
-              <tr><th>BBS</th><th>Packet</th><th>Downloaded</th></tr>
+              <tr><th>BBS</th><th>Packets</th><th>Downloaded</th></tr>
             </thead>
             <tbody>
-              <tr v-for="m in reset.members" :key="m.filename">
+              <tr v-for="m in reset.members" :key="m.bbs_index">
                 <td>{{ m.bbs_name ?? `BBS ${m.bbs_index}` }}</td>
-                <td><code>{{ m.filename }}</code></td>
+                <td>
+                  <code>{{ m.filename }}</code>
+                  <span v-if="m.packets > 1" class="text-muted small"> and {{ m.packets - 1 }} more</span>
+                </td>
                 <td>
                   <span v-if="m.downloaded_at">{{ formatTime(m.downloaded_at) }}</span>
                   <span v-else class="text-muted">waiting</span>

@@ -114,10 +114,12 @@ def packet_type(p: dict) -> str:
 
 
 def version_key(v: Optional[str]) -> tuple:
-    """"0.2.10" > "0.2.9"; a pre-release ("0.2.7-rc1") sorts below its release."""
+    """"0.2.10" > "0.2.9"; a pre-release ("0.2.7-rc1") sorts below its release.
+    From v0.2.8 a board states its build too, "0.2.8 (0d0e41e)"; only the
+    version before the space is ordered."""
     if not v:
         return ()
-    core, _, pre = str(v).lstrip("v").partition("-")
+    core, _, pre = str(v).strip().split(" ", 1)[0].lstrip("v").partition("-")
     nums = tuple(int(n) if n.isdigit() else 0 for n in core.split("."))
     return nums + ((0, pre) if pre else (1, ""))
 

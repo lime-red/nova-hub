@@ -16,8 +16,14 @@ set -euo pipefail
 
 main() {
     local ref="${1:?usage: nightly.sh <ref> <sha>}" sha="${2:?usage: nightly.sh <ref> <sha>}"
-    local repo
-    repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+    local live repo
+    live="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    repo="$(cd "$live/../.." && pwd)"
+    # Under the rig lock before anything moves: a run started by hand may be
+    # playing from this checkout right now. run.sh, exec'd below, keeps it.
+    # shellcheck source=rig_lock.sh
+    source "$live/rig_lock.sh"
+    rig_lock "$live/nightly.sh" "$@"
     if [[ ! "$sha" =~ ^[0-9a-f]{7,40}$ ]]; then
         echo "not a commit: $sha" >&2
         exit 2

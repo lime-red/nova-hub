@@ -82,8 +82,16 @@ const ENDINGS = computed<Record<string, string>>(() => ({
   failed: reset.value?.kind === 'setup'
     ? 'The setup failed, and the folder it was making was removed'
     : 'Stopped before the game was touched',
-  interrupted: `The hub restarted during the ${reset.value?.kind === 'setup' ? 'setup' : 'reset'}`
+  interrupted: `The hub restarted during the ${reset.value?.kind === 'setup' ? 'setup'
+    : reset.value?.kind && reset.value.kind in ORDER_STEPS ? 'order' : 'reset'}`
 }))
+// What each member's game does with the packet, by kind of order.
+const MEMBER_EFFECT: Record<string, string> = {
+  rules: 'takes up the new rules',
+  freeze: 'freezes',
+  thaw: 'thaws'
+}
+const memberEffect = computed(() => MEMBER_EFFECT[reset.value?.kind ?? ''] ?? 'resets')
 // The last step of each kind of order: until then there is work to show.
 const FINAL = ['sent', 'ready', 'installed']
 
@@ -196,7 +204,7 @@ onBeforeUnmount(() => window.clearTimeout(timer))
         <template v-if="reset.members.length">
           <h4>Members: {{ downloaded }} of {{ reset.members.length }} have it</h4>
           <p class="text-muted small">
-            Each member's game resets on its first run after it downloads its packet.
+            Each member's game {{ memberEffect }} on its first run after it downloads its packet.
           </p>
           <table class="table members">
             <thead>

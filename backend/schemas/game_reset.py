@@ -78,11 +78,14 @@ class ResetStep(BaseModel):
 
 
 class ResetMember(BaseModel):
-    """One packet the reset's processing run wrote, and whether its BBS has it."""
+    """One member board the reset's processing run wrote to, and whether it has
+    downloaded everything the run wrote for it."""
     bbs_index: str
     bbs_name: Optional[str] = None
-    filename: str
-    downloaded_at: Optional[str] = None
+    filename: str = Field(description="The first packet the run wrote for the board")
+    packets: int = Field(1, description="How many packets the run wrote for the board")
+    downloaded_at: Optional[str] = Field(
+        None, description="When the board downloaded the last of them; null until it has all")
 
 
 class ResetSummary(BaseModel):

@@ -5996,7 +5996,7 @@
         "type": "object"
       },
       "ResetMember": {
-        "description": "One packet the reset's processing run wrote, and whether its BBS has it.",
+        "description": "One member board the reset's processing run wrote to, and whether it has\ndownloaded everything the run wrote for it.",
         "properties": {
           "bbs_index": {
             "title": "Bbs Index",
@@ -6022,11 +6022,19 @@
                 "type": "null"
               }
             ],
+            "description": "When the board downloaded the last of them; null until it has all",
             "title": "Downloaded At"
           },
           "filename": {
+            "description": "The first packet the run wrote for the board",
             "title": "Filename",
             "type": "string"
+          },
+          "packets": {
+            "default": 1,
+            "description": "How many packets the run wrote for the board",
+            "title": "Packets",
+            "type": "integer"
           }
         },
         "required": [

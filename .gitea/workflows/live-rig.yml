@@ -1,58 +1,43 @@
-# The live rig: real dosemu, real BRE and Falcon's Eye, real packets.
+# The live rig: real dosemu, real BRE, Falcon's Eye and Immortal Barons, real
+# packets.
 #
-# This cannot run on a hosted runner. It needs the provisioned installs under
-# their own unix users on novatest-hl, so it requires a self-hosted runner there
-# labelled `novatest`. Until such a runner exists this workflow is inert --
-# workflow_dispatch will simply find nothing to run on.
+# It can only run on novatest-hl, where the installs live under their own unix
+# users, so it runs on a host-mode runner there: act_runner as user
+# gitea-runner, registered to this repo alone with the label `novatest`
+# (tests/live/runner/README.md). That user may run exactly one command as the
+# rig user, tests/live/nightly.sh; everything else happens inside it.
 #
-# Nightly rather than per-push on purpose. A full run is about a minute and a
-# half, but a pristine fixture is only pristine on its capture date, so the first
-# run of any day rebuilds all ten installs first. That is a few minutes, once.
+# Host mode has no node, so no `uses:` actions: the steps are plain shell.
+#
+# Nightly on main, which moves the rig checkout forward first, so Renovate's
+# merges are played against the real games every night. Dispatched on another
+# branch, it tries that commit through run.sh --try and leaves the checkout on
+# main. A full run is about 26 minutes, longer when the day's fixtures are
+# rebuilt first.
 name: live-rig
 
 on:
   schedule:
-    # 03:00 local. Production BRE runs roughly hourly and FE every ~4 days, so
-    # this is the quiet end of the day for the games it shares a machine with.
+    # Gitea reads this in UTC.
     - cron: "0 3 * * *"
   workflow_dispatch:
 
 jobs:
   rig:
     runs-on: novatest
-    timeout-minutes: 30
+    timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Sync the working tree to the rig checkout
-        # The rig runs from /srv/novatest/nova-hub, which the node users can read.
-        run: |
-          sudo rsync -a --delete \
-            --exclude .git --exclude frontend --exclude .venv \
-            ./ /srv/novatest/nova-hub/
-          sudo find /srv/novatest/nova-hub -name '._*' -delete
-          sudo chmod -R a+rX /srv/novatest/nova-hub
-
       - name: Run the rig
-        # --setup syncs the rig interpreter to uv.lock (cheap when it already
-        # matches), then run.sh rebuilds stale fixtures by itself and runs the
-        # suite as the hub user. A non-zero exit is a real failure: the tree
-        # skips itself only when dosemu is missing, which on this runner would
-        # be the news.
+        # A non-zero exit is a real failure: the suite skips itself only when
+        # dosemu is missing, which on this host would be the news.
         run: |
-          sudo -u novahub-t /srv/novatest/nova-hub/tests/live/run.sh --setup -q
+          sudo -n -u novahub-t /srv/novatest/nova-hub/tests/live/nightly.sh \
+            "${{ github.ref_name }}" "${{ github.sha }}"
 
-      - name: Transcripts on failure
+      - name: Where the transcripts are
         if: failure()
-        # A failed game run is diagnosed from its dosemu transcript and nothing
-        # else. Without these the failure is unreadable after the fact.
+        # A failed game run is diagnosed from its dosemu transcript. They stay
+        # on the rig; host mode has no artifact upload.
         run: |
-          sudo tar -czf /tmp/rig-logs.tgz -C /srv/novatest logs || true
-          sudo chmod a+r /tmp/rig-logs.tgz || true
-
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: dosemu-transcripts
-          path: /tmp/rig-logs.tgz
-          if-no-files-found: ignore
+          echo "dosemu transcripts: novatest-hl:/srv/novatest/logs"
+          ls -t /srv/novatest/logs | head -20 || true

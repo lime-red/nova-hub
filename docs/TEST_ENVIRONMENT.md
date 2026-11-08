@@ -518,3 +518,22 @@ What both builds do (v0.2.6, trunk 1084c13):
   and both exit 0.
 - `ib()` takes the same offset (`clock=`), as `Board.maint(clock)`; the v0.2.6
   release has `IB_CLOCK_OFFSET` and `IB_GAME_DATE` too.
+
+## 13. Nightly runs, and keeping the boxes on main
+
+- **The rig, nightly.** `.gitea/workflows/live-rig.yml` runs at 03:00 UTC on a
+  host-mode runner on novatest-hl (`tests/live/runner/README.md`). Its one step,
+  `tests/live/nightly.sh`, fast-forwards `/srv/novatest/nova-hub` to the commit
+  the run is for and runs `run.sh --setup`, so the venv follows `uv.lock` and
+  every merge (Renovate's included) is played against the real games within a
+  day. A run dispatched on another branch goes through `--try` instead.
+- **One rig run at a time.** `run.sh` takes `/run/lock/novatest-rig.lock` and
+  waits up to an hour for it, so an ssh-started run and the nightly queue.
+- **The dev box.** On novahub-hl the user timer `nova-dev-sync.timer`
+  (`deploy/systemd/`) runs `deploy/dev-sync.sh` every half hour. It fast-forwards
+  `~/nova-hub` and `~/nova_client` to origin/main, rebuilds the hub with
+  `deploy.sh --here` when it moved, and syncs the client's venv. A tree on
+  another branch, with changes to tracked files, or diverged is left alone and
+  the reason logged (`journalctl --user -u nova-dev-sync`). Work in a worktree.
+- **Not moved automatically:** the prod-twin hub on novatest-hl
+  (`/home/novahub`), which stays on production's tag, and production itself.

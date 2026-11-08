@@ -1,0 +1,21 @@
+# act_runner on novatest-hl: the live rig's runner (README.md).
+log:
+  level: info
+
+runner:
+  file: /var/lib/gitea-runner/.runner
+  # One job at a time: the rig is one machine's worth of game installs.
+  capacity: 1
+  # Above the workflow's own timeout-minutes, which is what should fire.
+  timeout: 2h
+  fetch_timeout: 5s
+  fetch_interval: 10s
+  # Host mode only: never docker, whatever a workflow asks for.
+  labels:
+    - "novatest:host"
+
+cache:
+  enabled: false
+
+host:
+  workdir_parent: /var/lib/gitea-runner/work

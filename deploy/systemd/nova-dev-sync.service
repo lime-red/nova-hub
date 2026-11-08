@@ -1,0 +1,11 @@
+# Keep the dev box's hub and client on main (deploy/dev-sync.sh).
+# A user unit on novahub-hl:
+#   ln -s ~/nova-hub/deploy/systemd/nova-dev-sync.{service,timer} ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now nova-dev-sync.timer
+[Unit]
+Description=Fast-forward the dev hub and client to main, and rebuild what moved
+
+[Service]
+Type=oneshot
+ExecStart=%h/nova-hub/deploy/dev-sync.sh
+TimeoutStartSec=20min

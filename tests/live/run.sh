@@ -36,6 +36,11 @@
 set -euo pipefail
 
 LIVE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# One run at a time (rig_lock.sh): this re-runs itself under the rig lock.
+# shellcheck source=rig_lock.sh
+source "$LIVE_DIR/rig_lock.sh"
+rig_lock "$LIVE_DIR/run.sh" "$@"
 REPO="$(cd "$LIVE_DIR/../.." && pwd)"
 PYTHON="${NOVATEST_PYTHON:-/srv/novatest/venv/bin/python}"
 UV="${UV:-$(command -v uv || echo /usr/local/bin/uv)}"

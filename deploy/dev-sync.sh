@@ -11,8 +11,12 @@
 # and the reason logged, every run, until someone sorts it out. Work belongs in
 # a worktree (.wt/), which this never touches.
 #
-# When the hub moves, deploy.sh --here rebuilds it in place: venv, frontend,
-# migrations, restart. When the client moves, its venv is synced to its lock.
+# Whenever a tree on main is at a commit it has not been built at, it is
+# rebuilt: deploy.sh --here for the hub (venv, frontend, migrations, restart),
+# the venv synced to its lock for the client. "Built at" is a stamp under
+# ~/.local/state/nova-dev-sync, written after a build succeeds, so a checkout
+# or pull by hand gets built at the next run too, not only this script's own
+# fast-forwards, and a build that failed is tried again.
 #
 # NOVA_HUB_DIR and NOVA_CLIENT_DIR point elsewhere; the defaults are dev's.
 #
@@ -28,17 +32,45 @@ main() {
     uv=$(command -v uv || echo "$HOME/.local/bin/uv")
     export PATH="$HOME/.local/bin:$PATH"   # pnpm and uv, for deploy.sh
 
-    if sync_tree "$hub" "$dry"; then
-        echo "hub moved: rebuilding with deploy.sh --here"
+    sync_tree "$hub" "$dry" || true
+    sync_tree "$client" "$dry" || true
+    if needs_build "$hub" "$dry"; then
+        echo "nova-hub: rebuilding with deploy.sh --here"
         (cd "$hub" && sh deploy/deploy.sh --here)
+        built "$hub"
     fi
-    if sync_tree "$client" "$dry"; then
-        echo "client moved: syncing its venv"
+    if needs_build "$client" "$dry"; then
+        echo "nova_client: syncing its venv"
         (cd "$client" && "$uv" sync --frozen)
+        built "$client"
     fi
 }
 
-# Exit 0 when the tree moved, 1 when it did not (always 1 with --dry-run).
+STATE="${XDG_STATE_HOME:-$HOME/.local/state}/nova-dev-sync"
+
+# Exit 0 when a tree on main is at a commit it was not last built at.
+needs_build() {
+    local dir="$1" dry="$2" name head
+    name=$(basename "$dir")
+    [[ -d "$dir/.git" ]] || return 1
+    [[ "$(git -C "$dir" symbolic-ref -q --short HEAD || true)" == main ]] || return 1
+    head=$(git -C "$dir" rev-parse HEAD)
+    [[ "$(cat "$STATE/$name.built" 2>/dev/null || true)" != "$head" ]] || return 1
+    if (( dry )); then
+        echo "$name: would rebuild at $(git -C "$dir" log -1 --format='%h %s')"
+        return 1
+    fi
+    return 0
+}
+
+built() {
+    local name
+    name=$(basename "$1")
+    mkdir -p "$STATE"
+    git -C "$1" rev-parse HEAD > "$STATE/$name.built"
+}
+
+# Fast-forward a tree that nobody is working in. Exit 0 when it moved.
 sync_tree() {
     local dir="$1" dry="$2" name branch behind
     name=$(basename "$dir")

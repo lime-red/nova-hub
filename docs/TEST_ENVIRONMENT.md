@@ -531,9 +531,11 @@ What both builds do (v0.2.6, trunk 1084c13):
   waits up to an hour for it, so an ssh-started run and the nightly queue.
 - **The dev box.** On novahub-hl the user timer `nova-dev-sync.timer`
   (`deploy/systemd/`) runs `deploy/dev-sync.sh` every half hour. It fast-forwards
-  `~/nova-hub` and `~/nova_client` to origin/main, rebuilds the hub with
-  `deploy.sh --here` when it moved, and syncs the client's venv. A tree on
-  another branch, with changes to tracked files, or diverged is left alone and
-  the reason logged (`journalctl --user -u nova-dev-sync`). Work in a worktree.
+  `~/nova-hub` and `~/nova_client` to origin/main. Whenever a tree on main is at
+  a commit it was not last built at, by its own pull or by hand, it rebuilds the
+  hub with `deploy.sh --here` and syncs the client's venv (stamps in
+  `~/.local/state/nova-dev-sync`). A tree on another branch, with changes to
+  tracked files, or diverged is left alone and the reason logged
+  (`journalctl --user -u nova-dev-sync`). Work in a worktree.
 - **Not moved automatically:** the prod-twin hub on novatest-hl
   (`/home/novahub`), which stays on production's tag, and production itself.

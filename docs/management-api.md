@@ -817,12 +817,10 @@ cookie, so a sign-in cannot be started in one browser and finished in another.
 
 #### Responses
 
-#### 200
+#### 302
 
-Successful Response
+Redirect to Identity Provider
 
-
-**Content-Type:** `application/json`
 
 #### 422
 
@@ -2877,10 +2875,10 @@ it downloaded for any BBS.
 
 #### 200
 
-Successful Response
+The generated nodelist file
 
 
-**Content-Type:** `application/json`
+**Content-Type:** `application/octet-stream`
 
 #### 422
 

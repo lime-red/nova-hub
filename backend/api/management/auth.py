@@ -34,6 +34,7 @@ from backend.core.security import (
 )
 from backend.logging_config import get_logger
 from backend.models.database import SysopUser
+from backend.schemas.common import MessageResponse
 from backend.schemas.auth import (
     AuthMethods,
     ChangePasswordRequest,
@@ -116,7 +117,7 @@ async def login(
     return LoginResponse(user=user_response(user))
 
 
-@router.post("/logout", summary="Logout")
+@router.post("/logout", response_model=MessageResponse, summary="Logout")
 async def logout(response: Response):
     """
     Clear session cookie
@@ -151,7 +152,7 @@ async def get_me(current_user: SysopUser = Depends(get_current_user)):
     return user_response(current_user)
 
 
-@router.post("/change-password", summary="Change Password")
+@router.post("/change-password", response_model=MessageResponse, summary="Change Password")
 async def change_password(
     request: ChangePasswordRequest,
     current_user: SysopUser = Depends(get_current_user),
@@ -263,7 +264,9 @@ async def methods(provider: Optional[IdentityProvider] = Depends(get_identity_pr
     return AuthMethods(password=True, sso=provider is not None)
 
 
-@router.get("/sso/start", summary="Start Provider Sign-in")
+@router.get("/sso/start", summary="Start Provider Sign-in",
+            response_class=RedirectResponse, status_code=status.HTTP_302_FOUND,
+            responses={status.HTTP_302_FOUND: {"description": "Redirect to Identity Provider"}})
 async def sso_start(
     request: Request,
     next: Optional[str] = Query(None, description="Console path to land on afterwards"),

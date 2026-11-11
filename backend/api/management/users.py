@@ -11,6 +11,7 @@ from backend.core.database import get_db
 from backend.core.security import get_password_hash, require_admin, validate_password
 from backend.logging_config import get_logger
 from backend.models.database import RelinkLink, SysopUser
+from backend.schemas.common import MessageResponse
 from backend.schemas.auth import UserCreate, UserResponse, UserUpdate
 from backend.schemas.claim import ClaimLinkIssued, ClaimLinkStatus
 from backend.services import audit, relink_links
@@ -204,7 +205,7 @@ async def update_user(
     return user_response(user)
 
 
-@router.delete("/{user_id}", summary="Delete User")
+@router.delete("/{user_id}", response_model=MessageResponse, summary="Delete User")
 async def delete_user(
     user_id: int,
     http_request: Request,

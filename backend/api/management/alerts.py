@@ -12,6 +12,7 @@ from backend.core.security import require_admin
 from backend.logging_config import get_logger
 from backend.models.database import League, SequenceAlert, SysopUser
 from backend.schemas.alerts import AlertResponse
+from backend.schemas.common import MessageResponse
 
 logger = get_logger(context="management_alerts")
 
@@ -132,7 +133,7 @@ async def get_alert(
     )
 
 
-@router.post("/{alert_id}/resolve", summary="Resolve Alert")
+@router.post("/{alert_id}/resolve", response_model=MessageResponse, summary="Resolve Alert")
 async def resolve_alert(
     alert_id: int,
     current_user: SysopUser = Depends(require_admin),
@@ -168,7 +169,7 @@ async def resolve_alert(
     return {"message": "Alert resolved successfully"}
 
 
-@router.post("/{alert_id}/unresolve", summary="Unresolve Alert")
+@router.post("/{alert_id}/unresolve", response_model=MessageResponse, summary="Unresolve Alert")
 async def unresolve_alert(
     alert_id: int,
     current_user: SysopUser = Depends(require_admin),

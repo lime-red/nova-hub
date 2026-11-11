@@ -79,3 +79,9 @@ class ProcessingRunSummary(BaseModel):
     running: int
     problems: int = Field(..., description="Failed, or left packets unconsumed or quarantined")
 
+
+
+class ProcessingTriggerResponse(BaseModel):
+    """Response from manually triggering packet processing"""
+    status: str
+    message: str

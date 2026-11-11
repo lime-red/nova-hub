@@ -31,7 +31,9 @@ from backend.models.database import (
     SequenceAlert,
     SysopUser,
 )
+from backend.schemas.common import MessageResponse
 from backend.schemas.leagues import (
+    NodelistGenerateResponse,
     AddMemberRequest,
     FtnAddressRef,
     LeagueCreate,
@@ -709,7 +711,7 @@ async def update_league(
     )
 
 
-@router.delete("/{league_id}", summary="Delete League")
+@router.delete("/{league_id}", response_model=MessageResponse, summary="Delete League")
 async def delete_league(
     league_id: int,
     request: LeagueDeleteRequest,
@@ -1042,7 +1044,10 @@ def _nodelist_info(league: League) -> Optional[NodelistInfo]:
     )
 
 
-@router.get("/{league_id}/nodelist", summary="Download Nodelist")
+@router.get("/{league_id}/nodelist", summary="Download Nodelist",
+            response_class=FileResponse,
+            responses={200: {"content": {"application/octet-stream": {}},
+                             "description": "The generated nodelist file"}})
 async def download_nodelist(
     league_id: int,
     scope: Scope = Depends(get_scope),
@@ -1074,7 +1079,7 @@ async def download_nodelist(
     return FileResponse(path, filename=path.name, media_type="application/octet-stream")
 
 
-@router.post("/{league_id}/generate-nodelist", summary="Generate Nodelist")
+@router.post("/{league_id}/generate-nodelist", response_model=NodelistGenerateResponse, summary="Generate Nodelist")
 async def generate_nodelist(
     league_id: int,
     current_user: SysopUser = Depends(require_admin),
@@ -1142,7 +1147,7 @@ async def generate_nodelist(
             "warnings": problems}
 
 
-@router.delete("/{league_id}/members/{member_id}", summary="Remove Member")
+@router.delete("/{league_id}/members/{member_id}", response_model=MessageResponse, summary="Remove Member")
 async def remove_member(
     league_id: int,
     member_id: int,

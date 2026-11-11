@@ -16,6 +16,7 @@ from backend.logging_config import get_logger
 from backend.core.clock import utcnow
 from backend.models.database import League, Packet, ProcessingRun, ProcessingRunFile, SysopUser
 from backend.schemas.processing import (
+    ProcessingTriggerResponse,
     ProcessingRunSummary,
     ProcessingRunDetail,
     ProcessingRunFile as ProcessingRunFileSchema,
@@ -317,7 +318,7 @@ async def get_run(
     )
 
 
-@router.post("/trigger", summary="Trigger Processing")
+@router.post("/trigger", response_model=ProcessingTriggerResponse, summary="Trigger Processing")
 async def trigger_processing(
     current_user: SysopUser = Depends(require_admin),
 ):

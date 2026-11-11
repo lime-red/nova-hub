@@ -25,6 +25,7 @@ from backend.models.database import (
     Packet,
     SysopUser,
 )
+from backend.schemas.common import MessageResponse
 from backend.schemas.clients import (
     ClientCreate,
     ClientCreatedResponse,
@@ -408,7 +409,7 @@ async def update_client(
     )
 
 
-@router.delete("/{client_id}", summary="Delete Client")
+@router.delete("/{client_id}", response_model=MessageResponse, summary="Delete Client")
 async def delete_client(
     client_id: int,
     http_request: Request,
@@ -787,7 +788,7 @@ async def update_ftn_address(
     return _address_info(address)
 
 
-@router.delete("/{client_id}/ftn-addresses/{address_id}", summary="Remove FTN Address")
+@router.delete("/{client_id}/ftn-addresses/{address_id}", response_model=MessageResponse, summary="Remove FTN Address")
 async def delete_ftn_address(
     client_id: int,
     address_id: int,

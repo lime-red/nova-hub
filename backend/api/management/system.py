@@ -4,12 +4,13 @@ from fastapi import APIRouter, Depends
 
 from backend.core.security import get_current_user
 from backend.core.version import version_info
+from backend.schemas.system import VersionResponse
 from backend.models.database import SysopUser
 
 router = APIRouter()
 
 
-@router.get("/version", summary="Build Information")
+@router.get("/version", response_model=VersionResponse, summary="Build Information")
 async def get_version(current_user: SysopUser = Depends(get_current_user)):
     """
     What build is running.

@@ -231,3 +231,11 @@ class LeagueScoreFile(BaseModel):
     processing_run_id: int   # the run that made it
     file_data_html: Optional[str] = None  # the ANSI as HTML
 
+
+
+class NodelistGenerateResponse(BaseModel):
+    """Response from generating a nodelist"""
+    filename: str
+    members: int
+    changed: bool
+    warnings: List[str] = []

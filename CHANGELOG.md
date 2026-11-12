@@ -7,6 +7,63 @@ per change; a release gathers them here.
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-11-12
+
+### Added
+- **IB 0.2.9's Full Bank Start and Starting Regions on the reset form.** Both
+  can be set in a reset or a rules change. While either is off its default, the
+  draft warns until Minimum Game Version is 0.2.9 or later, because a board on
+  0.2.8 ignores them, plays different rules and has its packets held.
+
+### Changed
+- **`deploy.sh` is the same on every host** (#126). It works from the service
+  user's home (`~/nova-hub`, `~/nova-data`) instead of assuming
+  `/home/novahub`, finds the database where `config.toml` says, and no longer
+  needs the `sqlite3` command.
+  - It now syncs the venv from `uv.lock` (`uv sync --frozen --no-dev`), so a
+    deploy no longer needs a separate package step. Before anything moves, a
+    dry run against the target's lock stops the deploy if the venv would lose a
+    package, go back a version, or be rebuilt;
+    `NOVA_HUB_ALLOW_VENV_LOSSES=1` lets an intended one through.
+  - `deploy.sh --ref <branch|commit>` pins a hub to something that is not a tag,
+    for the standing test hub.
+  - `deploy.sh --here` is for dev: it builds the tree as it is (venv with the
+    dev tools, frontend, migrations), backs up the database first, and restarts
+    the hub's user unit.
+  - A pinned deploy refuses to run from inside the tree it is about to check
+    out. The playbook puts the copy at `~/deploy.sh`.
+- **Changelog entries are fragments in `changelog.d/`**, one file per change,
+  so open PRs no longer conflict in CHANGELOG.md. `tools/changelog.py release
+  <version>` gathers them into CHANGELOG.md in the release commit.
+- **`run.py --diff-template` shows the code's default** for every key a config
+  leaves out, beside the template's value, and marks any key where the two
+  disagree. A test now holds the template to the code's defaults, so leaving a
+  shared key out always means what the template says.
+- **A LeagueConfig without these two fields reads as their defaults** (off,
+  15), which is what IB omits them for. A reset's read-back now notices a
+  Coordinator too old to apply a Starting Regions it was asked for.
+- `tests/fixtures/ib_packet_shape.txt` is IB v0.2.9's packet shape, which also
+  catches up on the fields v0.2.8 changed.
+
+### Removed
+- **The rig's viewer hub, `tests/live/serve.py`** (#126). The standing test hub
+  on novatest-hl (`https://novatest-hl.<tailnet>.ts.net`) replaces it.
+
+### Fixed
+- **A league's Scores no longer show `SCORES.ANS`** (#127). The league page
+  showed it as a ninth tab, "Scores", alongside the eight rankings.
+- **An IB league's freeze, thaw and rules orders no longer tell you each
+  member's game "resets"** when it downloads its packet: the note now says it
+  freezes, thaws or takes up the new rules.
+- **An IB board on v0.2.8 or later no longer reads as below the league's
+  minimum version.** Those builds state their commit beside the version
+  ("0.2.8 (0d0e41e)"), which the hub read as 0.2.0.
+- **The Members count for a reset or order is the number of boards, not
+  packets.** An IB thaw writes several packets for each member, so a
+  four-member league showed "0 of 40 have it". Each member is now one row,
+  showing its packet count, and has the order once it has downloaded all of
+  them.
+
 ## [0.13.0] - 2026-11-05
 
 ### Added

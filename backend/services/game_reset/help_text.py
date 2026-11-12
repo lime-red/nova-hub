@@ -561,6 +561,21 @@ IB = {
         'When on, the food market never runs short — its daily supply is '
         'unlimited.'
     ),
+    'full_bank_start': (
+        'Full Bank Start',
+        'When on, a new realm starts with its savings full and the most allowed '
+        'returning on each of the next 10 days, starting the day it is created. '
+        'Those returns count as heavy investing, so the investment rate falls '
+        'while new realms join, unless Steady Investment Rate is on.'
+    ),
+    'starting_regions': (
+        'Starting Regions',
+        'How many regions a new realm is founded with (default 15, maximum '
+        '20,000). Its troopers, food and gold scale by the same factor, its '
+        'people start just under the realm\'s capacity, and its land is split in '
+        'the same proportions as the default 2 Agricultural, 5 Desert, 5 Mountain '
+        'and 3 Coastal.'
+    ),
     'buy_military': (
         'Buy Military',
         'Whether players may buy military units. Yes: they may buy them freely.'

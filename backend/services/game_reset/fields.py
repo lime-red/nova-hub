@@ -71,6 +71,11 @@ class Field:
     depends_on: Optional[tuple] = None
     help_title: str = ""
     help: str = ""
+    # IB: the first game version that plays this setting. A board on an older
+    # one ignores it and so plays other rules than the Coordinator's, which
+    # holds the league's packets; drafts.warnings() asks for a Minimum Game
+    # Version to match whenever the setting is off its default.
+    min_version: Optional[str] = None
 
 
 def _number(id, label, page, group, default, max, min=0, **kw):
@@ -195,6 +200,8 @@ _FE = (
 
 # IB has no pages and asks nothing in order, so every field is on "page 1".
 _IB_DAY_CAP = dict(note="0 means no limit.")
+_IB_0_2_9 = ("New in IB 0.2.9: every board must run 0.2.9 or later before this is "
+             "changed from its default, or the boards still on 0.2.8 have their packets held.")
 _IB = (
     Field("start_date", "Game Start Date", 1, PAGE_GENERAL, DATE, None,
           note="Blank starts the new game on the day of the reset. A later date "
@@ -220,6 +227,10 @@ _IB = (
     _number("max_players", "Max Players Per BBS", 1, PAGE_GENERAL, 25, 25,
             note="0 means as many as the planet has room for (25)."),
     _toggle("food_unlimited", "Food Unlimited", 1, PAGE_GENERAL, False),
+    _toggle("full_bank_start", "Full Bank Start", 1, PAGE_GENERAL, False,
+            min_version="0.2.9", note=_IB_0_2_9),
+    _number("starting_regions", "Starting Regions", 1, PAGE_GENERAL, 15, 20000, min=15,
+            min_version="0.2.9", note=_IB_0_2_9),
     _choice("buy_military", "Buy Military", 1, PAGE_GAMEPLAY, "Y",
             (("Y", "Yes"), ("N", "No"), ("L", "Limited"))),
     _choice("maintenance_costs", "Maintenance Costs", 1, PAGE_GAMEPLAY, "M", HMLN),

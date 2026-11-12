@@ -16,6 +16,7 @@ from backend.models.database import GameReset, League
 from backend.services.game_reset.fields import (
     CHOICE, DATE, NUMBER, TEXT, TOGGLE, defaults, fields_for,
 )
+from backend.services.ib_hub_game import below
 
 # The editor takes a year up to 2999 (Join Date's "no cut-off").
 MAX_YEAR = 2999
@@ -115,6 +116,13 @@ def warnings(game_type: str, settings: dict) -> list:
         if f.advised_min is not None and isinstance(v, int) and v < f.advised_min:
             out.append((f.id, f"Below the usual minimum of {f.advised_min}: "
                               f"{f.advised_reason}"))
+        required = settings.get("min_board_version") or ""
+        if (f.min_version and v is not None and v != f.default
+                and (not required or below(required, f.min_version))):
+            out.append((f.id, f"Needs IB {f.min_version} on every board: set Minimum "
+                              f"Game Version to {f.min_version} or later, so that a "
+                              f"board still on an older version is told to upgrade "
+                              f"rather than playing other rules."))
     return out
 
 

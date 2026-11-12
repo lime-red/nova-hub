@@ -353,10 +353,20 @@ _OWN_NUMBERS = {"GameLength": "game_length", "IdleDaysRemove": "idle_days_remove
                 "PlanetaryTaxRate": "planetary_tax_rate",
                 "MaxLocalAttacks": "local_attacks_per_day"}
 _OWN_TOGGLES = {"FoodUnlimited": "food_unlimited", "IPTrading": "ip_trading",
-                "Pirates": "pirates"}
+                "Pirates": "pirates", "FullBankStart": "full_bank_start"}
+_OWN_NUMBERS["StartingRegions"] = "starting_regions"
+# IB 0.2.9's two new rules are omitempty and sent as 0 at their defaults, so a
+# LeagueConfig without them (or from an older Coordinator, which has neither)
+# means the default. Reading them in keeps a reset's read-back honest: a draft
+# that asks for 100 Starting Regions and gets a packet without the field was not
+# applied.
+_ABSENT_MEANS = {"FullBankStart": False, "StartingRegions": 15}
 
 
 def league_settings(c: dict) -> bre_packet.LeagueSettings:
+    c = {**_ABSENT_MEANS, **c}
+    if not c["StartingRegions"]:
+        c["StartingRegions"] = _ABSENT_MEANS["StartingRegions"]
     out = {}
     for k, fid in _NUMBERS.items():
         if _int(c.get(k)) is not None:

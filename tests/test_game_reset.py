@@ -22,7 +22,7 @@ from main import app, service_app, management_app
 from backend.core.database import get_db
 from backend.core.security import get_current_user
 from backend.models.database import AuditEvent, Base, GameReset, League, SysopUser
-from backend.services.game_reset import drafts
+from backend.services.game_reset import drafts, history
 from backend.services import ib_packet
 from backend.services.game_reset.fields import CHOICE, DATE, NUMBER, defaults, fields_for
 
@@ -87,7 +87,8 @@ def test_every_field_is_complete(game):
 
 
 # IB's DefaultConfig, as a fresh Coordinator's config.json holds it (dev 902I,
-# v0.2.6), but MoneyCapBillions, which IB fixed at 2 (#205).
+# v0.2.6, plus v0.2.9's FullBankStart and StartingRegions), but MoneyCapBillions,
+# which IB fixed at 2 (#205).
 IB_DEFAULTS = {
     "GameStartDate": "", "JoinDate": "", "TurnsPerDay": 10, "ProtectionTurns": 15,
     "GameLength": 0, "IdleDaysRemove": 10, "InitialMarketLand": 0, "LandPerDay": 1000,
@@ -100,6 +101,7 @@ IB_DEFAULTS = {
     "ClingyAnnihilator": True, "MaxPlayers": 25, "BuyMilitary": 0, "MaintCosts": 0,
     "TradeCosts": 0, "RegionCosts": 0, "AttackCosts": 0, "TerrorCosts": 0,
     "AttackDamage": 0, "AttackRewards": 0, "SabreHandling": 1, "SabreConstantDial": 5,
+    "FullBankStart": False, "StartingRegions": 15,
 }
 
 
@@ -134,6 +136,50 @@ def test_ib_settings_survive_the_round_trip_through_a_packet():
     assert back.game_started_at.date().isoformat() == "2026-10-20"
     assert {k: v for k, v in back.settings.items()} == {
         k: v for k, v in s.items() if k != "start_date"}
+
+
+def test_ib_0_2_9_rules_left_out_of_a_packet_read_as_their_defaults():
+    # Both are omitempty, and IB sends Starting Regions as 0 at its default, so
+    # a v0.2.9 Coordinator at the defaults and a v0.2.8 one look the same.
+    sent = ib_packet.config_json(defaults("I"))
+    for gone in ({k: v for k, v in sent.items()
+                  if k not in ("FullBankStart", "StartingRegions")},
+                 {**sent, "FullBankStart": False, "StartingRegions": 0}):
+        got = ib_packet.league_settings(gone).settings
+        assert got["full_bank_start"] is False and got["starting_regions"] == 15
+    got = ib_packet.league_settings({**sent, "FullBankStart": True,
+                                     "StartingRegions": 400}).settings
+    assert got["full_bank_start"] is True and got["starting_regions"] == 400
+
+
+def test_a_reset_read_back_catches_a_coordinator_too_old_for_starting_regions():
+    s, errors = drafts.validate("I", {"starting_regions": 100}, TODAY)
+    assert errors == []
+    old_hub = {k: v for k, v in ib_packet.config_json(s).items() if k != "StartingRegions"}
+    old_hub["SlappenheimerHandling"] = old_hub.pop("SabreHandling")
+    got = history.sent(ib_packet.league_settings(old_hub))
+    assert "starting_regions" in history.mismatches(s, got)
+
+
+def test_ib_starting_regions_has_ibs_limits():
+    assert "starting_regions" in errors_for("I", {"starting_regions": 14})
+    assert "starting_regions" in errors_for("I", {"starting_regions": 20001})
+    assert errors_for("I", {"starting_regions": 20000}) == {}
+
+
+@pytest.mark.parametrize("change", [{"full_bank_start": True}, {"starting_regions": 30}])
+def test_ib_0_2_9_rules_off_their_defaults_ask_for_a_minimum_version(change):
+    def warned(extra):
+        s, errors = drafts.validate("I", {**change, **extra}, TODAY)
+        assert errors == []
+        return [fid for fid, _ in drafts.warnings("I", s)]
+    field = next(iter(change))
+    assert warned({}) == [field]
+    assert warned({"min_board_version": "0.2.8"}) == [field]
+    assert warned({"min_board_version": "0.2.9"}) == []
+    assert warned({"min_board_version": "0.2.10"}) == []
+    s, _ = drafts.validate("I", {}, TODAY)
+    assert drafts.warnings("I", s) == []
 
 
 def test_ib_has_minimums_and_blank_dates():
@@ -350,7 +396,7 @@ def test_ib_league_gets_ib_fields(api):
     db.commit()
     body = client.get(f"{BASE}/{ib.id}/reset").json()
     kinds = {f["id"]: f["kind"] for f in body["fields"]}
-    assert len(kinds) == 41 and kinds["min_board_version"] == "text"
+    assert len(kinds) == 43 and kinds["min_board_version"] == "text"
     assert body["defaults"]["join_date"] is None
 
 

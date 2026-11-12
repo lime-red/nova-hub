@@ -3,6 +3,7 @@ Packet:
   ToBoard
   Date
   Scores
+  NoRealms `json:",omitempty"`
   Attacks
   Terrors
   SpecialOps `json:",omitempty"`
@@ -46,6 +47,8 @@ RemoteScore:
   Protected `json:",omitempty"`
   OwnerHash `json:",omitempty"`
   FormerName `json:",omitempty"`
+  PriorNames `json:",omitempty"`
+  Founded `json:",omitempty"`
 RemoteAttack:
   ID
   FromBoard
@@ -149,6 +152,8 @@ LeagueConfig:
   AttackRewards
   SabreHandling `json:"SlappenheimerHandling"`
   SabreConstantDial `json:",omitempty"`
+  FullBankStart `json:",omitempty"`
+  StartingRegions `json:",omitempty"`
 LeagueNode:
   Number
   Name
@@ -168,9 +173,6 @@ SpyReport:
   Empire
   Date
   Land
-  Offense
-  Defense
-  Gold
   Troopers
   Jets
   Turrets
@@ -196,6 +198,12 @@ IPMessage:
   ToEmpires `json:",omitempty"`
   When
   Body
+  Bounce `json:",omitempty"`
+MailBounce:
+  Reason
+  Realm `json:",omitempty"`
+  Sent
+  To `json:",omitempty"`
 SpyGuyDispatch:
   FromBoard
   Days

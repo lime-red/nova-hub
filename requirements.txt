@@ -27,7 +27,7 @@ bcrypt==4.3.0
     # via
     #   nova-hub
     #   passlib
-beautifulsoup4==4.12.3
+beautifulsoup4==4.15.0
     # via nova-hub
 certifi==2026.7.22
     # via
@@ -141,6 +141,7 @@ typing-extensions==4.15.0
     #   aiosignal
     #   alembic
     #   anyio
+    #   beautifulsoup4
     #   fastapi
     #   pydantic
     #   pydantic-core

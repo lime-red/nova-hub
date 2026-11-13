@@ -95,12 +95,12 @@ pyasn1==0.6.2
     #   rsa
 pycparser==3.0 ; implementation_name != 'PyPy' and platform_python_implementation != 'PyPy'
     # via cffi
-pydantic==2.12.5
+pydantic==2.14.3
     # via
     #   fastapi
     #   nova-hub
     #   pydantic-settings
-pydantic-core==2.41.5
+pydantic-core==2.50.4
     # via pydantic
 pydantic-settings==2.12.0
     # via nova-hub
@@ -135,7 +135,7 @@ starlette==0.50.0
     # via fastapi
 toml==0.10.2
     # via nova-hub
-typing-extensions==4.15.0
+typing-extensions==4.16.0
     # via
     #   aiohttp
     #   aiosignal
@@ -147,7 +147,7 @@ typing-extensions==4.15.0
     #   sqlalchemy
     #   starlette
     #   typing-inspection
-typing-inspection==0.4.2
+typing-inspection==0.4.5
     # via
     #   pydantic
     #   pydantic-settings

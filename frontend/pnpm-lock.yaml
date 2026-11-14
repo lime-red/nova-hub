@@ -25,7 +25,7 @@ importers:
         version: 5.3.4(chart.js@4.5.1)(vue@3.5.45(typescript@5.6.3))
       vue-router:
         specifier: ^4.4.0
-        version: 4.6.4(vue@3.5.45(typescript@5.6.3))
+        version: 4.6.5(vue@3.5.45(typescript@5.6.3))
     devDependencies:
       '@types/node':
         specifier: ^25.0.8
@@ -746,8 +746,8 @@ packages:
       '@vue/composition-api':
         optional: true
 
-  vue-router@4.6.4:
-    resolution: {integrity: sha512-Hz9q5sa33Yhduglwz6g9skT8OBPii+4bFn88w6J+J4MfEo4KRRpmiNG/hHHkdbRFlLBOqxN8y8gf2Fb0MTUgVg==}
+  vue-router@4.6.5:
+    resolution: {integrity: sha512-HBoGqixpB2ej1kI17NotdOatUdKIsi3yfOQ5vhwAhcoHk90+JtwtIy7MEeOqdPi1+npmQVMEu5F+Hvw+3TU48w==}
     peerDependencies:
       vue: ^3.5.0
 
@@ -1342,7 +1342,7 @@ snapshots:
     dependencies:
       vue: 3.5.45(typescript@5.6.3)
 
-  vue-router@4.6.4(vue@3.5.45(typescript@5.6.3)):
+  vue-router@4.6.5(vue@3.5.45(typescript@5.6.3)):
     dependencies:
       '@vue/devtools-api': 6.6.4
       vue: 3.5.45(typescript@5.6.3)

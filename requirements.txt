@@ -18,6 +18,7 @@ ansi2html==1.9.5
     # via nova-hub
 anyio==4.12.1
     # via
+    #   fastapi
     #   httpx
     #   starlette
     #   watchfiles
@@ -46,7 +47,7 @@ cryptography==46.0.5
     # via python-jose
 ecdsa==0.19.1
     # via python-jose
-fastapi==0.128.0
+fastapi==0.165.0
     # via nova-hub
 frozenlist==1.8.0
     # via
@@ -83,6 +84,8 @@ multidict==6.7.1
     # via
     #   aiohttp
     #   yarl
+opentelemetry-api==1.45.2
+    # via fastapi
 passlib==1.7.4
     # via nova-hub
 propcache==0.4.1
@@ -131,7 +134,7 @@ sqlalchemy==2.0.36
     #   nova-hub
 sr-harness @ git+https://gitea-hl.taild204f.ts.net/lime/sr-harness.git@f892a3847c3a07a6b6963a62d755e67e708cb8ba
     # via nova-hub
-starlette==0.50.0
+starlette==1.10.0
     # via fastapi
 toml==0.10.2
     # via nova-hub
@@ -142,6 +145,7 @@ typing-extensions==4.15.0
     #   alembic
     #   anyio
     #   fastapi
+    #   opentelemetry-api
     #   pydantic
     #   pydantic-core
     #   sqlalchemy
@@ -149,6 +153,7 @@ typing-extensions==4.15.0
     #   typing-inspection
 typing-inspection==0.4.2
     # via
+    #   fastapi
     #   pydantic
     #   pydantic-settings
 uvicorn==0.32.0

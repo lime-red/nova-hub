@@ -113,7 +113,7 @@ python-dotenv==1.2.4
     #   uvicorn
 python-jose==3.3.0
     # via nova-hub
-python-multipart==0.0.33
+python-multipart==0.0.34
     # via nova-hub
 pyyaml==6.0.3
     # via uvicorn

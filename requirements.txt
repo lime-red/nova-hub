@@ -83,7 +83,7 @@ multidict==6.7.1
     # via
     #   aiohttp
     #   yarl
-passlib==1.7.4
+passlib==1.9.5
     # via nova-hub
 propcache==0.4.1
     # via

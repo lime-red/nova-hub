@@ -31,6 +31,8 @@ def _git(*args, cwd=NOVA_CLIENT) -> str:
 def checkout(ref: str = "main") -> str:
     if not (NOVA_CLIENT / ".git").is_dir():
         _git("clone", "-q", NOVA_CLIENT_REPO, str(NOVA_CLIENT), cwd=NOVA_CLIENT.parent)
+    # An existing clone keeps the URL it was made with; follow the constant.
+    _git("remote", "set-url", "origin", NOVA_CLIENT_REPO)
     _git("fetch", "-q", "--force", "--tags", "origin")
     for rev in (f"origin/{ref}", ref):
         found = subprocess.run(["git", "rev-parse", "-q", "--verify", f"{rev}^{{commit}}"],

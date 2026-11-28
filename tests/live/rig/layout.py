@@ -40,7 +40,7 @@ IB_KINDS = ("release", "trunk")
 # nova-client, checked out by rig.nova_client, so the IB scenarios move packets
 # the way a real board does: through the client, over the hub's service API.
 NOVA_CLIENT = SRV / "nova-client"
-NOVA_CLIENT_REPO = "http://gitea-hl:3000/lime/nova-client.git"
+NOVA_CLIENT_REPO = "https://gitea-hl.taild204f.ts.net/lime/nova-client.git"
 
 HUB_INDEX = 1
 HUB_PORT = 8900

@@ -9,7 +9,7 @@ ConditionPathExists=/var/lib/gitea-runner/.runner
 User=gitea-runner
 Group=gitea-runner
 WorkingDirectory=/var/lib/gitea-runner
-ExecStart=/usr/local/bin/act_runner daemon --config /etc/act_runner/config.yaml
+ExecStart=/usr/local/bin/gitea-runner daemon --config /etc/act_runner/config.yaml
 Restart=on-failure
 RestartSec=30
 # No PrivateTmp: the rig's lock and logs must be the same files an ssh-started

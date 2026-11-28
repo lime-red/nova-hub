@@ -4,7 +4,7 @@ The live rig only runs on novatest-hl, where the game installs live under their
 own unix users. So `.gitea/workflows/live-rig.yml` runs on a runner on that
 host, not on the shared docker runner (gitea-runner-hl):
 
-- **act_runner in host mode**, as the system user `gitea-runner`
+- **gitea-runner (formerly act_runner) in host mode**, as the system user `gitea-runner`
   (home `/var/lib/gitea-runner`), from the `act-runner` systemd unit.
 - **Registered to lime/nova-hub alone**, with the one label `novatest`. No other
   repo's workflows can land on it, and no job of this repo lands on it unless it
@@ -26,7 +26,7 @@ Then register once, with a token from the repo's
 Settings → Actions → Runners → Create new runner
 (`https://gitea-hl.taild204f.ts.net/lime/nova-hub/settings/actions/runners`):
 
-    sudo -u gitea-runner sh -c 'cd /var/lib/gitea-runner && act_runner --config /etc/act_runner/config.yaml register --no-interactive \
+    sudo -u gitea-runner sh -c 'cd /var/lib/gitea-runner && gitea-runner --config /etc/act_runner/config.yaml register --no-interactive \
       --instance https://gitea-hl.taild204f.ts.net --name novatest-hl --labels novatest:host --token <TOKEN>'
     sudo systemctl start act-runner.service
 

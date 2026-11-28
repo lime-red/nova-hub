@@ -5,32 +5,37 @@
 #
 #   sudo sh tests/live/runner/install.sh
 #
-# It installs act_runner (pinned, checked against its sha256) as user
+# It installs gitea-runner (pinned, checked against its sha256) as user
 # gitea-runner in host mode, the systemd unit, and the one sudoers rule the
 # workflow needs. Registering is a separate, one-time step with a token from
 # gitea (README.md); the unit starts once the registration exists.
 set -eu
 
-VERSION=0.2.13
-SHA256=3acac8b506ac8cadc88a55155b5d6378f0fab0b8f62d1e0c0450f4ccd69733e2
-URL=https://dl.gitea.com/gitea-runner/$VERSION/act_runner-$VERSION-linux-amd64
+VERSION=5.2.4
+SHA256=674145e627e5c879d72c293a08991458cf73c81124e54afdd40cf6995098a01b
+URL=https://dl.gitea.com/gitea-runner/$VERSION/gitea-runner-$VERSION-linux-amd64
 HOME_DIR=/var/lib/gitea-runner
 HERE=$(cd "$(dirname "$0")" && pwd)
 
 [ "$(id -u)" = 0 ] || { echo "run as root"; exit 1; }
 
+# git: gitea-runner 5 needs it on PATH, even in host mode.
+command -v git >/dev/null || { apt-get update -qq && apt-get install -y -qq git; }
+
 id gitea-runner >/dev/null 2>&1 || \
   useradd --system --create-home --home-dir "$HOME_DIR" --shell /usr/sbin/nologin gitea-runner
 install -d -o gitea-runner -g gitea-runner -m 750 "$HOME_DIR" "$HOME_DIR/work"
 
-if ! echo "$SHA256  /usr/local/bin/act_runner" | sha256sum -c --status 2>/dev/null; then
+if ! echo "$SHA256  /usr/local/bin/gitea-runner" | sha256sum -c --status 2>/dev/null; then
   tmp=$(mktemp)
   curl -fsSL -o "$tmp" "$URL"
   echo "$SHA256  $tmp" | sha256sum -c -
-  install -m 755 "$tmp" /usr/local/bin/act_runner
+  install -m 755 "$tmp" /usr/local/bin/gitea-runner
   rm -f "$tmp"
 fi
-/usr/local/bin/act_runner --version
+/usr/local/bin/gitea-runner --version
+# act_runner was renamed gitea-runner in v1.0.0; drop the old binary.
+rm -f /usr/local/bin/act_runner
 
 install -d -m 755 /etc/act_runner
 install -m 644 "$HERE/config.yaml" /etc/act_runner/config.yaml
@@ -51,7 +56,7 @@ else
   echo "Not registered yet. With a registration token from"
   echo "  https://gitea-hl.taild204f.ts.net/lime/nova-hub/settings/actions/runners"
   echo "run:"
-  echo "  sudo -u gitea-runner sh -c 'cd $HOME_DIR && act_runner --config /etc/act_runner/config.yaml register --no-interactive \\"
+  echo "  sudo -u gitea-runner sh -c 'cd $HOME_DIR && gitea-runner --config /etc/act_runner/config.yaml register --no-interactive \\"
   echo "    --instance https://gitea-hl.taild204f.ts.net --name novatest-hl --labels novatest:host --token <TOKEN>'"
   echo "  sudo systemctl start act-runner.service"
 fi
